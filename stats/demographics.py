@@ -1,10 +1,12 @@
 from ukrdc_sqla.ukrdc import Code, Patient
 from sqlalchemy.orm import aliased
-import pandas as pd 
+import pandas as pd
 
-class Demog():
+
+class Demog:
     """Calculates the demographics information based on the personal infomation listed in the patient table
     """
+
     def __init__(self, session, unit):
         """initalises class 
 
@@ -12,8 +14,8 @@ class Demog():
             session (UKRDC SqlAlchemy session): 
             unit (str): unit to calculate the statistics for. 
         """
-        
-        self.session = session 
+
+        self.session = session
         self.unit = unit
 
     def patient_info(self):
@@ -40,9 +42,9 @@ class Demog():
                 Patient.occupation_codestd,
             )
             .join(Treatment, Treatment.pid == Patient.pid)
-            .filter(Treatment.health_care_facility_code == self.facility).all()
+            .filter(Treatment.health_care_facility_code == self.facility)
+            .all()
         )
-
 
         self.patient_demog = {
             "population size": len(self.patient_cohort[["pid"]].drop_duplicates()),
@@ -72,4 +74,3 @@ class Demog():
             .count()
             .to_dict()["pid"],
         }
-
