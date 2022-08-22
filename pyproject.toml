@@ -7,6 +7,9 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
+ukrdc-sqla = "^1.10.0" 
+pandas 
+SQLAlchemy = "^1.4.40"
 
 [tool.poetry.dev-dependencies]
 
