@@ -6,22 +6,26 @@ on:
 
 jobs:
   test:
+    name: Run tests
+
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v1
 
+      - uses: harmon758/postgresql-action@v1
+        with:
+          postgresql version: "13"
+
       - name: Set up Python
         uses: actions/setup-python@v1
         with:
-          python-version: 3.6
+          python-version: 3.9
 
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1.1.8
 
-      - name: Install dependencies
-        run: |
-          poetry install
+      - name: Install Dependencies
+        run: poetry install
 
-      - name: Test with tox
-        run: tox
+      - name: Run Tox
