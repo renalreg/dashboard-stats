@@ -28,8 +28,9 @@ jobs:
           # optional (defaults to `5432`)
           POSTGRES_PORT: 5432
           # optional (defaults to `postgres`)
-          POSTGRES_USER: postgres_user
-        ports:
+          POSTGRES_USER: postgres
+
+    ports:
           # maps tcp port 5432 on service container to the host
           - 5432:5432
         # set health checks to wait until postgres has started
@@ -44,6 +45,10 @@ jobs:
         run: |
           apt-get update
           apt-get install --yes postgresql-client
+
+      - name: Build dummy database 
+        run: psql -U postgres -d postgres -a -f .testdatabase/create_db.sql
+
 
       # queries database with postgres client
       - name: Query database
