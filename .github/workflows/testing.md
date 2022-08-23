@@ -7,3 +7,10 @@ Black formatting check handled [here](https://github.com/renalreg/dashboard-stat
 TODO: 
 1) Create dummy ukrdc 
 2) Create unit tests on stats library with connection to dummy database
+
+### test database 
+This dummy version of the ukrdc should be generated complete with data using the scripts found [here](https://github.com/renalreg/dashboard-stats/tree/master/.testdatabase)
+
+### unit testing 
+
+## Acuracy Testing 
