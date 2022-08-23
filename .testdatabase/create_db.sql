@@ -1,2 +1,1 @@
-CREATE SCHEMA "ukrdc-live"
-    AUTHORIZATION ukrdc;
+CREATE DATABASE "dummy_ukrdc"
