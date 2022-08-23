@@ -1,7 +1,7 @@
 # Dashboard Stats - testing 
 
 ## Sytax and style testing 
-Black formatting check. 
+Black formatting check handled by file: dashboard-stats/.github/workflows/test_syntax.yml
 
 ## Unit Testing
 TODO: 
