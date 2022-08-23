@@ -39,6 +39,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Copy sql required for building db
+        uses: actions/checkout@v3
+        with: 
+          path: .testdatabase 
+        
+    
       - name: Install PostgreSQL client
         run: |
           apt-get update
@@ -50,6 +56,6 @@ jobs:
           PGPASSWORD: postgres_password
 
       - name: Build dummy database 
-        run: psql -U postgres -d postgres_db -a -f ./.testdatabase/create_db.sql
+        run: psql -U postgres -d postgres_db -a -f create_db.sql
         env:
           PGPASSWORD: postgres_password
