@@ -3,7 +3,11 @@ name = "dashboard_stats"
 version = "0.1.0"
 description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 authors = ["Philip Main <Philip.Main@renalregistry.nhs.uk>"]
+packages = [
+    {include = "stats"}
+]
 license = "MIT"
+
 
 [tool.poetry.dependencies]
 python = "^3.8"
