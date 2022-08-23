@@ -1,44 +1,54 @@
 name: Dummy Database 
 
-on:
-  - push
-  - pull_request
+# .github/workflows/postgres.yml
+on: push
+
 
 jobs:
-  # Label of the container job
-  container-job:
-    # Containers must run in Linux based operating systems
+  # label of the container job
+  postgres-job:
+    # containers must run in Linux based operating systems
     runs-on: ubuntu-latest
-    # Docker Hub image that `container-job` executes in
-    container: node:10.18-jessie
+    # Docker Hub image that `postgres-job` executes in
+    container: node:latest
 
-    # Service containers to run with `container-job`
+    # service containers to run with `postgres-job`
     services:
-      # Label used to access the service container
+      # label used to access the service container
       postgres:
         # Docker Hub image
         image: postgres:latest
-        # Provide the password for postgres
+        # service environment variables
+        # `POSTGRES_HOST` is `postgres`
         env:
-          POSTGRES_DB: dummy_ukrdc
-          POSTGRES_PASSWORD: postgres
-        # Set health checks to wait until postgres has started
+          # optional (defaults to `postgres`)
+          POSTGRES_DB: postgres_db
+          # required
+          POSTGRES_PASSWORD: postgres_password
+          # optional (defaults to `5432`)
+          POSTGRES_PORT: 5432
+          # optional (defaults to `postgres`)
+          POSTGRES_USER: postgres_user
+        ports:
+          # maps tcp port 5432 on service container to the host
+          - 5432:5432
+        # set health checks to wait until postgres has started
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
-  steps:
-    - name: Install postgres 
-    run:
-      apt-get update 
-      apt-get install postgresql-client
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          apt-get update
+          apt-get install --yes postgresql-client
 
-    - name: Query database
-      run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
-      env:
-      # postgress password is required; alternatively, you can run:
-      # `PGPASSWORD=postgres_password psql ...`
-        PGPASSWORD: postgres_password
-  
+      # queries database with postgres client
+      - name: Query database
+        run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
+        env:
+          # postgress password is required; alternatively, you can run:
+          # `PGPASSWORD=postgres_password psql ...`
+          PGPASSWORD: postgres_password
