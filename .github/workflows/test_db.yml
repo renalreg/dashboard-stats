@@ -17,9 +17,10 @@ jobs:
       # Label used to access the service container
       postgres:
         # Docker Hub image
-        image: postgres
+        image: postgres:latest
         # Provide the password for postgres
         env:
+          POSTGRES_DB: dummy_ukrdc
           POSTGRES_PASSWORD: postgres
         # Set health checks to wait until postgres has started
         options: >-
@@ -29,12 +30,8 @@ jobs:
           --health-retries 5
 
 steps:
-  - name: check out repository code
-    uses: action/checkout@v3
-  
-  - name: build schema 
-    run: psql -d postgres -f .testdatabase/create_db.sql
-    
-  - name: populate with dummy data 
-  
+  - name: Install postgres 
+  run:
+    apt-get update 
+    apt-get install postgresql-client
   
