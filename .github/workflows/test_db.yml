@@ -1,0 +1,48 @@
+name: Dummy Database 
+
+on: [push]
+
+env:
+  registry: my_registry_name
+  # Not sure these are actually being passed down to rails, set them as the default in database.yml
+  DB_HOST: localhost
+  DB_USERNAME: postgres
+  DB_PASSWORD: postgres
+
+jobs:
+  my_image_test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_DB: postgres        
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+      - name: Build my_image docker image
+        uses: whoan/docker-build-with-cache-action@v5
+        with:
+          username: "${{secrets.aws_ecr_access_key_id}}"
+          password: "${{secrets.aws_ecr_secret_access_key}}"
+          registry: "${{env.registry}}"
+          image_name: my_image
+          context: my_image
+      - name: Lint rubocop
+        working-directory: ./my_image
+        run: docker run $registry/my_image bundle exec rubocop
+      - name: Run rails tests
+        working-directory: ./my_image
+        run: docker run --network="host" $registry/my_image bash -c "RAILS_ENV=test rails db:create && RAILS_ENV=test rails db:migrate && rails test"
