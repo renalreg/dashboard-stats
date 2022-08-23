@@ -39,11 +39,18 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Copy sql required for building db
-        uses: actions/checkout@v3
-        with: 
-          path: .testdatabase 
-        
+      - uses: actions/checkout@v1
+      
+      - name: Set up Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.9
+
+      - name: Install and configure Poetry
+        uses: snok/install-poetry@v1.1.8
+
+      - name: Install Dependencies
+        run: poetry install
     
       - name: Install PostgreSQL client
         run: |
@@ -56,6 +63,6 @@ jobs:
           PGPASSWORD: postgres_password
 
       - name: Build dummy database 
-        run: psql -h postgres -U postgres_user -d postgres_db -f create_db.sql
+        run: psql -h postgres -U postgres_user -d postgres_db -f .testdatabase/create_db.sql
         env:
           PGPASSWORD: postgres_password
