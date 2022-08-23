@@ -29,16 +29,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-steps:
-  - name: Install postgres 
-  run:
-    apt-get update 
-    apt-get install postgresql-client
+  steps:
+    - name: Install postgres 
+    run:
+      apt-get update 
+      apt-get install postgresql-client
 
-  - name: Query database
-    run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
-    env:
-    # postgress password is required; alternatively, you can run:
-    # `PGPASSWORD=postgres_password psql ...`
-    PGPASSWORD: postgres_password
+    - name: Query database
+      run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
+      env:
+      # postgress password is required; alternatively, you can run:
+      # `PGPASSWORD=postgres_password psql ...`
+        PGPASSWORD: postgres_password
   
