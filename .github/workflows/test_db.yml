@@ -1,7 +1,9 @@
 name: Dummy Database 
 
-on: [push]
-
+on:
+  - push
+  - pull_request
+  
 env:
   registry: my_registry_name
   # Not sure these are actually being passed down to rails, set them as the default in database.yml
