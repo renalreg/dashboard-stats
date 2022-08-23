@@ -56,6 +56,6 @@ jobs:
           PGPASSWORD: postgres_password
 
       - name: Build dummy database 
-        run: psql -U postgres -d postgres_db -a -f create_db.sql
+        run: psql -h postgres -U postgres_user -d postgres_db -f create_db.sql
         env:
           PGPASSWORD: postgres_password
