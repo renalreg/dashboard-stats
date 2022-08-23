@@ -34,4 +34,11 @@ steps:
   run:
     apt-get update 
     apt-get install postgresql-client
+
+  - name: Query database
+    run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
+    env:
+    # postgress password is required; alternatively, you can run:
+    # `PGPASSWORD=postgres_password psql ...`
+    PGPASSWORD: postgres_password
   
