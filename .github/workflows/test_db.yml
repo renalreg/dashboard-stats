@@ -28,7 +28,7 @@ jobs:
           # optional (defaults to `5432`)
           POSTGRES_PORT: 5432
           # optional (defaults to `postgres`)
-          POSTGRES_USER: postgres_user
+          POSTGRES_USER: ukrdc
         ports:
           # maps tcp port 5432 on service container to the host
           - 5432:5432
@@ -58,11 +58,11 @@ jobs:
           apt-get install --yes postgresql-client
       # queries database with postgres client
       - name: Query database
-        run: psql -h postgres -d postgres_db -U postgres_user -c 'SELECT 1;'
+        run: psql -h postgres -d postgres_db -U ukrdc -c 'SELECT 1;'
         env:
           PGPASSWORD: postgres_password
 
       - name: Build dummy database 
-        run: psql -h postgres -U postgres_user -d postgres_db -f .testdatabase/create_db.sql
+        run: psql -h postgres -U ukrdc -d postgres_db -f .testdatabase/create_db.sql
         env:
           PGPASSWORD: postgres_password

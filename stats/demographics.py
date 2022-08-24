@@ -4,15 +4,14 @@ import pandas as pd
 
 
 class Demog:
-    """Calculates the demographics information based on the personal infomation listed in the patient table
-    """
+    """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(self, session, unit):
-        """initalises class 
+        """initalises class
 
         Args:
-            session (UKRDC SqlAlchemy session): 
-            unit (str): unit to calculate the statistics for. 
+            session (UKRDC SqlAlchemy session):
+            unit (str): unit to calculate the statistics for.
         """
 
         self.session = session
