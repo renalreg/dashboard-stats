@@ -1,4 +1,4 @@
-from ukrdc_sqla.ukrdc import Code, Patient
+from ukrdc_sqla.ukrdc import Code, Patient, Treatment
 from sqlalchemy.orm import aliased
 import pandas as pd
 
@@ -14,8 +14,8 @@ class Demog:
             unit (str): unit to calculate the statistics for.
         """
 
-        self.session = session
-        self.unit = unit
+        self.sesh = session
+        self.facility = unit
 
     def patient_info(self):
         # print('')

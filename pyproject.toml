@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "dashboard_stats"
+name = "dashboard-stats"
 version = "0.1.0"
 description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 authors = ["Philip Main <Philip.Main@renalregistry.nhs.uk>"]
 packages = [
-    {include = "stats"}
+    {include = "dashboard_stats"}
 ]
 license = "MIT"
 
@@ -15,6 +15,7 @@ ukrdc-sqla = "^1.10.0"
 SQLAlchemy = "^1.4.40"
 python-dotenv = "^0.20.0"
 psycopg2-binary = "^2.9.3" # Needed for postgres
+pandas = "^1.4.3"
 
 
 
