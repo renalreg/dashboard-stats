@@ -2,24 +2,11 @@ from ukrdc_sqla.ukrdc import Code, Patient, Treatment
 from sqlalchemy.orm import aliased
 from sqlalchemy import select
 import dashboard_stats.utils as ut
+import dashboard_stats.output_classes as oc
+
 import pandas as pd
+import numpy as np
 import datetime as dt
-
-from pydantic import BaseModel
-
-# pydantic class for returning histograms
-class hist_item(BaseModel):
-    label: str
-    count: int
-
-
-class hist(BaseModel):
-    label: str
-    hist_data: list
-
-
-class hists(BaseModel):
-    hist_list: list
 
 
 class Demog:
@@ -46,7 +33,7 @@ class Demog:
             - Security implications. Should patient cohort be a private variable?
             - Introduce pydantic to the fray
             - map to more meaningful labels
-            - option of passing some sort of config which contains a list of histograms to calculate?
+            - option of passing some sort of config which contains a list charts and types of chart to calculate?
             - validation method to pydantic class...for example that the sum of numbers should equal the total population
         """
 
@@ -81,51 +68,46 @@ class Demog:
         occupation = make_hist("occupationcode")
 
         # build pydantic object
-        self.patient_demog = hists(
-            hist_list=[
-                hist_item(label="Population Size", count=pop_size),
-                hist(
-                    label="Gender",
-                    hist_data=[
-                        hist_item(label=label, count=count[0])
-                        for label, count in zip(gender.index, gender.values)
-                    ],
-                ),
-                hist(
-                    label="Birth Country",
-                    hist_data=[
-                        hist_item(label=label, count=count[0])
-                        for label, count in zip(
-                            birth_country.index, birth_country.values
-                        )
-                    ],
-                ),
-                hist(
-                    label="Primary Language",
-                    hist_data=[
-                        hist_item(label=label, count=count[0])
-                        for label, count in zip(
-                            primary_language.index, primary_language.values
-                        )
-                    ],
-                ),
-                hist(
-                    label="Ethnic Group",
-                    hist_data=[
-                        hist_item(label=label, count=count[0])
-                        for label, count in zip(
-                            ethnic_group_code.index, ethnic_group_code.values
-                        )
-                    ],
-                ),
-                hist(
-                    label="Occupation",
-                    hist_data=[
-                        hist_item(label=label, count=count[0])
-                        for label, count in zip(occupation.index, occupation.values)
-                    ],
-                ),
-            ]
+
+        self.patient_demog = oc.bars(
+            pop=pop_size,
+            bar_list=[
+                {
+                    "data": {
+                        "labels": [item for item in gender.index],
+                        "values": [item[0] for item in gender.values],
+                    },
+                    "layout": {"title": "Gender"},
+                },
+                {
+                    "data": {
+                        "labels": [item for item in birth_country.index],
+                        "values": [item[0] for item in birth_country.values],
+                    },
+                    "layout": {"title": "Birth Country"},
+                },
+                {
+                    "data": {
+                        "labels": [item for item in primary_language.index],
+                        "values": [item[0] for item in primary_language.values],
+                    },
+                    "layout": {"title": "Primary Language"},
+                },
+                {
+                    "data": {
+                        "labels": [item for item in ethnic_group_code.index],
+                        "values": [item[0] for item in ethnic_group_code.values],
+                    },
+                    "layout": {"title": "Ethnic Group"},
+                },
+                {
+                    "data": {
+                        "labels": [item for item in occupation.index],
+                        "values": [item[0] for item in occupation.values],
+                    },
+                    "layout": {"title": "Occupation"},
+                },
+            ],
         )
 
         return self.patient_demog
