@@ -12,10 +12,7 @@ class PatientDemographicStats:
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(
-        self,
-        session: Session,
-        facility: str,
-        date: dt.datetime = dt.datetime.today(),
+        self, session: Session, facility: str, date: dt.datetime = dt.datetime.today()
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
