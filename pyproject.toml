@@ -2,7 +2,7 @@
 authors = ["Philip Main <Philip.Main@renalregistry.nhs.uk>"]
 description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 license = "MIT"
-name = "dashboard-stats"
+name = "ukrdc-stats"
 packages = [
   {include = "ukrdc_stats"},
 ]
