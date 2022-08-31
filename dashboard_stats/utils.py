@@ -1,7 +1,7 @@
 import datetime as dt
 
 
-def age_from_dob(date, dob, decimal=False):
+def age_from_dob(date: dt.date, dob: dt.date, decimal: bool = False):
     """_summary_
 
     Args:
@@ -12,13 +12,14 @@ def age_from_dob(date, dob, decimal=False):
     Returns:
         float: age or period in years
     """
+    years_old: float
 
-    if decimal == False:
+    if not decimal:
         # calculates age by common definition
         years_old = date.year - dob.year - 1
         try:
             year_birthday = dt.datetime(date.year, dob.month, dob.day)
-        except:
+        except ValueError:
             # exemption triggered for people with birthday on leap year if not a leap year
             year_birthday = dt.datetime(date.year, dob.month, dob.day - 1)
 
@@ -28,4 +29,4 @@ def age_from_dob(date, dob, decimal=False):
         # calculates precise date based on decimal year
         years_old = (date.day - dob.day) / 365.25
 
-    return years_old
+    return float(years_old)
