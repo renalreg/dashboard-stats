@@ -7,7 +7,7 @@ def age_from_dob(date: dt.date, dob: dt.date):
     Args:
         date (datetime): Date to calculate age or time period from.
         dob (datetime): Date to calculate age or time period at.
-        
+
     Returns:
         int: age or period in years
     """
