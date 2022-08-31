@@ -5,4 +5,10 @@ from dashboard_stats import demographics
 from dashboard_stats import utils
 
 # pydantic classes to return nice plotly friendly output
-from dashboard_stats import output_classes
+from dashboard_stats import models
+
+__all__ = [
+    "demographics",
+    "utils",
+    "models",
+]
