@@ -4,8 +4,8 @@ Each class or group will be accosiated with JSON schema for plotly.
 For example the class pie is designed to naturally produce the schema for a plotly pie chart.
 """
 
-from typing import List
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass
