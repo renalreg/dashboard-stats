@@ -1,27 +1,28 @@
 [tool.poetry]
-name = "dashboard-stats"
-version = "0.1.0"
-description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 authors = ["Philip Main <Philip.Main@renalregistry.nhs.uk>"]
-packages = [
-    {include = "dashboard_stats"}
-]
+description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 license = "MIT"
-
+name = "dashboard-stats"
+packages = [
+  {include = "dashboard_stats"},
+]
+version = "0.1.0"
 
 [tool.poetry.dependencies]
-python = "^3.8"
-ukrdc-sqla = "^1.10.0" 
-SQLAlchemy = "^1.4.40"
-python-dotenv = "^0.20.0"
+SQLAlchemy = "^1.4.40" 
+pandas = "^1.4.3" 
 psycopg2-binary = "^2.9.3" # Needed for postgres
-pandas = "^1.4.3"
-
+python = "^3.8" 
+python-dotenv = "^0.20.0" 
+ukrdc-sqla = "^1.10.0" 
 
 [tool.poetry.dev-dependencies]
+bandit = "^1.7.4"
 black = {version = "^22.1", allow-prereleases = true}
+mypy = "^0.971"
+pylint = "^2.15.0"
 tox = "^3.24.5"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0"]
