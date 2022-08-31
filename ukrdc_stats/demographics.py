@@ -6,8 +6,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, Treatment
 
-from ukrdc_stats.models.generic_2d import Labelled2d
-
 from .models.generic_2d import Labelled2d, Labelled2dData, Labelled2dMetadata
 
 
