@@ -11,20 +11,20 @@ from ukrdc_stats.models.generic_2d import Labelled2d
 from .models.generic_2d import Labelled2d, Labelled2dData, Labelled2dMetadata
 
 
-class DemographicStatsMetadata(BaseModel):
+class DemographicsMetadata(BaseModel):
     population: Optional[int] = None
 
 
-class DemographicStats(BaseModel):
+class DemographicsStats(BaseModel):
     gender: Labelled2d
     birth_country: Labelled2d
     primary_language: Labelled2d
     ethnic_group_code: Labelled2d
 
-    metadata: DemographicStatsMetadata
+    metadata: DemographicsMetadata
 
 
-class PatientDemographics:
+class DemographicsCalculator:
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(
@@ -71,7 +71,7 @@ class PatientDemographics:
             .count()
         )
 
-    def patient_info(self):
+    def extract_stats(self):
         """
         Extract demographic statistics from the patient cohort dataframe
         TODO:
@@ -93,8 +93,8 @@ class PatientDemographics:
 
         # Build output object
 
-        return DemographicStats(
-            metadata=DemographicStatsMetadata(population=pop_size),
+        return DemographicsStats(
+            metadata=DemographicsMetadata(population=pop_size),
             gender=Labelled2d(
                 metadata=Labelled2dMetadata(title="Gender"),
                 data=Labelled2dData(
