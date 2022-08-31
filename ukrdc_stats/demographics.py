@@ -1,14 +1,30 @@
 import datetime as dt
+from typing import Optional
 
 import pandas as pd
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, Treatment
 
-from .models.demographics import DemographicStats, DemographicStatsMetadata
+from ukrdc_stats.models.generic_2d import Labelled2d
+
 from .models.generic_2d import Labelled2d, Labelled2dData, Labelled2dMetadata
 
 
-class PatientDemographicStats:
+class DemographicStatsMetadata(BaseModel):
+    population: Optional[int] = None
+
+
+class DemographicStats(BaseModel):
+    gender: Labelled2d
+    birth_country: Labelled2d
+    primary_language: Labelled2d
+    ethnic_group_code: Labelled2d
+
+    metadata: DemographicStatsMetadata
+
+
+class PatientDemographics:
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(
