@@ -4,7 +4,8 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, Treatment
 
-from .models import Bar, BarList, Data, Layout
+from .models.demographics import DemographicStats, DemographicStatsMetadata
+from .models.generic_2d import Labelled2d, Labelled2dData, Labelled2dMetadata
 
 
 class PatientDemographicStats:
@@ -76,47 +77,36 @@ class PatientDemographicStats:
         birth_country = self._make_patient_histogram("countryofbirth")
         primary_language = self._make_patient_histogram("primarylanguagecode")
         ethnic_group_code = self._make_patient_histogram("ethnicgroupcode")
-        occupation = self._make_patient_histogram("occupationcode")
 
         # Build output object
 
-        return BarList(
-            pop=pop_size,
-            bars=[
-                Bar(
-                    data=Data(
-                        labels=list(gender.index),
-                        values=[item[0] for item in gender.values],
-                    ),
-                    layout=Layout(title="Gender"),
+        return DemographicStats(
+            metadata=DemographicStatsMetadata(population=pop_size),
+            gender=Labelled2d(
+                metadata=Labelled2dMetadata(title="Gender"),
+                data=Labelled2dData(
+                    x=list(gender.index), y=[item[0] for item in gender.values]
                 ),
-                Bar(
-                    data=Data(
-                        labels=list(birth_country.index),
-                        values=[item[0] for item in birth_country.values],
-                    ),
-                    layout=Layout(title="Birth Country"),
+            ),
+            birth_country=Labelled2d(
+                metadata=Labelled2dMetadata(title="Country of birth"),
+                data=Labelled2dData(
+                    x=list(birth_country.index),
+                    y=[item[0] for item in birth_country.values],
                 ),
-                Bar(
-                    data=Data(
-                        labels=list(primary_language.index),
-                        values=[item[0] for item in primary_language.values],
-                    ),
-                    layout=Layout(title="Primary Language"),
+            ),
+            primary_language=Labelled2d(
+                metadata=Labelled2dMetadata(title="Primary language"),
+                data=Labelled2dData(
+                    x=list(primary_language.index),
+                    y=[item[0] for item in primary_language.values],
                 ),
-                Bar(
-                    data=Data(
-                        labels=list(ethnic_group_code.index),
-                        values=[item[0] for item in ethnic_group_code.values],
-                    ),
-                    layout=Layout(title="Ethnic Group"),
+            ),
+            ethnic_group_code=Labelled2d(
+                metadata=Labelled2dMetadata(title="Ethnic Group"),
+                data=Labelled2dData(
+                    x=list(ethnic_group_code.index),
+                    y=[item[0] for item in ethnic_group_code.values],
                 ),
-                Bar(
-                    data=Data(
-                        labels=list(occupation.index),
-                        values=[item[0] for item in occupation.values],
-                    ),
-                    layout=Layout(title="Occupation"),
-                ),
-            ],
+            ),
         )
