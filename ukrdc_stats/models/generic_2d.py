@@ -3,6 +3,8 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel
 
+Number = Union[int, float]
+
 # Generics
 
 
@@ -33,8 +35,8 @@ class TimeSeries2dData(BaseModel):
     """
 
     x: List[datetime]
-    y: List[Union[int, float]]
-    error_y: Optional[List[Union[int, float]]] = None
+    y: List[Number]
+    error_y: Optional[List[Number]] = None
 
 
 class TimeSeries2dMetadata(Basic2dMetadata):
@@ -64,10 +66,10 @@ class Numeric2dData(BaseModel):
     x-y data for a numeric plot
     """
 
-    x: List[Union[int, float]]
-    y: List[Union[int, float]]
-    error_x: Optional[List[Union[int, float]]] = None
-    error_y: Optional[List[Union[int, float]]] = None
+    x: List[Number]
+    y: List[Number]
+    error_x: Optional[List[Number]] = None
+    error_y: Optional[List[Number]] = None
 
 
 class Numeric2dMetadata(Basic2dMetadata):
@@ -99,8 +101,8 @@ class Labelled2dData(BaseModel):
     """
 
     x: List[str]
-    y: List[Union[int, float]]
-    error_y: Optional[List[Union[int, float]]] = None
+    y: List[Number]
+    error_y: Optional[List[Number]] = None
 
 
 class Labelled2dMetadata(Basic2dMetadata):
