@@ -1,27 +1,46 @@
 [tool.poetry]
-name = "dashboard-stats"
-version = "0.1.0"
-description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 authors = ["Philip Main <Philip.Main@renalregistry.nhs.uk>"]
-packages = [
-    {include = "dashboard_stats"}
-]
+description = "A package to produce stats from the ukrdc database to be displayed on the dashboard"
 license = "MIT"
-
+name = "ukrdc-stats"
+packages = [
+  {include = "ukrdc_stats"},
+]
+version = "0.1.0"
 
 [tool.poetry.dependencies]
-python = "^3.8"
-ukrdc-sqla = "^1.10.0" 
-SQLAlchemy = "^1.4.40"
-python-dotenv = "^0.20.0"
+SQLAlchemy = "^1.4.40" 
+pandas = "^1.4.3" 
 psycopg2-binary = "^2.9.3" # Needed for postgres
-pandas = "^1.4.3"
-
+python = "^3.8" 
+python-dotenv = "^0.20.0" 
+ukrdc-sqla = "^1.10.0" 
 
 [tool.poetry.dev-dependencies]
+bandit = "^1.7.4"
 black = {version = "^22.1", allow-prereleases = true}
+coverage = {extras = ["toml"], version = "^6.4"}
+mypy = "^0.971"
+pandas-stubs = "*"
+pylint = "^2.15.0"
+pytest = "^7.1.2"
+pytest-postgresql = "^4.1.1"
+sqlalchemy-stubs = "*"
 tox = "^3.24.5"
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0"]
+
+[tool.pylint.'MESSAGES CONTROL']
+# unsubscriptable-object is disabled until proper Python 3.9 support is fixed in PyLint
+disable = "fixme, missing-module-docstring, missing-class-docstring, too-few-public-methods, line-too-long"
+max-line-length = 88
+
+[tool.isort]
+ensure_newline_before_comments = true
+force_grid_wrap = 0
+include_trailing_comma = true
+line_length = 88
+multi_line_output = 3
+use_parentheses = true
