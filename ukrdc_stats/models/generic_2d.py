@@ -34,6 +34,7 @@ class TimeSeries2dData(BaseModel):
 
     x: List[datetime]
     y: List[Union[int, float]]
+    error_y: Optional[List[Union[int, float]]] = None
 
 
 class TimeSeries2dMetadata(Basic2dMetadata):
@@ -65,6 +66,8 @@ class Numeric2dData(BaseModel):
 
     x: List[Union[int, float]]
     y: List[Union[int, float]]
+    error_x: Optional[List[Union[int, float]]] = None
+    error_y: Optional[List[Union[int, float]]] = None
 
 
 class Numeric2dMetadata(Basic2dMetadata):
@@ -97,6 +100,7 @@ class Labelled2dData(BaseModel):
 
     x: List[str]
     y: List[Union[int, float]]
+    error_y: Optional[List[Union[int, float]]] = None
 
 
 class Labelled2dMetadata(Basic2dMetadata):
