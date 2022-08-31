@@ -3,8 +3,4 @@
 # Utility functions to handle bitty things
 from . import demographics, models, utils
 
-__all__ = [
-    "demographics",
-    "utils",
-    "models",
-]
+__all__ = ["demographics", "utils", "models"]
