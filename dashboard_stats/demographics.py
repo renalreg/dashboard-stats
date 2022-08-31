@@ -1,11 +1,8 @@
-from ukrdc_sqla.ukrdc import Code, Patient, Treatment
-from sqlalchemy.orm import aliased
+from ukrdc_sqla.ukrdc import Patient, Treatment
 from sqlalchemy import select
-import dashboard_stats.utils as ut
-import dashboard_stats.output_classes as oc
+import dashboard_stats.models as oc
 
 import pandas as pd
-import numpy as np
 import datetime as dt
 
 
@@ -67,46 +64,46 @@ class Demog:
         ethnic_group_code = make_hist("ethnicgroupcode")
         occupation = make_hist("occupationcode")
 
-        # build pydantic object
+        # Build output object
 
-        self.patient_demog = oc.bars(
+        self.patient_demog = oc.BarList(
             pop=pop_size,
-            bar_list=[
-                {
-                    "data": {
-                        "labels": [item for item in gender.index],
-                        "values": [item[0] for item in gender.values],
-                    },
-                    "layout": {"title": "Gender"},
-                },
-                {
-                    "data": {
-                        "labels": [item for item in birth_country.index],
-                        "values": [item[0] for item in birth_country.values],
-                    },
-                    "layout": {"title": "Birth Country"},
-                },
-                {
-                    "data": {
-                        "labels": [item for item in primary_language.index],
-                        "values": [item[0] for item in primary_language.values],
-                    },
-                    "layout": {"title": "Primary Language"},
-                },
-                {
-                    "data": {
-                        "labels": [item for item in ethnic_group_code.index],
-                        "values": [item[0] for item in ethnic_group_code.values],
-                    },
-                    "layout": {"title": "Ethnic Group"},
-                },
-                {
-                    "data": {
-                        "labels": [item for item in occupation.index],
-                        "values": [item[0] for item in occupation.values],
-                    },
-                    "layout": {"title": "Occupation"},
-                },
+            bars=[
+                oc.Bar(
+                    data=oc.Data(
+                        labels=[item for item in gender.index],
+                        values=[item[0] for item in gender.values],
+                    ),
+                    layout=oc.Layout(title="Gender"),
+                ),
+                oc.Bar(
+                    data=oc.Data(
+                        labels=[item for item in birth_country.index],
+                        values=[item[0] for item in birth_country.values],
+                    ),
+                    layout=oc.Layout(title="Birth Country"),
+                ),
+                oc.Bar(
+                    data=oc.Data(
+                        labels=[item for item in primary_language.index],
+                        values=[item[0] for item in primary_language.values],
+                    ),
+                    layout=oc.Layout(title="Primary Language"),
+                ),
+                oc.Bar(
+                    data=oc.Data(
+                        labels=[item for item in ethnic_group_code.index],
+                        values=[item[0] for item in ethnic_group_code.values],
+                    ),
+                    layout=oc.Layout(title="Ethnic Group"),
+                ),
+                oc.Bar(
+                    data=oc.Data(
+                        labels=[item for item in occupation.index],
+                        values=[item[0] for item in occupation.values],
+                    ),
+                    layout=oc.Layout(title="Occupation"),
+                ),
             ],
         )
 
