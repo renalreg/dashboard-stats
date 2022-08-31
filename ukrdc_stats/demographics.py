@@ -4,7 +4,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, Treatment
 
-from dashboard_stats.models import Bar, BarList, Data, Layout
+from .models import Bar, BarList, Data, Layout
 
 
 class PatientDemographicStats:
