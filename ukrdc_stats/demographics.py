@@ -1,11 +1,13 @@
 import datetime as dt
-from typing import Optional
+from typing import Optional, List
+from ukrdc_stats.utils import age_from_dob
 
 import pandas as pd
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, Treatment
 from sqlalchemy import select, and_
+
 
 from .models.generic_2d import (
     Labelled2d,
@@ -24,7 +26,7 @@ class DemographicsStats(BaseModel):
     birth_country: Labelled2d
     primary_language: Labelled2d
     ethnic_group_code: Labelled2d
-
+    age: Labelled2d
     metadata: DemographicsMetadata
 
 
@@ -32,7 +34,11 @@ class DemographicsCalculator:
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(
-        self, session: Session, facility: str, date: dt.datetime = dt.datetime.today()
+        self,
+        session: Session,
+        facility: str,
+        date: dt.datetime = dt.datetime.today(),
+        modality_list: List[str] = None,
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
@@ -45,6 +51,12 @@ class DemographicsCalculator:
         self.session: Session = session
         self.facility: str = facility
         self.date: dt.datetime = date
+        self.modality_list: List[str]
+
+        if modality_list:
+            self.modality_list = modality_list
+        else:
+            self.modality_list = None
 
         # Immediately run the patient cohort query, so it's ready for re-use
         self.patient_cohort: pd.DataFrame = self._extract_patient_cohort()
@@ -79,8 +91,19 @@ class DemographicsCalculator:
             .count()
         )
 
-    def hello(self):
-        print | ("helloworld")
+    def _make_age_histogram(self, age_bins: List[int]):
+
+        # make column with ages of patients
+        self.patient_cohort["age"] = self.patient_cohort["birthtime"].apply(
+            lambda dob: age_from_dob(self.date, dob)
+        )
+
+        # bin cohort on age
+        binned_data = self.patient_cohort[["pid", "age"]].drop_duplicates()
+        binned_data["bins"] = pd.cut(binned_data.age, age_bins)
+        histogram = binned_data.groupby(["bins"])["bins"].count().values
+
+        return histogram
 
     def extract_stats(self):
         """
@@ -90,13 +113,17 @@ class DemographicsCalculator:
         # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
         pop_size = len(self.patient_cohort[["pid"]].drop_duplicates())
 
-        gender = self._make_patient_histogram("gender")
+        gender = self._make_patient_histogram()
         birth_country = self._make_patient_histogram("countryofbirth")
         primary_language = self._make_patient_histogram("primarylanguagecode")
         ethnic_group_code = self._make_patient_histogram("ethnicgroupcode")
 
-        # Build output object
+        age_bins = [18, 28, 38, 48, 58, 68, 78, 120]
+        age = self._make_age_histogram(age_bins)
+        age_labels = [f"{age_bins[i]}-{age_bins[i+1]-1}" for i in range(len(age) - 1)]
+        age_labels.append("78+")
 
+        # Build output object
         return DemographicsStats(
             metadata=DemographicsMetadata(population=pop_size),
             gender=Labelled2d(
@@ -141,5 +168,12 @@ class DemographicsCalculator:
                     x=list(ethnic_group_code.index),
                     y=[item[0] for item in ethnic_group_code.values],
                 ),
+            ),
+            age=Labelled2d(
+                metadata=Labelled2dMetadata(
+                    title="Age Distribution",
+                    axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
+                ),
+                data=Labelled2dData(x=age_labels, y=list(age)),
             ),
         )

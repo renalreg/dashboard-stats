@@ -1,7 +1,7 @@
 import datetime as dt
 
 
-def age_from_dob(date: dt.date, dob: dt.date):
+def age_from_dob(date: dt.date, dob: dt.date) -> int:
     """_summary_
 
     Args:
