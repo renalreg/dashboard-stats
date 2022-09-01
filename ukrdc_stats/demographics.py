@@ -1,12 +1,16 @@
 import datetime as dt
 from typing import Optional, List
+import pandas as pd
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select, and_
+from ukrdc_sqla.ukrdc import Patient, Treatment
+
+from pydantic import BaseModel
+
 from ukrdc_stats.utils import age_from_dob
 
-import pandas as pd
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import Patient, Treatment
-from sqlalchemy import select, and_
+
 
 
 from .models.generic_2d import (
@@ -74,8 +78,8 @@ class DemographicsCalculator:
                 and_(
                     Treatment.health_care_facility_code == self.facility,
                     (Treatment.from_time < self.date),
-                    (Treatment.to_time == None) | (Treatment.to_time >= self.date),
-                    (Patient.death_time >= self.date) | (Patient.death_time == None),
+                    (Treatment.to_time.is_(None)) | (Treatment.to_time >= self.date),
+                    (Patient.death_time >= self.date) | (Patient.death_time.is_(None)),
                 )
             )
         )
@@ -113,7 +117,7 @@ class DemographicsCalculator:
         # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
         pop_size = len(self.patient_cohort[["pid"]].drop_duplicates())
 
-        gender = self._make_patient_histogram()
+        gender = self._make_patient_histogram("gender")
         birth_country = self._make_patient_histogram("countryofbirth")
         primary_language = self._make_patient_histogram("primarylanguagecode")
         ethnic_group_code = self._make_patient_histogram("ethnicgroupcode")
