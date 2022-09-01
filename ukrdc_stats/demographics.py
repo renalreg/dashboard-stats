@@ -11,8 +11,6 @@ from pydantic import BaseModel
 from ukrdc_stats.utils import age_from_dob
 
 
-
-
 from .models.generic_2d import (
     Labelled2d,
     Labelled2dData,
@@ -42,7 +40,7 @@ class DemographicsCalculator:
         session: Session,
         facility: str,
         date: dt.datetime = dt.datetime.today(),
-        modality_list: List[str] = None,
+        modality_list=None,
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
@@ -55,7 +53,7 @@ class DemographicsCalculator:
         self.session: Session = session
         self.facility: str = facility
         self.date: dt.datetime = date
-        self.modality_list: List[str]
+        self.modality_list = None
 
         if modality_list:
             self.modality_list = modality_list
@@ -73,9 +71,10 @@ class DemographicsCalculator:
         # select all patients with modalities that haven't finished
         patient_query = (
             select(Patient)
-            .join(Treatment, Treatment.pid == Patient.pid)
+            .join(Treatment)
             .where(
                 and_(
+                    Treatment.pid == Patient.pid,
                     Treatment.health_care_facility_code == self.facility,
                     (Treatment.from_time < self.date),
                     (Treatment.to_time.is_(None)) | (Treatment.to_time >= self.date),
