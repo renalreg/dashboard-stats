@@ -66,15 +66,16 @@ class DemographicsCalculator:
     def _extract_patient_cohort(self) -> pd.DataFrame:
         """
         Extracts the patient cohort from the database into a pandas dataframe
+        TODO:
+            - Add ability to filter on modality
         """
 
         # select all patients with modalities that haven't finished
         patient_query = (
-            select(Patient)
-            .join(Treatment)
+            select(Patient)  # type:ignore
+            .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .where(
                 and_(
-                    Treatment.pid == Patient.pid,
                     Treatment.health_care_facility_code == self.facility,
                     (Treatment.from_time < self.date),
                     (Treatment.to_time.is_(None)) | (Treatment.to_time >= self.date),

@@ -14,7 +14,9 @@ pandas = "^1.4.3"
 psycopg2-binary = "^2.9.3" # Needed for postgres
 pydantic = "^1.10.1" 
 python = "^3.8" 
-ukrdc-sqla = "^1.10.0" 
+ukrdc-sqla = "^1.11.0"
+
+
 
 
 [tool.poetry.dev-dependencies]
@@ -27,8 +29,13 @@ pylint = "^2.15.0"
 pytest = "^7.1.2"
 pytest-postgresql = "^4.1.1"
 python-dotenv = "^0.20.0"
-sqlalchemy-stubs = "*"
+sqlalchemy2-stubs = "*"
 tox = "^3.24.5"
+lxml = "^4.9.1"
+ipykernel = "^6.15.2"
+plotly = "^5.10.0"
+ipywidgets = "^8.0.1"
+nbformat = "^5.4.0"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
