@@ -1,10 +1,17 @@
 import tempfile
+import json
+from xml.etree.ElementInclude import include
 
 import pytest
 from pytest_postgresql import factories
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 from ukrdc_sqla.ukrdc import Base as UKRDC3Base
+
+from ukrdc_sqla.ukrdc import PatientRecord
+
+
+from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 
 # Using the factory to create a postgresql instance
 socket_dir = tempfile.TemporaryDirectory()
@@ -33,3 +40,23 @@ def ukrdc3_session(postgresql_my):
 
     # Returnt the test session
     return ukrdc_sessionmaker()
+
+
+def ukrdc_add_data(session: Session):
+    """Adds fake data to the test UKRDC
+
+    Args:
+        session (Session): ukrdc test session.
+    """
+
+    class PatientRecordSchema(SQLAlchemyAutoSchema):
+        class Meta:
+            model = (PatientRecord,)
+            include_fk = (True,)
+            include_relationships = True
+
+    dataschema = PatientRecordSchema()
+
+    # loads serialised data for testing
+    with open('test_data.json') as test_data_dictionary:
+        test_data = dataschema.load(test_data_dictionary)

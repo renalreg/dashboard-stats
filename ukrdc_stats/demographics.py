@@ -4,7 +4,7 @@ import pandas as pd
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
-from ukrdc_sqla.ukrdc import Patient, Treatment
+from ukrdc_sqla.ukrdc import Patient, Treatment, PatientRecord
 
 from pydantic import BaseModel
 
@@ -73,6 +73,7 @@ class DemographicsCalculator:
         # select all patients with modalities that haven't finished
         patient_query = (
             select(Patient)  # type:ignore
+            .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .where(
                 and_(
