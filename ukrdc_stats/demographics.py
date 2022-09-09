@@ -77,6 +77,7 @@ class DemographicsCalculator:
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .where(
                 and_(
+                    PatientRecord.sendingextract == "UKRDC",
                     Treatment.health_care_facility_code == self.facility,
                     (Treatment.from_time < self.date),
                     (Treatment.to_time.is_(None)) | (Treatment.to_time >= self.date),
