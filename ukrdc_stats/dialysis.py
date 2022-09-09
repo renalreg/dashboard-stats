@@ -6,7 +6,7 @@ import pandas as pd
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, or_
-from ukrdc_sqla.ukrdc import Patient, Treatment
+from ukrdc_sqla.ukrdc import Patient, PatientRecord, Treatment
 from ukrdc_stats.utils import dob_cutoff_from_age
 
 
@@ -49,6 +49,7 @@ class DialysisStatsCalculator:
         patient_query = (
             select(Patient, Treatment)  # type:ignore
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
+            .join(PatientRecord, PatientRecord.pid == Patient.pid)  # type:ignore
             .where(
                 and_(
                     # filter for facility
@@ -56,6 +57,7 @@ class DialysisStatsCalculator:
                     # ensure date of birth is within bracket
                     Patient.birth_time > self.dob_bracket[0],
                     Patient.birth_time < self.dob_bracket[1],
+                    PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
                         Patient.dead.is_(None), Patient.death_time > self.timewindow[0]
