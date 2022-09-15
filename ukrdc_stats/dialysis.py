@@ -79,9 +79,4 @@ class DialysisStatsCalculator:
 
     def _incident_prevelent(self):
 
-        print(
-            """
-        Modifies the patient cohort dataframe to include information on incidence and
-        prevelence.
-        """
-        )
+        return
