@@ -1,10 +1,10 @@
 import datetime as dt
-from typing import Optional, List
+from typing import Optional
 import pandas as pd
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
-from ukrdc_sqla.ukrdc import Patient, Treatment, PatientRecord
+from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
 from pydantic import BaseModel
 
@@ -35,13 +35,7 @@ class DemographicsStats(BaseModel):
 class DemographicsCalculator:
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
-    def __init__(
-        self,
-        session: Session,
-        facility: str,
-        date: dt.datetime = dt.datetime.today(),
-        modality_list=None,
-    ):
+    def __init__(self, session: Session, facility: str):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
         Args:
@@ -52,13 +46,8 @@ class DemographicsCalculator:
 
         self.session: Session = session
         self.facility: str = facility
-        self.date: dt.datetime = date
         self.modality_list = None
-
-        if modality_list:
-            self.modality_list = modality_list
-        else:
-            self.modality_list = None
+        self.date: dt.datetime = dt.datetime.today()
 
         # Immediately run the patient cohort query, so it's ready for re-use
         self.patient_cohort: pd.DataFrame = self._extract_patient_cohort()
@@ -74,14 +63,10 @@ class DemographicsCalculator:
         patient_query = (
             select(Patient)  # type:ignore
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
-            .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .where(
                 and_(
                     PatientRecord.sendingextract == "UKRDC",
-                    Treatment.health_care_facility_code == self.facility,
-                    (Treatment.from_time < self.date),
-                    (Treatment.to_time.is_(None)) | (Treatment.to_time >= self.date),
-                    (Patient.death_time >= self.date) | (Patient.death_time.is_(None)),
+                    PatientRecord.sendingfacility == self.facility,
                 )
             )
         )
@@ -97,20 +82,6 @@ class DemographicsCalculator:
             .count()
         )
 
-    def _make_age_histogram(self, age_bins: List[int]):
-
-        # make column with ages of patients
-        self.patient_cohort["age"] = self.patient_cohort["birthtime"].apply(
-            lambda dob: age_from_dob(self.date, dob)
-        )
-
-        # bin cohort on age
-        binned_data = self.patient_cohort[["pid", "age"]].drop_duplicates()
-        binned_data["bins"] = pd.cut(binned_data.age, age_bins)
-        histogram = binned_data.groupby(["bins"])["bins"].count().values
-
-        return histogram
-
     def extract_stats(self):
         """
         Extract demographic statistics from the patient cohort dataframe
@@ -124,10 +95,11 @@ class DemographicsCalculator:
         primary_language = self._make_patient_histogram("primarylanguagecode")
         ethnic_group_code = self._make_patient_histogram("ethnicgroupcode")
 
-        age_bins = [18, 28, 38, 48, 58, 68, 78, 120]
-        age = self._make_age_histogram(age_bins)
-        age_labels = [f"{age_bins[i]}-{age_bins[i+1]-1}" for i in range(len(age) - 1)]
-        age_labels.append("78+")
+        # add column with ages and calculate histogram
+        self.patient_cohort["age"] = self.patient_cohort["birthtime"].apply(
+            lambda dob: age_from_dob(self.date, dob)
+        )
+        age = self._make_patient_histogram("age")
 
         # Build output object
         return DemographicsStats(
@@ -180,6 +152,8 @@ class DemographicsCalculator:
                     title="Age Distribution",
                     axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
                 ),
-                data=Labelled2dData(x=age_labels, y=list(age)),
+                data=Labelled2dData(
+                    x=list(age.index), y=[item[0] for item in age.values]
+                ),
             ),
         )
