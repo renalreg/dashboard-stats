@@ -92,9 +92,6 @@ class Numeric2d(BaseModel):
     data: Numeric2dData
 
 
-# Labelled
-
-
 class Labelled2dData(BaseModel):
     """
     x-y data for a labelled plot
