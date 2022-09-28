@@ -33,6 +33,7 @@ class DialysisStats(BaseModel):
     incident_home_therapies: LabelledNetwork
     prevalent_home_therapies: LabelledNetwork
     incentre_dialysis_frequency: Labelled2d
+    incident_initial_access: Labelled2d
 
 
 class DialysisBiomarkers(BaseModel):
@@ -72,6 +73,7 @@ class DialysisStatsCalculator:
                 Patient.pid,
                 Treatment.admit_reason_code,
                 Treatment.qbl05,
+                Treatment.hdp04,
                 Treatment.from_time,
                 Treatment.to_time,
                 Patient.death_time,
@@ -307,6 +309,7 @@ class DialysisStatsCalculator:
                 link=prevalent_vertices,
             ),
             incentre_dialysis_frequency=self._dialysis_frequency(),
+            incident_initial_access=self._calculate_access_incident(),
         )
 
     def extract_biomarkers(self):
@@ -441,4 +444,44 @@ class DialysisStatsCalculator:
             x=times,
             y=ids,
             z=results,
+        )
+
+    def _calculate_access_incident(self):
+
+        window = (
+            select(
+                PatientRecord.ukrdcid,
+                DialysisSession.procedure_time,
+                DialysisSession.qhd20,
+                func.rank()
+                .over(
+                    order_by=DialysisSession.procedure_time,
+                    partition_by=PatientRecord.ukrdcid,
+                )
+                .label("rnk"),
+            )
+            .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+            .where(
+                PatientRecord.ukrdcid.in_(
+                    self.patient_cohort[self.patient_cohort.incident == True].ukrdcid
+                )
+            )
+        ).subquery()
+
+        initial_access_query = (
+            select(window.c.qhd20, func.count(window.c.ukrdcid).label("no"))
+            .group_by(window.c.qhd20)
+            .where(window.c.rnk == 1)
+        )
+
+        initial_access_data = pd.read_sql(initial_access_query, self.session.bind)
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Initial Vascular Access of Incident Patients",
+                axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=list(initial_access_data.qhd20), y=list(initial_access_data.no)
+            ),
         )
