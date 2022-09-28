@@ -39,6 +39,7 @@ class DialysisStats(BaseModel):
 class DialysisBiomarkers(BaseModel):
     incident_patients_haemoglobin: TimeSeries3dData
     prevalent_patients_egfr: TimeSeries3dData
+    CKD_stage: Labelled2d
 
 
 class DialysisStatsCalculator:
@@ -58,6 +59,7 @@ class DialysisStatsCalculator:
         self.facility: str = facility
         self.timewindow: List[dt.datetime] = timewindow
         self.patient_cohort = self._extract_patient_cohort()
+        self.creatanine_results = None
         self._incident_prevelent()
 
     def _extract_patient_cohort(self) -> pd.DataFrame:
@@ -321,6 +323,7 @@ class DialysisStatsCalculator:
             prevalent_patients_egfr=self._calculate_egfr(
                 filter=self.patient_cohort.prevalent == True
             ),
+            CKD_stage=self._CKD_stage(),
         )
 
     def _calculate_egfr(self, filter: List[Boolean]):
@@ -372,7 +375,7 @@ class DialysisStatsCalculator:
             map[id] = i
 
         result_data["egfr_rank"] = result_data.ukrdcid.map(map)
-
+        self.creatanine_results = result_data
         # print(result_data.head())
         # rint(result_data.rank)
 
@@ -396,6 +399,54 @@ class DialysisStatsCalculator:
             egfr = None
 
         return egfr
+
+    def _CKD_stage(self):
+
+        # rank the eGFR dates
+        self.creatanine_results["date_rank"] = (
+            self.creatanine_results.groupby(["ukrdcid"], as_index=False)
+            .rank(method="first", ascending=False)
+            .enteredon
+        )
+
+        # count stage of CKD
+
+        other = len(
+            self.creatanine_results[
+                (self.creatanine_results.date_rank == 1.0)
+                & (self.creatanine_results.egfr > 30)
+            ]
+        )
+
+        G4 = len(
+            self.creatanine_results[
+                (self.creatanine_results.date_rank == 1.0)
+                & (self.creatanine_results.egfr < 30)
+                & (self.creatanine_results.egfr > 15)
+            ]
+        )
+
+        G5 = len(
+            self.creatanine_results[
+                (self.creatanine_results.date_rank == 1.0)
+                & (self.creatanine_results.egfr < 15)
+            ]
+        )
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="CKD Stage Based on Most Recent eGFR",
+                axis_titles=AxisLabels2d(x="eGFR", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=[
+                    "eGFR > 30 mL/min/1.73m^2",
+                    "15<eGFR < 30 mL/min/1.73m^2",
+                    "eGFR < 15 mL/min/1.73m^2",
+                ],
+                y=[other, G4, G5],
+            ),
+        )
 
     def _calculate_haemoglobin(self, filter: List[Boolean] = True):
 
