@@ -1,31 +1,31 @@
-from cmath import nan
 import datetime as dt
-from importlib.abc import PathEntryFinder
+from cmath import nan
 from typing import Dict, List, Tuple
 from unittest import result
 from xmlrpc.client import Boolean
 
-
-import pandas as pd
 import numpy as np
-
+import pandas as pd
+from pydantic import BaseModel
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, or_, func
-from ukrdc_sqla.ukrdc import Patient, PatientRecord, Treatment, DialysisSession
-from ukrdc_sqla.ukrdc import LabOrder, ResultItem
-from ukrdc_stats.utils import dob_cutoff_from_age
+from ukrdc_sqla.ukrdc import (
+    DialysisSession,
+    LabOrder,
+    Patient,
+    PatientRecord,
+    ResultItem,
+    Treatment,
+)
 
-from .models.networks import LabelledNetwork, Nodes, Vertices, NetworkMetaData
 from .models.generic_2d import (
+    AxisLabels2d,
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
-    AxisLabels2d,
 )
-
-from .models.maps import TimeSeries3dData, AxisLabel3d, Basic3dMetadata, TimeSeries3d
-
-from pydantic import BaseModel
+from .models.maps import TimeSeries3dData
+from .models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
 
 
 class DialysisStats(BaseModel):
