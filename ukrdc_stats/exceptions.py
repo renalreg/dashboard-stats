@@ -1,0 +1,2 @@
+class NoCohortError(ValueError):
+    pass
