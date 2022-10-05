@@ -56,23 +56,21 @@ def _calculate_frequency(
 class DialysisStatsCalculator:
     """class to calcuate metrics associated with dialysis modalities"""
 
-    def __init__(self, session: Session, facility: str, timewindow: List[dt.datetime]):
+    def __init__(self, session: Session, facility: str, time_window: List[dt.datetime]):
         """Dialysis stats object is produced
 
         Args:
             session (Session): _description_
             facility (str): _description_
-            timewindow (list): _description_
+            time_window (list): _description_
             agewindow (list): _description_
         """
 
         self.session: Session = session
         self.facility: str = facility
-        self.timewindow: List[dt.datetime] = timewindow
+        self.time_window: List[dt.datetime] = time_window
 
-        self.patient_cohort: Optional[
-            pd.DataFrame
-        ] = None  # = self._extract_patient_cohort()
+        self.patient_cohort: Optional[pd.DataFrame] = None
 
     def _extract_base_patient_cohort(self) -> pd.DataFrame:
         """Extract a base patient cohort dataframe from the database
@@ -102,7 +100,7 @@ class DialysisStatsCalculator:
                     PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
-                        Patient.dead.is_(None), Patient.death_time > self.timewindow[0]
+                        Patient.dead.is_(None), Patient.death_time > self.time_window[0]
                     ),
                     # filter on dialysis modalities
                     or_(
@@ -135,12 +133,12 @@ class DialysisStatsCalculator:
         # If patients are alive and have not died or been discharged count them as prevelent
         base_cohort["prevalent"] = (
             pd.isnull(base_cohort.deathtime)
-            | (base_cohort.deathtime > self.timewindow[1])
-        ) & ((base_cohort.totime > self.timewindow[1]) | pd.isnull(base_cohort.totime))
+            | (base_cohort.deathtime > self.time_window[1])
+        ) & ((base_cohort.totime > self.time_window[1]) | pd.isnull(base_cohort.totime))
 
         # Get a list of patients to check for incidence status
         incident_ids = base_cohort[["ukrdcid"]][
-            base_cohort.fromtime > self.timewindow[0]
+            base_cohort.fromtime > self.time_window[0]
         ].drop_duplicates()
 
         # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window
@@ -152,7 +150,7 @@ class DialysisStatsCalculator:
                     Treatment.admit_reason_code.in_(
                         ["1", "2", "3", "5", "11", "12", "20", "29", "78"]
                     ),
-                    Treatment.from_time < self.timewindow[0],
+                    Treatment.from_time < self.time_window[0],
                     PatientRecord.ukrdcid.in_(incident_ids.ukrdcid.to_numpy()),
                 )
             )
@@ -260,8 +258,8 @@ class DialysisStatsCalculator:
             .where(
                 and_(
                     PatientRecord.ukrdcid.in_(patient_list),
-                    DialysisSession.procedure_time > self.timewindow[0],
-                    DialysisSession.procedure_time < self.timewindow[1],
+                    DialysisSession.procedure_time > self.time_window[0],
+                    DialysisSession.procedure_time < self.time_window[1],
                 )
             )
             .group_by(PatientRecord.ukrdcid)
@@ -322,8 +320,8 @@ class DialysisStatsCalculator:
                 and_(
                     PatientRecord.ukrdcid.in_(filtered_patient_ids),
                     ResultItem.service_id == "QBLEB",
-                    LabOrder.entered_on > self.timewindow[0],
-                    LabOrder.entered_on < self.timewindow[1],
+                    LabOrder.entered_on > self.time_window[0],
+                    LabOrder.entered_on < self.time_window[1],
                 )
             )
         )

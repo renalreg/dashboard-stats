@@ -20,7 +20,7 @@ class AxisLabel3d(BaseModel):
 
 class Basic3dMetadata(BaseModel):
     title: Optional[str] = None
-    axis_titles: AxisLabel3d = None
+    axis_titles: Optional[AxisLabel3d] = None
 
 
 class TimeSeries3d(BaseModel):
