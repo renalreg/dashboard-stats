@@ -395,11 +395,14 @@ class DialysisStatsCalculator:
 
         all_patients_nodes, all_patients_vertices = self._therapy_types()
         incident_nodes, incident_vertices = self._therapy_types(
-            self.patient_cohort.incident == True  # pylint: disable=singleton-comparison
+            # pylint: disable=singleton-comparison
+            self.patient_cohort.incident
+            == True
         )
         prevalent_nodes, prevalent_vertices = self._therapy_types(
+            # pylint: disable=singleton-comparison
             self.patient_cohort.prevalent
-            == True  # pylint: disable=singleton-comparison
+            == True
         )
 
         return DialysisStats(
