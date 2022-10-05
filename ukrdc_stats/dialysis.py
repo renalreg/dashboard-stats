@@ -365,6 +365,7 @@ class DialysisStatsCalculator:
             .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
             .where(
                 PatientRecord.ukrdcid.in_(
+                    # pylint: disable=singleton-comparison
                     self.patient_cohort[self.patient_cohort.incident == True].ukrdcid
                 )
             )
@@ -394,10 +395,11 @@ class DialysisStatsCalculator:
 
         all_patients_nodes, all_patients_vertices = self._therapy_types()
         incident_nodes, incident_vertices = self._therapy_types(
-            self.patient_cohort.incident == True
+            self.patient_cohort.incident == True  # pylint: disable=singleton-comparison
         )
         prevalent_nodes, prevalent_vertices = self._therapy_types(
-            self.patient_cohort.prevalent == True
+            self.patient_cohort.prevalent
+            == True  # pylint: disable=singleton-comparison
         )
 
         return DialysisStats(
