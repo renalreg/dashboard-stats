@@ -49,8 +49,7 @@ def _calculate_frequency(
 
     if delta_t > 0.0:
         return 7.0 * procedure_number / delta_t
-    else:
-        return None
+    return None
 
 
 class DialysisStatsCalculator:
