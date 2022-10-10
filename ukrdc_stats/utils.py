@@ -1,4 +1,4 @@
-from importlib import resources
+from pathlib import Path
 from typing import List
 import datetime as dt
 import pandas as pd
@@ -74,8 +74,9 @@ def nhs_data_lookup(item_name: str, code: List[str]) -> List[str]:
 
     code_file = "CDS V6-2 Type 020 - Outpatient Commissioning Data Set - Reference Data - V1.csv"
 
-    with resources.path("ukrdc_stats", code_file) as data:
-        codes = pd.read_csv(data, encoding="ISO-8859-1")
+    codes = pd.read_csv(
+        Path(__file__).parent.joinpath(code_file), encoding="ISO-8859-1"
+    )
 
     codes_desc = codes[
         (codes.Item_Name == item_name) & (codes.Code.isin(code))

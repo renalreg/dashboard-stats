@@ -14,30 +14,27 @@ pandas = "^1.4.3"
 psycopg2-binary = "^2.9.3" # Needed for postgres
 pydantic = "^1.10.1" 
 python = "^3.8" 
-ukrdc-sqla = "^1.11.0"
-
-
-
+ukrdc-sqla = "^1.11.0" 
 
 [tool.poetry.dev-dependencies]
 bandit = "^1.7.4"
 black = {version = "^22.1", allow-prereleases = true}
 coverage = {extras = ["toml"], version = "^6.4"}
+faker = "^14.2.0"
+ipykernel = "^6.15.2"
+ipywidgets = "^8.0.1"
+kaleido = "^0.2.1"
+lxml = "^4.9.1"
 mypy = "^0.971"
+nbformat = "^5.4.0"
 pandas-stubs = "*"
+plotly = "^5.10.0"
 pylint = "^2.15.0"
 pytest = "^7.1.2"
 pytest-postgresql = "^4.1.1"
 python-dotenv = "^0.20.0"
 sqlalchemy2-stubs = "^0.0.2a27"
 tox = "^3.24.5"
-lxml = "^4.9.1"
-ipykernel = "^6.15.2"
-plotly = "^5.10.0"
-ipywidgets = "^8.0.1"
-nbformat = "^5.4.0"
-kaleido = "^0.2.1"
-faker = "^14.2.0"
 
 [build-system]
 build-backend = "poetry.core.masonry.api"
