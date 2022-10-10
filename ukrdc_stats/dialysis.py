@@ -1,12 +1,11 @@
 import datetime as dt
-from typing import List, Optional, Tuple
+from typing import Literal, Tuple
 from xmlrpc.client import Boolean
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
-from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     DialysisSession,
     LabOrder,
@@ -15,6 +14,8 @@ from ukrdc_sqla.ukrdc import (
     ResultItem,
     Treatment,
 )
+from ukrdc_stats.abc import AbstractFacilityStatsCalculator
+from sqlalchemy.orm import Session
 
 from ukrdc_stats.exceptions import NoCohortError
 
@@ -36,12 +37,6 @@ class DialysisStats(BaseModel):
     incident_initial_access: Labelled2d
 
 
-class DialysisBiomarkers(BaseModel):
-    incident_patients_haemoglobin: TimeSeries3dData
-    prevalent_patients_egfr: TimeSeries3dData
-    CKD_stage: Labelled2d
-
-
 def _calculate_frequency(
     from_time: dt.datetime, to_time: dt.datetime, procedure_number: int
 ):
@@ -52,24 +47,20 @@ def _calculate_frequency(
     return None
 
 
-class DialysisStatsCalculator:
+class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
     """class to calcuate metrics associated with dialysis modalities"""
 
-    def __init__(self, session: Session, facility: str, time_window: List[dt.datetime]):
-        """Dialysis stats object is produced
+    def __init__(
+        self,
+        session: Session,
+        facility: str,
+        from_time: dt.datetime,
+        to_time: dt.datetime,
+    ):
+        super().__init__(session, facility)
 
-        Args:
-            session (Session): _description_
-            facility (str): _description_
-            time_window (list): _description_
-            agewindow (list): _description_
-        """
-
-        self.session: Session = session
-        self.facility: str = facility
-        self.time_window: List[dt.datetime] = time_window
-
-        self.patient_cohort: Optional[pd.DataFrame] = None
+        # Create a precisely 2 element time window tuple
+        self.time_window: Tuple[dt.datetime, dt.datetime] = (from_time, to_time)
 
     def _extract_base_patient_cohort(self) -> pd.DataFrame:
         """Extract a base patient cohort dataframe from the database
@@ -164,8 +155,8 @@ class DialysisStatsCalculator:
         # merge into patient cohort
         return pd.merge(base_cohort, incident_ids, on="ukrdcid")
 
-    def _therapy_types(
-        self, filter_expression: Boolean = True
+    def _calculate_therapy_types(
+        self, scope: Literal["all", "incident", "prevalent"]
     ) -> Tuple[Nodes, Vertices]:
         """
         Breakdown of dialysis patients on home and in-centre therapies.
@@ -173,45 +164,52 @@ class DialysisStatsCalculator:
         networks (this is essentially what a sankey plot is)
 
         Args:
-            filter (List[Boolean]): a filter to apply to the patient cohort.
+            filter (bool): a filter to apply to the patient cohort.
                 For example you could pass self.patient_cohort.incident == True
 
         Returns:
             Nodes, Vertices: pydantic classes containing calculated data
         """
-        if not self.patient_cohort:
+        if not self._patient_cohort:
             raise NoCohortError("No patient cohort has been extracted")
 
+        # Filter patient cohort based on incident, prevalent or all
+        patient_cohort: pd.Series
+        if scope == "all":
+            patient_cohort = self._patient_cohort[True]
+        elif scope == "incident":
+            patient_cohort = self._patient_cohort[self._patient_cohort.incident]
+        elif scope == "prevalent":
+            patient_cohort = self._patient_cohort[self._patient_cohort.prevalent]
+        else:
+            raise ValueError("Invalid scope")
+
         hosp_hd = len(
-            self.patient_cohort[
-                filter_expression
-                & self.patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
-                & (self.patient_cohort.qbl05 == "HOSP")
+            patient_cohort[
+                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                & (patient_cohort.qbl05 == "HOSP")
             ]["ukrdcid"].drop_duplicates()
         )
 
         home_hd = len(
-            self.patient_cohort[
-                filter_expression
-                & self.patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
-                & (self.patient_cohort.qbl05 == "HOME")
+            patient_cohort[
+                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                & (patient_cohort.qbl05 == "HOME")
             ]["ukrdcid"].drop_duplicates()
         )
 
         na_hd = len(
-            self.patient_cohort[
-                filter_expression
-                & self.patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
-                & self.patient_cohort.qbl05.isnull()
+            patient_cohort[
+                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                & patient_cohort.qbl05.isnull()
             ]["ukrdcid"].drop_duplicates()
         )
 
         # presumably all pd is done at home?
         home_pd = len(
-            self.patient_cohort[
-                filter_expression
-                & self.patient_cohort.admitreasoncode.isin(["11", "12"])
-            ]["ukrdcid"].drop_duplicates()
+            patient_cohort[patient_cohort.admitreasoncode.isin(["11", "12"])][
+                "ukrdcid"
+            ].drop_duplicates()
         )
 
         nodes = Nodes(
@@ -232,17 +230,17 @@ class DialysisStatsCalculator:
 
         return nodes, vertices
 
-    def _dialysis_frequency(self):
+    def _calculate_dialysis_frequency(self):
         """
         Calculate the frequency with which dialysis occurs
         """
-        if not self.patient_cohort:
+        if not self._patient_cohort:
             raise NoCohortError("No patient cohort has been extracted")
 
         # get list of hd patients
-        patient_list = self.patient_cohort[
-            (self.patient_cohort.admitreasoncode.isin(["1", "2", "3"]))
-            & (self.patient_cohort.qbl05 == "HOSP")
+        patient_list = self._patient_cohort[
+            (self._patient_cohort.admitreasoncode.isin(["1", "2", "3"]))
+            & (self._patient_cohort.qbl05 == "HOSP")
         ].ukrdcid.drop_duplicates()
 
         # get number of dialysis sessions per patient and the date of the first and last one
@@ -294,10 +292,10 @@ class DialysisStatsCalculator:
         )
 
     def _calculate_haemoglobin(self, filter_expression: Boolean = True):
-        if not self.patient_cohort:
+        if not self._patient_cohort:
             raise NoCohortError("No patient cohort has been extracted")
 
-        filtered_patient_ids = self.patient_cohort[
+        filtered_patient_ids = self._patient_cohort[
             filter_expression
         ].ukrdcid.drop_duplicates()
 
@@ -347,7 +345,7 @@ class DialysisStatsCalculator:
         )
 
     def _calculate_access_incident(self):
-        if not self.patient_cohort:
+        if not self._patient_cohort:
             raise NoCohortError("No patient cohort has been extracted")
 
         window = (
@@ -366,7 +364,7 @@ class DialysisStatsCalculator:
             .where(
                 PatientRecord.ukrdcid.in_(
                     # pylint: disable=singleton-comparison
-                    self.patient_cohort[self.patient_cohort.incident == True].ukrdcid
+                    self._patient_cohort[self._patient_cohort.incident == True].ukrdcid
                 )
             )
         ).subquery()
@@ -389,53 +387,53 @@ class DialysisStatsCalculator:
             ),
         )
 
-    def _calculate_stats(self):
-        if not self.patient_cohort:
+    def _calculate_all_home_therapies(self):
+        if not self._patient_cohort:
             raise NoCohortError("No patient cohort has been extracted")
 
-        all_patients_nodes, all_patients_vertices = self._therapy_types()
-        incident_nodes, incident_vertices = self._therapy_types(
-            # pylint: disable=singleton-comparison
-            self.patient_cohort.incident
-            == True
-        )
-        prevalent_nodes, prevalent_vertices = self._therapy_types(
-            # pylint: disable=singleton-comparison
-            self.patient_cohort.prevalent
-            == True
+        all_patients_nodes, all_patients_vertices = self._calculate_therapy_types("all")
+
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
+                title="Proportion of all Dialysis Patients on Home Therapies"
+            ),
+            node=all_patients_nodes,
+            link=all_patients_vertices,
         )
 
-        return DialysisStats(
-            all_patients_home_therapies=LabelledNetwork(
-                metadata=NetworkMetaData(
-                    title="Proportion of all Dialysis Patients on Home Therapies"
-                ),
-                node=all_patients_nodes,
-                link=all_patients_vertices,
+    def _calculate_incident_home_therapies(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        incident_nodes, incident_vertices = self._calculate_therapy_types("incident")
+
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
+                title="Proportion of Incident Patients on Home Therapies"
             ),
-            incident_home_therapies=LabelledNetwork(
-                metadata=NetworkMetaData(
-                    title="Proportion of Incident Patients on Home Therapies"
-                ),
-                node=incident_nodes,
-                link=incident_vertices,
+            node=incident_nodes,
+            link=incident_vertices,
+        )
+
+    def _calculate_prevalent_home_therapies(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        prevalent_nodes, prevalent_vertices = self._calculate_therapy_types("prevalent")
+
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
+                title="Proportion of Prevalent Patients on Home Therapies"
             ),
-            prevalent_home_therapies=LabelledNetwork(
-                metadata=NetworkMetaData(
-                    title="Proportion of Prevalent Patients on Home Therapies"
-                ),
-                node=prevalent_nodes,
-                link=prevalent_vertices,
-            ),
-            incentre_dialysis_frequency=self._dialysis_frequency(),
-            incident_initial_access=self._calculate_access_incident(),
+            node=prevalent_nodes,
+            link=prevalent_vertices,
         )
 
     def extract_patient_cohort(self):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
         """
-        self.patient_cohort = self._extract_incident_prevelent(
+        self._patient_cohort = self._extract_incident_prevelent(
             self._extract_base_patient_cohort()
         )
 
@@ -443,11 +441,21 @@ class DialysisStatsCalculator:
         """Extract all stats for the dialysis module
 
         Returns:
-            _type_: _description_
+            DialysisStats: Dialysis statistics object
         """
         # If we don't already have a patient cohort, extract one
-        if not self.patient_cohort:
+        if not self._patient_cohort:
             self.extract_patient_cohort()
 
-        # Calculate the stats
-        return self._calculate_stats()
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        # TODO: Do we want metadata like population size here?
+        #       See DemographicsCalculator.extract_stats
+        return DialysisStats(
+            all_patients_home_therapies=self._calculate_all_home_therapies(),
+            incident_home_therapies=self._calculate_incident_home_therapies(),
+            prevalent_home_therapies=self._calculate_prevalent_home_therapies(),
+            incentre_dialysis_frequency=self._calculate_dialysis_frequency(),
+            incident_initial_access=self._calculate_access_incident(),
+        )
