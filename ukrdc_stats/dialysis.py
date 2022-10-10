@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Union
 from xmlrpc.client import Boolean
 
 import numpy as np
@@ -170,13 +170,13 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         Returns:
             Nodes, Vertices: pydantic classes containing calculated data
         """
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         # Filter patient cohort based on incident, prevalent or all
-        patient_cohort: pd.Series
+        patient_cohort: Union[pd.DataFrame, pd.Series]
         if scope == "all":
-            patient_cohort = self._patient_cohort[True]
+            patient_cohort = self._patient_cohort
         elif scope == "incident":
             patient_cohort = self._patient_cohort[self._patient_cohort.incident]
         elif scope == "prevalent":
@@ -234,7 +234,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         """
         Calculate the frequency with which dialysis occurs
         """
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         # get list of hd patients
@@ -292,7 +292,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_haemoglobin(self, filter_expression: Boolean = True):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         filtered_patient_ids = self._patient_cohort[
@@ -345,7 +345,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_access_incident(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         window = (
@@ -388,7 +388,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_all_home_therapies(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         all_patients_nodes, all_patients_vertices = self._calculate_therapy_types("all")
@@ -402,7 +402,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_incident_home_therapies(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         incident_nodes, incident_vertices = self._calculate_therapy_types("incident")
@@ -416,7 +416,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_prevalent_home_therapies(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         prevalent_nodes, prevalent_vertices = self._calculate_therapy_types("prevalent")
@@ -444,10 +444,10 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             DialysisStats: Dialysis statistics object
         """
         # If we don't already have a patient cohort, extract one
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             self.extract_patient_cohort()
 
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         # TODO: Do we want metadata like population size here?

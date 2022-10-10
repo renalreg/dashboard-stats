@@ -90,7 +90,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         return pd.read_sql(patient_query, self.session.bind)
 
     def _calculate_gender(self) -> Labelled2d:
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         gender = _calculate_base_patient_histogram(self._patient_cohort, "gender")
@@ -107,7 +107,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_birth_country(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         birth_country = _calculate_base_patient_histogram(
@@ -127,7 +127,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_primary_language(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         primary_language = _calculate_base_patient_histogram(
@@ -147,7 +147,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_ethnic_group_code(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         ethnic_group_code = _calculate_base_patient_histogram(
@@ -167,7 +167,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_age(self):
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
@@ -198,10 +198,10 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
             DemographicsStats: Demographics statistics object
         """
         # If we don't already have a patient cohort, extract one
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             self.extract_patient_cohort()
 
-        if not self._patient_cohort:
+        if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
         # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
