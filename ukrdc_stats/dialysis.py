@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     DialysisSession,
     LabOrder,
@@ -14,9 +15,8 @@ from ukrdc_sqla.ukrdc import (
     ResultItem,
     Treatment,
 )
-from ukrdc_stats.abc import AbstractFacilityStatsCalculator
-from sqlalchemy.orm import Session
 
+from ukrdc_stats.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
 from .models.generic_2d import (
