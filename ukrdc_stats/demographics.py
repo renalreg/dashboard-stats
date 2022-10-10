@@ -7,6 +7,8 @@ from sqlalchemy import select, and_
 from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
 from pydantic import BaseModel
+from ukrdc_stats.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_stats.utils import age_from_dob
 
@@ -32,10 +34,28 @@ class DemographicsStats(BaseModel):
     metadata: DemographicsMetadata
 
 
-class DemographicsCalculator:
+def _calculate_base_patient_histogram(cohort: pd.DataFrame, group: str) -> pd.DataFrame:
+    """Extract a histogram of the patient cohort, grouped by the given column
+
+    Args:
+        cohort (pd.DataFrame): Patient cohort
+        group (str): Column to group by
+
+    Raises:
+        NoCohortError: If the patient cohort is empty
+
+    Returns:
+        pd.DataFrame: Histogram dataframe of the patient cohort
+    """
+    return cohort[["pid", group]].drop_duplicates().groupby([group]).count()
+
+
+class DemographicsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
-    def __init__(self, session: Session, facility: str):
+    def __init__(
+        self, session: Session, facility: str, date: Optional[dt.datetime] = None
+    ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
         Args:
@@ -43,21 +63,17 @@ class DemographicsCalculator:
             facility (str): Facility to calculate the
             date (datetime, optional): Date to calculate at. Defaults to today.
         """
+        super().__init__(session, facility)
 
-        self.session: Session = session
-        self.facility: str = facility
-        self.modality_list = None
-        self.date: dt.datetime = dt.datetime.today()
+        # Set the date to calculate at, defaulting to today
+        self.date: dt.datetime = date or dt.datetime.today()
 
-        # Immediately run the patient cohort query, so it's ready for re-use
-        self.patient_cohort: pd.DataFrame = self._extract_patient_cohort()
-
-    def _extract_patient_cohort(self) -> pd.DataFrame:
+    def _extract_base_patient_cohort(self) -> pd.DataFrame:
         """
         Extracts the patient cohort from the database into a pandas dataframe
-        TODO:
-            - Add ability to filter on modality
         """
+
+        # TODO: Add ability to filter on modality
 
         # select all patients with modalities that haven't finished
         patient_query = (
@@ -73,87 +89,130 @@ class DemographicsCalculator:
 
         return pd.read_sql(patient_query, self.session.bind)
 
-    def _make_patient_histogram(self, group: str) -> pd.DataFrame:
+    def _calculate_gender(self) -> Labelled2d:
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
 
-        return (
-            self.patient_cohort[["pid", group]]
-            .drop_duplicates()
-            .groupby([group])
-            .count()
+        gender = _calculate_base_patient_histogram(self._patient_cohort, "gender")
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Gender Distribution",
+                coding_standard_x="NHS_DATA_DICTIONARY",
+                axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=list(gender.index), y=[item[0] for item in gender.values]
+            ),
         )
 
-    def extract_stats(self):
-        """
-        Extract demographic statistics from the patient cohort dataframe
-        """
+    def _calculate_birth_country(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
 
-        # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
-        pop_size = len(self.patient_cohort[["pid"]].drop_duplicates())
+        birth_country = _calculate_base_patient_histogram(
+            self._patient_cohort, "countryofbirth"
+        )
 
-        gender = self._make_patient_histogram("gender")
-        birth_country = self._make_patient_histogram("countryofbirth")
-        primary_language = self._make_patient_histogram("primarylanguagecode")
-        ethnic_group_code = self._make_patient_histogram("ethnicgroupcode")
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Country of birth",
+                coding_standard_x="NHS_DATA_DICTIONARY",
+                axis_titles=AxisLabels2d(x="Country", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=list(birth_country.index),
+                y=[item[0] for item in birth_country.values],
+            ),
+        )
+
+    def _calculate_primary_language(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        primary_language = _calculate_base_patient_histogram(
+            self._patient_cohort, "primarylanguagecode"
+        )
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Primary language",
+                coding_standard_x="NHS_DATA_DICTIONARY",
+                axis_titles=AxisLabels2d(x="Language", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=list(primary_language.index),
+                y=[item[0] for item in primary_language.values],
+            ),
+        )
+
+    def _calculate_ethnic_group_code(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        ethnic_group_code = _calculate_base_patient_histogram(
+            self._patient_cohort, "ethnicgroupcode"
+        )
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Ethnic Group",
+                coding_standard_x="NHS_DATA_DICTIONARY",
+                axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
+            ),
+            data=Labelled2dData(
+                x=list(ethnic_group_code.index),
+                y=[item[0] for item in ethnic_group_code.values],
+            ),
+        )
+
+    def _calculate_age(self):
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
-        self.patient_cohort["age"] = self.patient_cohort["birthtime"].apply(
+        self._patient_cohort["age"] = self._patient_cohort["birthtime"].apply(
             lambda dob: age_from_dob(self.date, dob)
         )
-        age = self._make_patient_histogram("age")
+
+        age = _calculate_base_patient_histogram(self._patient_cohort, "age")
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Age Distribution",
+                axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
+            ),
+            data=Labelled2dData(x=list(age.index), y=[item[0] for item in age.values]),
+        )
+
+    def extract_patient_cohort(self):
+        """
+        Extract a complete patient cohort dataframe to be used in stats calculations
+        """
+        self._patient_cohort = self._extract_base_patient_cohort()
+
+    def extract_stats(self) -> DemographicsStats:
+        """Extract all stats for the demographics module
+
+        Returns:
+            DemographicsStats: Demographics statistics object
+        """
+        # If we don't already have a patient cohort, extract one
+        if not self._patient_cohort:
+            self.extract_patient_cohort()
+
+        if not self._patient_cohort:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
+        pop_size = len(self._patient_cohort[["pid"]].drop_duplicates())
 
         # Build output object
         return DemographicsStats(
             metadata=DemographicsMetadata(population=pop_size),
-            gender=Labelled2d(
-                metadata=Labelled2dMetadata(
-                    title="Gender Distribution",
-                    coding_standard_x="NHS_DATA_DICTIONARY",
-                    axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
-                ),
-                data=Labelled2dData(
-                    x=list(gender.index), y=[item[0] for item in gender.values]
-                ),
-            ),
-            birth_country=Labelled2d(
-                metadata=Labelled2dMetadata(
-                    title="Country of birth",
-                    coding_standard_x="NHS_DATA_DICTIONARY",
-                    axis_titles=AxisLabels2d(x="Country", y="No. of Patients"),
-                ),
-                data=Labelled2dData(
-                    x=list(birth_country.index),
-                    y=[item[0] for item in birth_country.values],
-                ),
-            ),
-            primary_language=Labelled2d(
-                metadata=Labelled2dMetadata(
-                    title="Primary language",
-                    coding_standard_x="NHS_DATA_DICTIONARY",
-                    axis_titles=AxisLabels2d(x="Language", y="No. of Patients"),
-                ),
-                data=Labelled2dData(
-                    x=list(primary_language.index),
-                    y=[item[0] for item in primary_language.values],
-                ),
-            ),
-            ethnic_group_code=Labelled2d(
-                metadata=Labelled2dMetadata(
-                    title="Ethnic Group",
-                    coding_standard_x="NHS_DATA_DICTIONARY",
-                    axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
-                ),
-                data=Labelled2dData(
-                    x=list(ethnic_group_code.index),
-                    y=[item[0] for item in ethnic_group_code.values],
-                ),
-            ),
-            age=Labelled2d(
-                metadata=Labelled2dMetadata(
-                    title="Age Distribution",
-                    axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
-                ),
-                data=Labelled2dData(
-                    x=list(age.index), y=[item[0] for item in age.values]
-                ),
-            ),
+            gender=self._calculate_gender(),
+            birth_country=self._calculate_birth_country(),
+            primary_language=self._calculate_primary_language(),
+            ethnic_group_code=self._calculate_ethnic_group_code(),
+            age=self._calculate_age(),
         )
