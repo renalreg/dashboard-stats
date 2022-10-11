@@ -18,10 +18,10 @@ ukrdc-sqla = "^1.11.0"
 
 [tool.poetry.group.dev.dependencies]
 black = {version = "^22.1", allow-prereleases = true}
+mypy = "^0.982"
 pandas-stubs = "*"
 pylint = "^2.15.0"
 sqlalchemy2-stubs = "^0.0.2a27"
-mypy = "^0.982"
 
 [tool.poetry.group.test.dependencies]
 # All tests will require the dev dependencies as well
@@ -29,6 +29,7 @@ bandit = "^1.7.4"
 coverage = {extras = ["toml"], version = "^6.4"}
 faker = "^14.2.0"
 pytest = "^7.1.2"
+pytest-cov = "^4.0.0"
 pytest-postgresql = "^4.1.1"
 tox = "^3.24.5"
 

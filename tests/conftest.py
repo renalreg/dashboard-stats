@@ -1,15 +1,10 @@
 import tempfile
-import json
-from xml.etree.ElementInclude import include
 
 import pytest
 from pytest_postgresql import factories
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from ukrdc_sqla.ukrdc import Base as UKRDC3Base
-
-from ukrdc_sqla.ukrdc import PatientRecord, Patient
-from faker import Faker
 
 # Using the factory to create a postgresql instance
 socket_dir = tempfile.TemporaryDirectory()
@@ -38,9 +33,3 @@ def ukrdc3_session(postgresql_my):
 
     # Returnt the test session
     return ukrdc_sessionmaker()
-
-
-def demographics_test_data(sesson:Session):
-
-
-def fake_patient(seed:int, age:int, session: Session):
