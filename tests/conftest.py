@@ -12,7 +12,7 @@ postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir=socket_d
 postgresql_my = factories.postgresql("postgresql_my_proc")
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture()
 def ukrdc3_session(postgresql_my):
     """
     Create a new function-scoped in-memory UKRDC3 database and return the session class
