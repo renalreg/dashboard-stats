@@ -1,3 +1,7 @@
+"""
+Common utility functions useful in multiple statistics
+"""
+
 from pathlib import Path
 from typing import List
 import datetime as dt
@@ -59,10 +63,13 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
 
 
 def nhs_data_lookup(item_name: str, code: List[str]) -> List[str]:
-    """Loads codes used by nhs data directory: https://nhs-digital.citizenspace.com/data-dictionary/nhs-dmds-reference-da/
-        TODO:
-            - unit test to check file is up to date?
-            - pydantic output
+    """
+    Loads codes used by nhs data directory
+        https://nhs-digital.citizenspace.com/data-dictionary/nhs-dmds-reference-da/
+
+    TODO:
+        - unit test to check file is up to date?
+        - pydantic output
 
     Args:
         item_name (str): name of item to be loaded (e.g Person_Gender_Code_Current)

@@ -1,3 +1,7 @@
+"""
+Patient cohort demographics stats calculator
+"""
+
 import datetime as dt
 from typing import Optional
 import pandas as pd

@@ -1,3 +1,7 @@
+"""
+Patient cohort dialysis stats calculator
+"""
+
 import datetime as dt
 from typing import Literal, Tuple, Union
 from xmlrpc.client import Boolean

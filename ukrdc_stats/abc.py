@@ -1,3 +1,7 @@
+"""
+Abstract base classes for the ukrdc_stats package
+"""
+
 from abc import ABC, abstractmethod
 from typing import Optional
 import pandas as pd

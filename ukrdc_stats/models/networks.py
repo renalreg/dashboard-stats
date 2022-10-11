@@ -1,3 +1,7 @@
+"""
+Pydantic classes for statistics which generate network graphs.
+"""
+
 from typing import List, Optional
 
 from pydantic import BaseModel

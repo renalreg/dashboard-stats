@@ -1,3 +1,7 @@
+"""
+Generic 2D data model for UKRDC stats
+"""
+
 from datetime import datetime
 from typing import List, Optional, Union
 
