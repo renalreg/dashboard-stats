@@ -31,8 +31,6 @@ class DemographicsMetadata(BaseModel):
 
 class DemographicsStats(BaseModel):
     gender: Labelled2d
-    birth_country: Labelled2d
-    primary_language: Labelled2d
     ethnic_group_code: Labelled2d
     age: Labelled2d
     metadata: DemographicsMetadata
@@ -110,46 +108,6 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
-    def _calculate_birth_country(self):
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        birth_country = _calculate_base_patient_histogram(
-            self._patient_cohort, "countryofbirth"
-        )
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="Country of birth",
-                coding_standard_x="NHS_DATA_DICTIONARY",
-                axis_titles=AxisLabels2d(x="Country", y="No. of Patients"),
-            ),
-            data=Labelled2dData(
-                x=list(birth_country.index),
-                y=[item[0] for item in birth_country.values],
-            ),
-        )
-
-    def _calculate_primary_language(self):
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        primary_language = _calculate_base_patient_histogram(
-            self._patient_cohort, "primarylanguagecode"
-        )
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="Primary language",
-                coding_standard_x="NHS_DATA_DICTIONARY",
-                axis_titles=AxisLabels2d(x="Language", y="No. of Patients"),
-            ),
-            data=Labelled2dData(
-                x=list(primary_language.index),
-                y=[item[0] for item in primary_language.values],
-            ),
-        )
-
     def _calculate_ethnic_group_code(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
@@ -215,8 +173,6 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         return DemographicsStats(
             metadata=DemographicsMetadata(population=pop_size),
             gender=self._calculate_gender(),
-            birth_country=self._calculate_birth_country(),
-            primary_language=self._calculate_primary_language(),
             ethnic_group_code=self._calculate_ethnic_group_code(),
             age=self._calculate_age(),
         )
