@@ -23,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v1
         with:
-          python-version: 3.9
+          python-version: ${{ matrix.python }}
 
       - name: Install and configure Poetry
         uses: snok/install-poetry@v1.1.8
@@ -39,6 +39,6 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           file: ./coverage.xml
-          flags: unittests
+          flags: unittests,${{ matrix.python }}
           name: codecov-umbrella
           fail_ci_if_error: false
