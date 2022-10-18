@@ -11,7 +11,7 @@ TEST_COHORT_SIZE = 20
 @pytest.fixture(scope="function")
 def ukrdc3_session_demographics(ukrdc3_session: Session):
     for i in range(TEST_COHORT_SIZE):
-        create_demo_patient(i, f"demog:{i}", "FACILITY_1", "UKRDC", ukrdc3_session)
+        create_demo_patient(i, "FACILITY_1", "UKRDC", ukrdc3_session)
     ukrdc3_session.commit()
     return ukrdc3_session
 
@@ -39,7 +39,7 @@ def test_calculate_gender(ukrdc3_session_demographics: Session):
             "coding_standard_x": "NHS_DATA_DICTIONARY",
             "units_y": None,
         },
-        "data": {"x": ["0", "1", "9"], "y": [3, 7, 10], "error_y": None},
+        "data": {"x": ["0", "1", "2", "9"], "y": [4, 4, 8, 4], "error_y": None},
     }
 
 
@@ -56,8 +56,8 @@ def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
             "units_y": None,
         },
         "data": {
-            "x": ["99", "A", "B", "C", "E", "G", "H", "K", "M", "S"],
-            "y": [1, 1, 1, 5, 2, 1, 1, 2, 3, 3],
+            "x": ["99", "A", "D", "E", "F", "H", "J", "K", "L", "M", "N", "R", "S"],
+            "y": [3, 1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 1, 2],
             "error_y": None,
         },
     }
@@ -77,24 +77,23 @@ def test_calculate_age(ukrdc3_session_demographics: Session):
         },
         "data": {
             "x": [
-                "14",
-                "21",
-                "23",
+                "12",
+                "16",
+                "19",
+                "20",
+                "26",
                 "27",
-                "28",
-                "37",
-                "40",
-                "42",
-                "48",
+                "32",
+                "34",
+                "46",
+                "47",
                 "49",
                 "54",
                 "59",
                 "63",
-                "66",
-                "68",
                 "69",
             ],
-            "y": [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 2, 2, 2, 1],
+            "y": [1, 1, 2, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 1, 2],
             "error_y": None,
         },
     }
