@@ -4,7 +4,6 @@ Patient cohort dialysis stats calculator
 
 import datetime as dt
 from typing import Literal, Tuple, Union
-from xmlrpc.client import Boolean
 
 import numpy as np
 import pandas as pd
@@ -13,10 +12,8 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     DialysisSession,
-    LabOrder,
     Patient,
     PatientRecord,
-    ResultItem,
     Treatment,
 )
 
@@ -29,7 +26,7 @@ from .models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
-from .models.maps import TimeSeries3dData
+
 from .models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
 
 
@@ -42,12 +39,26 @@ class DialysisStats(BaseModel):
 
 
 def _calculate_frequency(
-    from_time: dt.datetime, to_time: dt.datetime, procedure_number: int
+    from_time: dt.datetime, to_time: dt.datetime, no_of_events: int
 ):
+    """calculates the frequency in per week units of events in a given timewindow
+
+    Args:
+        from_time (dt.datetime): start of window
+        to_time (dt.datetime): end of window
+        no_of_proceedures (int): no of things/events/proceedures which have occured
+
+    Returns:
+        _type_: frequency of events
+    """
     delta_t = (to_time - from_time).days
 
     if delta_t > 0.0:
-        return 7.0 * procedure_number / delta_t
+        return 7.0 * no_of_events / delta_t
+    else:
+        # TODO: add proper error handling to this
+        print("Time window is not positive and non-zero")
+
     return None
 
 
@@ -111,7 +122,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return pd.read_sql(patient_query, self.session.bind)
 
-    def _extract_incident_prevelent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
+    def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
         """
         Takes a base cohort from _extract_base_patient_cohort and extracts the incident and prevalent patients.
 
@@ -124,7 +135,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: Patient cohort dataframe
         """
 
-        # If patients are alive and have not died or been discharged count them as prevelent
+        # If patients are alive and have not died or been discharged count them as prevalent
         base_cohort["prevalent"] = (
             pd.isnull(base_cohort.deathtime)
             | (base_cohort.deathtime > self.time_window[1])
@@ -156,8 +167,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             [id[0] for id in not_incident_ids]
         )
 
-        # merge into patient cohort
-        return pd.merge(base_cohort, incident_ids, on="ukrdcid")
+        # merge into patient cohort and replace NaN with false
+        merged = pd.merge(base_cohort, incident_ids, how="left", on="ukrdcid")
+        merged.incident = merged.incident.fillna(False)
+
+        return merged
 
     def _calculate_therapy_types(
         self, scope: Literal["all", "incident", "prevalent"]
@@ -295,59 +309,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
-    def _calculate_haemoglobin(self, filter_expression: Boolean = True):
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        filtered_patient_ids = self._patient_cohort[
-            filter_expression
-        ].ukrdcid.drop_duplicates()
-
-        # print(filtered_patient_ids)
-        result_query = (
-            select(
-                PatientRecord.ukrdcid,
-                Patient.birth_time,
-                Patient.gender,
-                LabOrder.entered_on,
-                ResultItem.service_id,
-                ResultItem.value,
-                ResultItem.value_units,
-            )
-            .join(Patient, Patient.pid == PatientRecord.pid)
-            .join(LabOrder, LabOrder.pid == PatientRecord.pid)
-            .join(ResultItem, ResultItem.order_id == LabOrder.id)
-            .where(
-                and_(
-                    PatientRecord.ukrdcid.in_(filtered_patient_ids),
-                    ResultItem.service_id == "QBLEB",
-                    LabOrder.entered_on > self.time_window[0],
-                    LabOrder.entered_on < self.time_window[1],
-                )
-            )
-        )
-
-        result_data = pd.read_sql(result_query, self.session.bind)
-
-        results = []
-        times = []
-        ids = []
-        for _, item in result_data.iterrows():
-            try:
-                results.append(float(item.resultvalue))
-            except ValueError:
-                continue
-            times.append(item.enteredon)
-            ids.append(item.ukrdcid)
-
-        # print(result_data.head())
-
-        return TimeSeries3dData(
-            x=times,
-            y=ids,
-            z=results,
-        )
-
     def _calculate_access_incident(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
@@ -437,7 +398,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
         """
-        self._patient_cohort = self._extract_incident_prevelent(
+        self._patient_cohort = self._extract_incident_prevalent(
             self._extract_base_patient_cohort()
         )
 
@@ -448,6 +409,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             DialysisStats: Dialysis statistics object
         """
         # If we don't already have a patient cohort, extract one
+
         if self._patient_cohort is None:
             self.extract_patient_cohort()
 

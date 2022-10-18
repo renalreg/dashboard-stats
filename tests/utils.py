@@ -1,7 +1,18 @@
+from datetime import date, datetime, timedelta
+from re import A
+from time import time
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import Address, Name, Patient, PatientNumber, PatientRecord
+from ukrdc_sqla.ukrdc import (
+    Address,
+    Name,
+    Patient,
+    PatientNumber,
+    PatientRecord,
+    Treatment,
+)
 from mimesis import Generic
 from mimesis.locales import Locale
+from ukrdc_stats.dialysis import DialysisStatsCalculator
 
 ETHNICITY_GROUP_CODES = [
     "A",
@@ -25,24 +36,53 @@ ETHNICITY_GROUP_CODES = [
 ]
 
 
+TREATMENT_MODALITY_CODES = [
+    "1",
+    "2",
+    "3",
+    "5",
+    "110",
+    "11",
+    "12",
+    "20",
+    "78",
+    "29",
+    "81",
+    "82",
+    "83",
+    "88",
+    "904",
+    "903",
+    "902",
+    "900",
+    "901",
+]
+
+
+DIALYSIS_MODALITY_CODES = ["1", "2", "3", "5", "11", "12"]
+
+
+QHD20_CODES = ["TLN", "NLN", "AVF"]
+
+QBL05_CODES = ["HOSP", "HOME"]
+
+generic = Generic(Locale.EN_GB, seed="moo")
+
+
 def create_demo_patient(
-    id_: int,
-    seed: str,
-    sending_facility: str,
-    sending_extract: str,
-    ukrdc3: Session,
+    id_: int, sending_facility: str, sending_extract: str, ukrdc3: Session
 ):
     """Create a demo patient with the given ID"""
-    generic = Generic(Locale.EN_GB, seed=seed)
 
-    pid = f"{id_:10d}"
+    pid = f"test:{id_}"
 
     record = PatientRecord(
         pid=pid,
         sendingfacility=sending_facility,
         sendingextract=sending_extract,
         localpatientid=f"{generic.numeric.integer_number(0):10d}",
-        ukrdcid=f"{generic.numeric.integer_number(0):10d}",
+        # ukrdcid=f"{generic.numeric.integer_number(0):10d}",
+        ukrdcid=f"ukrdc_{pid}",
     )
 
     name = Name(
@@ -52,6 +92,7 @@ def create_demo_patient(
         given=generic.person.first_name(),
         nameuse="L",
     )
+
     address = Address(
         id=id_,
         pid=pid,
@@ -82,3 +123,48 @@ def create_demo_patient(
     ukrdc3.add(address)
     ukrdc3.add(patient)
     ukrdc3.add(patient_number)
+
+    return pid
+
+
+def generate_treatment(
+    id_: int,
+    pid: str,
+    health_care_facility: str,
+    start_time: datetime,
+    end_time: datetime,
+    ukrdc3: Session,
+):
+    # generic = Generic(Locale.EN_GB, seed=seed)
+
+    # randomly select treatment modality
+    admit_reason_code = generic.choice(TREATMENT_MODALITY_CODES)
+
+    qbl05 = None
+    qhd20 = None
+    # select some other options based on modality
+    if admit_reason_code in ["1", "2", "3", "5"]:
+        qbl05 = generic.choice(QBL05_CODES)
+        qhd20 = generic.choice(QHD20_CODES)
+
+    time_delta = timedelta(weeks=2)
+    incident = generic.choice([True, False])
+    prevalent = generic.choice([True, False])
+    if incident:
+        start_time = start_time + time_delta
+    if prevalent:
+        end_time = end_time + time_delta
+
+    treatment = Treatment(
+        id=f"test:{id_:10d}",
+        pid=pid,
+        health_care_facility_code=health_care_facility,
+        admit_reason_code=admit_reason_code,
+        from_time=start_time,
+        to_time=end_time,
+        qbl05=qbl05,
+    )
+
+    ukrdc3.add(treatment)
+
+    return
