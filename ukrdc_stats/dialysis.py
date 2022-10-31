@@ -55,9 +55,9 @@ def _calculate_frequency(
 
     if delta_t > 0.0:
         return 7.0 * no_of_events / delta_t
-    else:
-        # TODO: add proper error handling to this
-        print("Time window is not positive and non-zero")
+    # else:
+    # TODO: add proper error handling to this
+    #    print("Time window is not positive and non-zero")
 
     return None
 
