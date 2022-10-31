@@ -77,7 +77,7 @@ def test_calculate_age(ukrdc3_session_demographics: Session):
         },
         "data": {
             "x": [
-                "12",
+                "13",
                 "16",
                 "19",
                 "20",
