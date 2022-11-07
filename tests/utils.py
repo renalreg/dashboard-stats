@@ -168,3 +168,9 @@ def generate_treatment(
     ukrdc3.add(treatment)
 
     return
+
+def generate_dialysis_session(
+    id:int,
+    pid:str,
+    
+)

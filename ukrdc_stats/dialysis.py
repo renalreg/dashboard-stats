@@ -135,18 +135,19 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: Patient cohort dataframe
         """
 
-        # If patients are alive and have not died or been discharged count them as prevalent
+        # If patients are alive and have not been discharged count them as prevalent
         base_cohort["prevalent"] = (
             pd.isnull(base_cohort.deathtime)
             | (base_cohort.deathtime > self.time_window[1])
         ) & ((base_cohort.totime > self.time_window[1]) | pd.isnull(base_cohort.totime))
+        base_cohort.prevalent.fillna(False)
 
-        # Get a list of patients to check for incidence status
+        # Get a list of patients to check for incidence status. All incident patients start within the timewindow.
         incident_ids = base_cohort[["ukrdcid"]][
             base_cohort.fromtime > self.time_window[0]
         ].drop_duplicates()
 
-        # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window
+        # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window these will be discounted
         not_incident_ids_query = (
             select(PatientRecord.ukrdcid)
             .join(Treatment)
@@ -162,7 +163,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
         not_incident_ids = self.session.execute(not_incident_ids_query).all()
 
-        # label patient not appearing in previous group as incident
+        # label patients identified in incident_ids who do not appear in previous group as incident
         incident_ids["incident"] = ~incident_ids.ukrdcid.isin(
             [id[0] for id in not_incident_ids]
         )
@@ -182,8 +183,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         networks (this is essentially what a sankey plot is)
 
         Args:
-            filter (bool): a filter to apply to the patient cohort.
-                For example you could pass self.patient_cohort.incident == True
+            Scope: allows stats to be calculated for incident, prevalent or all patients
 
         Returns:
             Nodes, Vertices: pydantic classes containing calculated data
@@ -202,6 +202,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         else:
             raise ValueError("Invalid scope")
 
+        # filter patients in cohort with Haemodialysis modalities who are receiving therapies in hospital
         hosp_hd = len(
             patient_cohort[
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
@@ -209,6 +210,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ]["ukrdcid"].drop_duplicates()
         )
 
+        # filter "" on home therapies
         home_hd = len(
             patient_cohort[
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
@@ -216,6 +218,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ]["ukrdcid"].drop_duplicates()
         )
 
+        # filter "" where database does not provide information
         na_hd = len(
             patient_cohort[
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
@@ -223,13 +226,14 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ]["ukrdcid"].drop_duplicates()
         )
 
-        # presumably all pd is done at home?
+        # patients on peritoneal dialysis which presumably all happens at home
         home_pd = len(
             patient_cohort[patient_cohort.admitreasoncode.isin(["11", "12"])][
                 "ukrdcid"
             ].drop_duplicates()
         )
 
+        # assemble calculated numbers into the pydantic data structures used by the api
         nodes = Nodes(
             node_labels=[
                 "Haemodialysis",
@@ -273,6 +277,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             .where(
                 and_(
                     PatientRecord.ukrdcid.in_(patient_list),
+                    DialysisSession.procedure_type_code == "302497006",  # filter for hd
                     DialysisSession.procedure_time > self.time_window[0],
                     DialysisSession.procedure_time < self.time_window[1],
                 )

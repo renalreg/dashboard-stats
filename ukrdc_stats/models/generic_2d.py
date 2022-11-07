@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 from pydantic import BaseModel
 
-Number = Union[int, float]
+Number = Union[int, float, None]
 
 # Generics
 
