@@ -11,7 +11,10 @@ from ukrdc_sqla.ukrdc import (
 )
 from mimesis import Generic
 from mimesis.locales import Locale
-from ukrdc_stats.dialysis import DialysisStatsCalculator
+
+# debug dependancies
+import pandas as pd
+from sqlalchemy import select
 
 ETHNICITY_GROUP_CODES = [
     "A",
@@ -178,20 +181,24 @@ def generate_dialysis_session(
 
     # generate equally spaced treatments in time window to keep things simple
     if number_of_sessions <= 1:
-        timestep = (session_period_start - session_period_end)
+        timestep = (session_period_end - session_period_start)
     else: 
-        timestep = (session_period_start - session_period_end) / (number_of_sessions -1)
+        timestep = (session_period_end - session_period_start) / (number_of_sessions -1) - timedelta(hours=2)
 
-    proceedure_time = session_period_start
+    procedure_time = session_period_start + timedelta(hours=1)
     qhd20 = generic.choice(QHD20_CODES)
     for i in range(number_of_sessions):
         dialysis_session = DialysisSession(
             id = f"test:{id_}:{i}",
+            pid = pid,
             procedure_type_code = "302497006",
-            procedure_time = proceedure_time,
+            procedure_time = procedure_time,
             qhd20 = qhd20 
         )
         ukrdc3.add(dialysis_session)
+        procedure_time = procedure_time + timestep
+
+    ukrdc3.commit()
 
     return
 

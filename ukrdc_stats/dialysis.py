@@ -280,11 +280,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                     DialysisSession.procedure_type_code == "302497006",  # filter for hd
                     DialysisSession.procedure_time > self.time_window[0],
                     DialysisSession.procedure_time < self.time_window[1],
-                    DialysisSession.procedure_type_code == "302497006",
                 )
             )
             .group_by(PatientRecord.ukrdcid)
         )
+
         session_data = pd.read_sql(query, self.session.bind)
 
         # calculate frequency of dialysis
