@@ -1,6 +1,4 @@
 from datetime import date, datetime, timedelta
-from re import A
-from time import time
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     Address,
@@ -9,6 +7,7 @@ from ukrdc_sqla.ukrdc import (
     PatientNumber,
     PatientRecord,
     Treatment,
+    DialysisSession
 )
 from mimesis import Generic
 from mimesis.locales import Locale
@@ -141,11 +140,10 @@ def generate_treatment(
     admit_reason_code = generic.choice(TREATMENT_MODALITY_CODES)
 
     qbl05 = None
-    qhd20 = None
     # select some other options based on modality
     if admit_reason_code in ["1", "2", "3", "5"]:
         qbl05 = generic.choice(QBL05_CODES)
-        qhd20 = generic.choice(QHD20_CODES)
+
 
     time_delta = timedelta(weeks=2)
     incident = generic.choice([True, False])
@@ -168,3 +166,33 @@ def generate_treatment(
     ukrdc3.add(treatment)
 
     return
+
+def generate_dialysis_session(
+    id_:int, 
+    pid:str, 
+    session_period_start:datetime,
+    session_period_end:datetime, 
+    number_of_sessions: int,
+    ukrdc3: Session,
+):
+
+    # generate equally spaced treatments in time window to keep things simple
+    if number_of_sessions <= 1:
+        timestep = (session_period_start - session_period_end)
+    else: 
+        timestep = (session_period_start - session_period_end) / (number_of_sessions -1)
+
+    proceedure_time = session_period_start
+    qhd20 = generic.choice(QHD20_CODES)
+    for i in range(number_of_sessions):
+        dialysis_session = DialysisSession(
+            id = f"test:{id_}:{i}",
+            procedure_type_code = "302497006",
+            procedure_time = proceedure_time,
+            qhd20 = qhd20 
+        )
+        ukrdc3.add(dialysis_session)
+
+    return
+
+

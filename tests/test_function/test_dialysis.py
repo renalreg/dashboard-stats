@@ -1,7 +1,7 @@
 from tracemalloc import start
 from typing_extensions import assert_type
 from unittest import TestCase
-from ..utils import create_demo_patient, generate_treatment
+from ..utils import create_demo_patient, generate_treatment, generate_dialysis_session
 from sqlalchemy.orm import Session
 from datetime import date, datetime
 from ukrdc_stats.dialysis import DialysisStatsCalculator, _calculate_frequency
@@ -19,6 +19,8 @@ END_TIME = datetime(2019, 12, 1)
 FACILITY = "Hogwarts"
 SEED = "Avada kedavra"
 
+
+# data to create _patient_cohort dataframe from (and to check the functions which query the database against)
 DATA = {
     "ukrdcid": [
         "ukrdc_test:2",
@@ -119,8 +121,31 @@ def test_extract_incident_prevalent(ukrdc3_session_demographics: Session):
     assert cohort_dataframe[["prevalent", "incident"]].equals(incident_prevalent)
 
 
-def test_calculate_dialysis_frequency():
-    assert 1.0 == 1.0
+def test_calculate_dialysis_frequency(ukrdc3_session_demographics: Session):
+    calculator = DialysisStatsCalculator(
+        ukrdc3_session_demographics, FACILITY, START_TIME, END_TIME
+    )
+
+    average_sessions = 3
+    patient_data = pd.DataFrame(data=DATA)
+    cohort_dataframe = calculator._extract_incident_prevalent(patient_data)
+
+    # generate dialysis sessions
+    for i, row in patient_data[
+        patient_data.admitreasoncode.isin(["1", "2", "3", "5"])
+    ].iterrows():
+        generate_dialysis_session(
+            id_=i,
+            pid=row["pid"],
+            session_period_start=START_TIME,
+            session_period_end=END_TIME,
+            number_of_sessions=average_sessions,
+            ukrdc3=ukrdc3_session_demographics,
+        )
+
+    dialysis_freq = calculator._calculate_dialysis_frequency()
+
+    assert dialysis_freq == 1.0
 
 
 def test_calculate_access_incident():

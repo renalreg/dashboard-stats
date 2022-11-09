@@ -261,7 +261,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # get list of hd patients
         patient_list = self._patient_cohort[
-            (self._patient_cohort.admitreasoncode.isin(["1", "2", "3"]))
+            (self._patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"]))
             & (self._patient_cohort.qbl05 == "HOSP")
         ].ukrdcid.drop_duplicates()
 
@@ -280,6 +280,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                     DialysisSession.procedure_type_code == "302497006",  # filter for hd
                     DialysisSession.procedure_time > self.time_window[0],
                     DialysisSession.procedure_time < self.time_window[1],
+                    DialysisSession.procedure_type_code == "302497006",
                 )
             )
             .group_by(PatientRecord.ukrdcid)
