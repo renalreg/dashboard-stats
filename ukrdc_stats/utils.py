@@ -60,33 +60,3 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
     """
 
     return date - dt.timedelta(days=age * 365.25)
-
-
-def nhs_data_lookup(item_name: str, code: List[str]) -> List[str]:
-    """
-    Loads codes used by nhs data directory
-        https://nhs-digital.citizenspace.com/data-dictionary/nhs-dmds-reference-da/
-
-    TODO:
-        - unit test to check file is up to date?
-        - pydantic output
-
-    Args:
-        item_name (str): name of item to be loaded (e.g Person_Gender_Code_Current)
-        code (list(str)): codes to return discriptions
-
-    Returns:
-        list(str): return descriptions
-    """
-
-    code_file = "CDS V6-2 Type 020 - Outpatient Commissioning Data Set - Reference Data - V1.csv"
-
-    codes = pd.read_csv(
-        Path(__file__).parent.joinpath(code_file), encoding="ISO-8859-1"
-    )
-
-    codes_desc = codes[
-        (codes.Item_Name == item_name) & (codes.Code.isin(code))
-    ].Code_Short_Description.values
-
-    return [str(desc) for desc in codes_desc]

@@ -3,7 +3,7 @@ Patient cohort demographics stats calculator
 """
 
 import datetime as dt
-from typing import Optional
+from typing import Optional, Dict
 import pandas as pd
 
 from sqlalchemy.orm import Session
@@ -31,12 +31,39 @@ class DemographicsMetadata(BaseModel):
 
 class DemographicsStats(BaseModel):
     gender: Labelled2d
-    ethnic_group_code: Labelled2d
+    ethnic_group: Labelled2d
     age: Labelled2d
     metadata: DemographicsMetadata
 
 
-def _calculate_base_patient_histogram(cohort: pd.DataFrame, group: str) -> pd.DataFrame:
+# This is the 5 ethnicity group mapping used by the stats team for the annual report
+ETHNIC_GROUP_MAP = {
+    "A": "White",
+    "B": "White",
+    "C": "White",
+    "D": "Mixed",
+    "E": "Mixed",
+    "F": "Mixed",
+    "G": "Mixed",
+    "H": "Asian",
+    "J": "Asian",
+    "K": "Asian",
+    "L": "Asian",
+    "M": "Black",
+    "N": "Black",
+    "P": "Black",
+    "R": "Asian",
+    "S": "Other",
+    "Z": "Not Stated",
+}
+
+# NHS digital gender map
+GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
+
+
+def _calculate_base_patient_histogram(
+    cohort: pd.DataFrame, group: str, map: Optional[Dict] = {}
+) -> pd.DataFrame:
     """Extract a histogram of the patient cohort, grouped by the given column
 
     Args:
@@ -49,7 +76,29 @@ def _calculate_base_patient_histogram(cohort: pd.DataFrame, group: str) -> pd.Da
     Returns:
         pd.DataFrame: Histogram dataframe of the patient cohort
     """
-    return cohort[["pid", group]].drop_duplicates().groupby([group]).count()
+
+    if map:
+        mapped_column = f"{group}_mapped"
+        cohort[mapped_column] = cohort[group].map(map)
+
+        histogram = (
+            cohort[["ukrdcid", mapped_column]]
+            .drop_duplicates()
+            .groupby([mapped_column])
+            .count()
+            .reset_index()
+        )
+
+    else:
+        histogram = (
+            cohort[["ukrdcid", group]]
+            .drop_duplicates()
+            .groupby([group])
+            .count()
+            .reset_index()
+        )
+
+    return histogram.rename(columns={"ukrdcid": "Count"})
 
 
 class DemographicsCalculator(AbstractFacilityStatsCalculator):
@@ -79,7 +128,12 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
 
         # select all patients with modalities that haven't finished
         patient_query = (
-            select(Patient)  # type:ignore
+            select(
+                PatientRecord.ukrdcid,
+                Patient.gender,
+                Patient.ethnic_group_code,
+                Patient.birth_time,
+            )  # type:ignore
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
             .where(
                 and_(
@@ -95,7 +149,9 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        gender = _calculate_base_patient_histogram(self._patient_cohort, "gender")
+        gender = _calculate_base_patient_histogram(
+            self._patient_cohort, "gender", GENDER_GROUP_MAP
+        )
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -104,7 +160,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=list(gender.index), y=[item[0] for item in gender.values]
+                x=gender.gender_mapped.tolist(), y=gender.Count.tolist()
             ),
         )
 
@@ -113,7 +169,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort, "ethnicgroupcode"
+            self._patient_cohort, "ethnicgroupcode", ETHNIC_GROUP_MAP
         )
 
         return Labelled2d(
@@ -123,8 +179,8 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=list(ethnic_group_code.index),
-                y=[item[0] for item in ethnic_group_code.values],
+                x=ethnic_group_code.ethnicgroupcode_mapped.tolist(),
+                y=ethnic_group_code.Count.tolist(),
             ),
         )
 
@@ -144,7 +200,7 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
                 title="Age Distribution",
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
-            data=Labelled2dData(x=list(age.index), y=[item[0] for item in age.values]),
+            data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
         )
 
     def extract_patient_cohort(self):
@@ -167,12 +223,12 @@ class DemographicsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
-        pop_size = len(self._patient_cohort[["pid"]].drop_duplicates())
+        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 
         # Build output object
         return DemographicsStats(
             metadata=DemographicsMetadata(population=pop_size),
+            ethnic_group=self._calculate_ethnic_group_code(),
             gender=self._calculate_gender(),
-            ethnic_group_code=self._calculate_ethnic_group_code(),
             age=self._calculate_age(),
         )
