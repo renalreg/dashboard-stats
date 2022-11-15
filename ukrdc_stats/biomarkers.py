@@ -10,7 +10,7 @@ import numpy as np
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient
+from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient, Code
 
 
 from pydantic import BaseModel
@@ -125,8 +125,16 @@ def cause_of_death(
             CauseOfDeath.pid,
             CauseOfDeath.diagnosis_code,
             CauseOfDeath.diagnosis_code_std,
+            Code.description.label("cause_of_death"),
         )
         .join(Patient, Patient.pid == CauseOfDeath.pid)
+        .join(
+            Code,
+            and_(
+                Code.coding_standard == CauseOfDeath.diagnosis_code_std,
+                Code.code == CauseOfDeath.diagnosis_code,
+            ),
+        )
         .where(
             and_(
                 CauseOfDeath.pid.in_(patient.pid.tolist()),
@@ -142,10 +150,11 @@ def cause_of_death(
 
     # turn into histogram
     test_data_hist = (
-        test_data_id_merged[["ukrdcid", "diagnosiscode"]]
+        test_data_id_merged[["ukrdcid", "cause_of_death"]]
         .drop_duplicates()
-        .groupby(["diagnosiscode"])
+        .groupby(["cause_of_death"])
         .count()
+        .reset_index()
     )
 
     return Labelled2d(
@@ -153,6 +162,6 @@ def cause_of_death(
             title="Cause of Death", coding_standard_x="EDTA_COD"
         ),
         data=Labelled2dData(
-            x=list(test_data_hist.index), y=list(test_data_hist.values)
+            x=list(test_data_hist.cause_of_death), y=list(test_data_hist.ukrdcid)
         ),
     )

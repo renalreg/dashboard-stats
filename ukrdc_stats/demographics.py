@@ -16,6 +16,8 @@ from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_stats.utils import age_from_dob
 
+from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
+
 
 from .models.generic_2d import (
     Labelled2d,
@@ -34,31 +36,6 @@ class DemographicsStats(BaseModel):
     ethnic_group: Labelled2d
     age: Labelled2d
     metadata: DemographicsMetadata
-
-
-# This is the 5 ethnicity group mapping used by the stats team for the annual report
-ETHNIC_GROUP_MAP = {
-    "A": "White",
-    "B": "White",
-    "C": "White",
-    "D": "Mixed",
-    "E": "Mixed",
-    "F": "Mixed",
-    "G": "Mixed",
-    "H": "Asian",
-    "J": "Asian",
-    "K": "Asian",
-    "L": "Asian",
-    "M": "Black",
-    "N": "Black",
-    "P": "Black",
-    "R": "Asian",
-    "S": "Other",
-    "Z": "Not Stated",
-}
-
-# NHS digital gender map
-GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
 
 
 def _calculate_base_patient_histogram(
