@@ -4,38 +4,124 @@ The stats here are loosly based on the metrics of chapter 5 of the annual report
 """
 
 import datetime as dt
-from typing import List
+from typing import List, Union
 import pandas as pd
 import numpy as np
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient, Code
-
-
+from ukrdc_stats.exceptions import NoCohortError
+from .models.generic_2d import Labelled2d, Labelled2dMetadata, Labelled2dData
 from pydantic import BaseModel
-from .models.generic_2d import (
-    Labelled2dMetadata,
-    Labelled2dData,
-    TimeSeries2dData,
-    Basic2dMetadata,
-    AxisLabels2d,
-    Labelled2d,
-)
 
-# pydantic class to assemble urea reduction rates
-class URR(BaseModel):
+
+# pydantic classes for the api
+class BiomarkerMeta(BaseModel):
+    title: str
+    data_axis_titles: List[str]
+
+
+class BiomarkerData(BaseModel):
+    timestamps: List[dt.datetime]
+    testresult: List[Union[float, None]]
+    orderid: List[str]
+    resultid: List[str]
+
+
+class PatientBiomarker(BaseModel):
     ukrdcid: str
-    median_urr: float
-    urr: TimeSeries2dData
+    median_result: Union[float, None]
+    most_recent_result: Union[float, None]
+    data: BiomarkerData
 
 
-class URRStats(BaseModel):
-    meta_data: Basic2dMetadata
-    data: List[URR]
+class PatientBiomarkers(BaseModel):
+    meta_data: BiomarkerMeta
+    patient_data: List[PatientBiomarker]
 
 
-#'' for cause of death
+def produce_output(
+    query_result: pd.DataFrame, meta_data: BiomarkerMeta
+) -> PatientBiomarkers:
+
+    # There is quite a bit of junk in the results table so this statement turns them
+    # into nans
+    query_result.resultvalue = query_result.resultvalue.apply(
+        pd.to_numeric, errors="coerce"
+    )
+
+    # initialise variable for output
+    Biomarkers = PatientBiomarkers(meta_data=meta_data, patient_data=[])
+
+    for ukrdcid in query_result.ukrdcid.unique():
+        test_data_slice = (
+            query_result[query_result.ukrdcid == ukrdcid]
+            .replace("", None)
+            .sort_values("enteredon")
+        )
+
+        biomarker = PatientBiomarker(
+            ukrdcid=ukrdcid,
+            median_result=test_data_slice.resultvalue.median(),
+            most_recent_result=test_data_slice.resultvalue.iloc[-1],
+            data=BiomarkerData(
+                timestamps=test_data_slice.enteredon.tolist(),
+                testresult=test_data_slice.resultvalue.tolist(),
+                orderid=test_data_slice.orderid.tolist(),
+                resultid=test_data_slice.resultid.tolist(),
+            ),
+        )
+
+        Biomarkers.patient_data.append(biomarker)
+
+    return Biomarkers
+
+
+def generic_biomarkers_query(
+    start_time: dt.datetime,
+    end_time: dt.datetime,
+    patients: pd.DataFrame,
+    service_codes: List,
+    session: Session,
+) -> pd.DataFrame:
+    """Queries the database to return a set of test results of a specified type for a given set of patients over a given timewidow.
+
+    Args:
+        start_time (dt.datetime): start of window
+        end_time (dt.datetime): end of window
+        patients (pd.DataFrame): list of patient identifiers must contain both the pid and the ukrdcid
+        service_codes (List): list of service codes specifing the type of test
+        session (Session):
+
+    Returns:
+        pd.DataFrame: result of queary
+    """
+
+    generic_query = (
+        select(
+            LabOrder.pid,
+            ResultItem.id.label("resultid"),
+            ResultItem.value,
+            ResultItem.service_id,
+            LabOrder.entered_on,
+            ResultItem.order_id,
+        )
+        .join(LabOrder, LabOrder.id == ResultItem.order_id)
+        .where(
+            and_(
+                LabOrder.pid.in_(patients.pid.tolist()),
+                ResultItem.service_id.in_(service_codes),
+                LabOrder.entered_on > start_time,
+                LabOrder.entered_on < end_time,
+            )
+        )
+    )
+
+    test_data = pd.read_sql(generic_query, session.bind)
+    test_data_merged = test_data.merge(patients, "inner", on="pid")
+
+    return test_data_merged
 
 
 def urea_reduction_ratio(
@@ -43,7 +129,7 @@ def urea_reduction_ratio(
     end_time: dt.datetime,
     patient: pd.DataFrame,
     session: Session,
-) -> URRStats:
+) -> PatientBiomarkers:
     """_summary_
 
     Args:
@@ -56,58 +142,56 @@ def urea_reduction_ratio(
         pd.DataFrame: Urea reduction ratio results for the above parameters
     """
 
-    # query database to get the test results
-    query_biomarkers = (
-        select(
-            LabOrder.pid, ResultItem.service_id, ResultItem.value, LabOrder.entered_on
-        )
-        .join(LabOrder, LabOrder.id == ResultItem.order_id)
-        .where(
-            and_(
-                LabOrder.pid.in_(patient.pid.tolist()),
-                or_(ResultItem.service_id == "QBLG9"),
-                LabOrder.entered_on > start_time,
-                LabOrder.entered_on < end_time,
-            )
-        )
+    # query database to get test results
+    test_data_id_merged = generic_biomarkers_query(
+        start_time=start_time,
+        end_time=end_time,
+        patients=patient,
+        service_codes=["QBLG9"],
+        session=session,
     )
 
-    # merge tests with ukrdcids
-    test_data = pd.read_sql(query_biomarkers, session.bind)
-    test_data_id_merged = test_data.merge(patient, "inner", on="pid")
+    if test_data_id_merged is None:
+        raise NoCohortError("No URR results extracted")
 
-    # assemble pydantic object for api to return
-    urr_items = []
-    urr_median = []
-    for ukrdcid in test_data_id_merged.ukrdcid.unique():
-        test_data_slice = (
-            test_data_id_merged[test_data_id_merged.ukrdcid == ukrdcid]
-            .replace("", None)
-            .sort_values("enteredon")
-        )
-
-        urr_median.append(test_data_slice.resultvalue.median())
-
-        urr_items.append(
-            URR(
-                ukrdcid=ukrdcid,
-                median_urr=urr_median[-1],
-                urr=TimeSeries2dData(
-                    x=test_data_slice.enteredon.tolist(),
-                    y=test_data_slice.resultvalue.astype(float).tolist(),
-                ),
-            )
-        )
-
-    # order items by ascending median URR
-    urr_items_sorted = [urr_items[index] for index in np.argsort(urr_median)]
-
-    return URRStats(
-        meta_data=Basic2dMetadata(
-            title="Patient Urea Reduction Ratio",
-            axis_titles=AxisLabels2d(x="Test Date", y="Urea Reduction Ratio (%)"),
+    return produce_output(
+        test_data_id_merged,
+        BiomarkerMeta(
+            title="Urea Reduction Ratio",
+            data_axis_titles=["Date", "URR", "Order ID", "Test ID"],
         ),
-        data=urr_items_sorted,
+    )
+
+
+def haemoglobin(
+    start_time: dt.datetime,
+    end_time: dt.datetime,
+    patient: pd.DataFrame,
+    session: Session,
+):
+
+    # query haemoglobin
+    test_data_id_merged = generic_biomarkers_query(
+        start_time=start_time,
+        end_time=end_time,
+        patients=patient,
+        service_codes=["QBLE1", "QBLEB"],
+        session=session,
+    )
+
+    # ensure units match up
+    test_data_id_merged.resultvalue.apply(pd.to_numeric, errors="coerce")
+    test_data_id_merged[test_data_id_merged.serviceidcode == "QBLE1"].resultvalue = (
+        test_data_id_merged[test_data_id_merged.serviceidcode == "QBLE1"].resultvalue
+        * 10.0
+    )
+
+    return produce_output(
+        test_data_id_merged,
+        BiomarkerMeta(
+            title="Haemoglobin",
+            data_axis_titles=["Date", "Haemoglobin", "Order ID", "Test ID"],
+        ),
     )
 
 
