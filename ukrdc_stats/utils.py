@@ -2,10 +2,7 @@
 Common utility functions useful in multiple statistics
 """
 
-from pathlib import Path
-from typing import List
 import datetime as dt
-import pandas as pd
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:

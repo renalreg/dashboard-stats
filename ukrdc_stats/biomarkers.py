@@ -6,9 +6,9 @@ The stats here are loosly based on the metrics of chapter 5 of the annual report
 import datetime as dt
 from typing import List, Union
 import pandas as pd
-import numpy as np
 
-from sqlalchemy import select, and_, or_
+
+from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient, Code
 from ukrdc_stats.exceptions import NoCohortError
@@ -52,7 +52,7 @@ def produce_output(
     )
 
     # initialise variable for output
-    Biomarkers = PatientBiomarkers(meta_data=meta_data, patient_data=[])
+    biomarkers = PatientBiomarkers(meta_data=meta_data, patient_data=[])
 
     for ukrdcid in query_result.ukrdcid.unique():
         test_data_slice = (
@@ -73,9 +73,9 @@ def produce_output(
             ),
         )
 
-        Biomarkers.patient_data.append(biomarker)
+        biomarkers.patient_data.append(biomarker)
 
-    return Biomarkers
+    return biomarkers
 
 
 def generic_biomarkers_query(

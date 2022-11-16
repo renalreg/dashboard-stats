@@ -1,5 +1,5 @@
-"""This file contains groupings and mappings of codes used by stats. 
-Maybe these should be in the database? 
+"""This file contains groupings and mappings of codes used by stats.
+Maybe these should be in the database?
 """
 
 
@@ -26,4 +26,3 @@ ETHNIC_GROUP_MAP = {
 
 # NHS digital gender map
 GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
-

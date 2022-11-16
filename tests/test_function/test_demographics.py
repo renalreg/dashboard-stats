@@ -33,34 +33,41 @@ def test_calculate_gender(ukrdc3_session_demographics: Session):
 
     g = calculator._calculate_gender()
     assert g.dict() == {
-        "metadata": {
-            "title": "Gender Distribution",
-            "axis_titles": {"x": "Gender", "y": "No. of Patients"},
-            "coding_standard_x": "NHS_DATA_DICTIONARY",
-            "units_y": None,
-        },
-        "data": {"x": ["0", "1", "2", "9"], "y": [4, 4, 8, 4], "error_y": None},
-    }
-
-
+        'metadata': {
+            'title': 'Gender Distribution', 
+            'axis_titles': {
+                'x': 'Gender', 
+                'y': 'No. of Patients'
+            }, 
+            'coding_standard_x': 'NHS_DATA_DICTIONARY', 
+            'units_y': None
+            }, 
+        'data': {
+            'x': ['Female', 'Indeterminate', 'Male'], 
+            'y': [8, 4, 4], 
+            'error_y': None
+        }}
+    
 def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
     calculator = DemographicsCalculator(ukrdc3_session_demographics, "FACILITY_1")
     calculator.extract_patient_cohort()
 
     g = calculator._calculate_ethnic_group_code()
     assert g.dict() == {
-        "metadata": {
-            "title": "Ethnic Group",
-            "axis_titles": {"x": "Ethnicity", "y": "No. of Patients"},
-            "coding_standard_x": "NHS_DATA_DICTIONARY",
-            "units_y": None,
-        },
-        "data": {
-            "x": ["99", "A", "D", "E", "F", "H", "J", "K", "L", "M", "N", "R", "S"],
-            "y": [3, 1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 1, 2],
-            "error_y": None,
-        },
-    }
+        'metadata': {
+            'title': 'Ethnic Group', 
+            'axis_titles': {
+                'x': 'Ethnicity', 
+                'y': 'No. of Patients'
+            }, 
+            'coding_standard_x': 'NHS_DATA_DICTIONARY', 
+            'units_y': None
+        }, 
+        'data': {
+            'x': ['Asian', 'Black', 'Mixed', 'Other', 'White'], 
+            'y': [7, 4, 3, 2, 1], 
+            'error_y': None
+        }}
 
 
 def test_calculate_age(ukrdc3_session_demographics: Session):
