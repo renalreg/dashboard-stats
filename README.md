@@ -36,6 +36,7 @@ To publish a new release:
 - Ensure all tests are passing on the `master` branch.
 - Update the package version number (see above section) on the `master` branch, commit, and push.
 - [Create a new GitHub release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) named after the version number, with a prefixed lowercase "v". E.g. `v1.0.0`
+  - Above the release name, create a new tag identical to the release name
 - Publish the release. GitHub Actions will ensure all tests pass, then publish the library to PyPI.
 
 ### Running the demo notebooks
