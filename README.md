@@ -21,7 +21,7 @@ poetry install
 
 The library should follow [semantic versioning](https://semver.org/).
 
-[Use Poetry to set the application version.](https://python-poetry.org/docs/cli/#version)
+[Use Poetry to set the package version.](https://python-poetry.org/docs/cli/#version)
 
 E.g. `poetry version patch` for fix releases, `poetry version minor` for new functionality releases, or `poetry version major` for breaking-change releases.
 
@@ -36,7 +36,7 @@ To publish a new release:
 - Ensure all tests are passing on the `master` branch.
 - Update the package version number (see above section) on the `master` branch, commit, and push.
 - [Create a new GitHub release](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository) named after the version number, with a prefixed lowercase "v". E.g. `v1.0.0`
-- Publish the release. GitHub Actions will ensure all tests pass, then publish the library to PyPI
+- Publish the release. GitHub Actions will ensure all tests pass, then publish the library to PyPI.
 
 ### Running the demo notebooks
 
