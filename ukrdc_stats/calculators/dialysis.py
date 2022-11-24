@@ -17,17 +17,17 @@ from ukrdc_sqla.ukrdc import (
     Treatment,
 )
 
-from ukrdc_stats.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
-from .models.generic_2d import (
+from ..models.generic_2d import (
     AxisLabels2d,
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
 )
 
-from .models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
+from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
 
 
 class DialysisStats(BaseModel):
@@ -423,7 +423,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # TODO: Do we want metadata like population size here?
-        #       See DemographicsCalculator.extract_stats
+        #       See DemographicStatsCalculator.extract_stats
         return DialysisStats(
             all_patients_home_therapies=self._calculate_all_home_therapies(),
             incident_home_therapies=self._calculate_incident_home_therapies(),

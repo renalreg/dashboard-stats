@@ -4,7 +4,7 @@ from unittest import TestCase
 from ..utils import create_demo_patient, generate_treatment, generate_dialysis_session
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from ukrdc_stats.dialysis import DialysisStatsCalculator, _calculate_frequency
+from ukrdc_stats.calculators.dialysis import DialysisStatsCalculator, _calculate_frequency
 
 
 import pandas as pd

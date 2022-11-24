@@ -46,3 +46,13 @@ Install additional demo notebook dependencies with
 ```bash
 poetry install --with demo
 ```
+
+### Code Structure
+
+#### `models`
+
+Generic reusable Pydantic models (e.g. for plot types)
+
+#### `calculators`
+
+API-stable stats calculators

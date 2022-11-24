@@ -12,9 +12,9 @@ Statistics calculations require an SQLAlchemy session with a connection to the U
 In this example, we use `ukrdc3_session`, and calculate for the unit code "TEST_UNIT".
 
 ```python
-from ukrdc_stats.demographics import DemographicsCalculator
+from ukrdc_stats import DemographicStatsCalculator
 
-demographics = DemographicsCalculator(ukrdc3, "TEST_UNIT").extract_stats()
+demographics = DemographicStatsCalculator(ukrdc3, "TEST_UNIT").extract_stats()
 ```
 
 Each calculator returns multiple stats from the same cohort, and each of those includes basic metadata required for rendering and plotting the data.

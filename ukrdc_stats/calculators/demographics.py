@@ -11,7 +11,7 @@ from sqlalchemy import select, and_
 from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
 from pydantic import BaseModel
-from ukrdc_stats.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_stats.utils import age_from_dob
@@ -19,7 +19,7 @@ from ukrdc_stats.utils import age_from_dob
 from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
 
 
-from .models.generic_2d import (
+from ..models.generic_2d import (
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
@@ -78,7 +78,7 @@ def _calculate_base_patient_histogram(
     return histogram.rename(columns={"ukrdcid": "Count"})
 
 
-class DemographicsCalculator(AbstractFacilityStatsCalculator):
+class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal infomation listed in the patient table"""
 
     def __init__(
