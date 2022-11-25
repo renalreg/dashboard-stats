@@ -23,7 +23,10 @@ class AxisLabel3d(BaseModel):
 
 
 class Basic3dMetadata(BaseModel):
-    title: Optional[str] = None
+    title: str
+    summary: str
+    description: str
+
     axis_titles: Optional[AxisLabel3d] = None
 
 

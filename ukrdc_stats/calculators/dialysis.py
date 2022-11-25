@@ -306,6 +306,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="In-Centre Dialysis Frequency",
+                summary="",
+                description="",
                 axis_titles=AxisLabels2d(
                     x="Frequency (days per week)", y="No. of Patients"
                 ),
@@ -351,6 +353,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Initial Vascular Access of Incident Patients",
+                summary="",
+                description="",
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -366,7 +370,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of all Dialysis Patients on Home Therapies"
+                title="Proportion of all Dialysis Patients on Home Therapies",
+                summary="",
+                description="",
             ),
             node=all_patients_nodes,
             link=all_patients_vertices,
@@ -380,7 +386,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of Incident Patients on Home Therapies"
+                title="Proportion of Incident Patients on Home Therapies",
+                summary="",
+                description="",
             ),
             node=incident_nodes,
             link=incident_vertices,
@@ -394,7 +402,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of Prevalent Patients on Home Therapies"
+                title="Proportion of Prevalent Patients on Home Therapies",
+                summary="",
+                description="",
             ),
             node=prevalent_nodes,
             link=prevalent_vertices,

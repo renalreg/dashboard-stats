@@ -26,7 +26,9 @@ class Basic2dMetadata(BaseModel):
     Stats/plot metadata generic to all 2D data sets
     """
 
-    title: Optional[str] = None
+    title: str
+    summary: str
+    description: str
     axis_titles: Optional[AxisLabels2d] = None
 
 

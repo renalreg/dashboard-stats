@@ -12,7 +12,9 @@ class NetworkMetaData(BaseModel):
     this is used to generate api calls for sankey diagrams
     """
 
-    title: Optional[str] = None
+    title: str
+    summary: str
+    description: str
     total_population: Optional[int] = None
 
 

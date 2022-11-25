@@ -17,8 +17,10 @@ from pydantic import BaseModel
 
 
 # pydantic classes for the api
-class BiomarkerMeta(BaseModel):
+class BiomarkerMetaData(BaseModel):
     title: str
+    summary: str
+    description: str
     data_axis_titles: List[str]
 
 
@@ -37,12 +39,12 @@ class PatientBiomarker(BaseModel):
 
 
 class PatientBiomarkers(BaseModel):
-    meta_data: BiomarkerMeta
+    meta_data: BiomarkerMetaData
     patient_data: List[PatientBiomarker]
 
 
 def produce_output(
-    query_result: pd.DataFrame, meta_data: BiomarkerMeta
+    query_result: pd.DataFrame, meta_data: BiomarkerMetaData
 ) -> PatientBiomarkers:
 
     # There is quite a bit of junk in the results table so this statement turns them
@@ -156,8 +158,10 @@ def urea_reduction_ratio(
 
     return produce_output(
         test_data_id_merged,
-        BiomarkerMeta(
+        BiomarkerMetaData(
             title="Urea Reduction Ratio",
+            summary="",
+            description="",
             data_axis_titles=["Date", "URR", "Order ID", "Test ID"],
         ),
     )
@@ -188,8 +192,10 @@ def haemoglobin(
 
     return produce_output(
         test_data_id_merged,
-        BiomarkerMeta(
+        BiomarkerMetaData(
             title="Haemoglobin",
+            summary="",
+            description="",
             data_axis_titles=["Date", "Haemoglobin", "Order ID", "Test ID"],
         ),
     )
@@ -243,7 +249,10 @@ def cause_of_death(
 
     return Labelled2d(
         metadata=Labelled2dMetadata(
-            title="Cause of Death", coding_standard_x="EDTA_COD"
+            title="Cause of Death",
+            summary="",
+            description="",
+            coding_standard_x="EDTA_COD",
         ),
         data=Labelled2dData(
             x=list(test_data_hist.cause_of_death), y=list(test_data_hist.ukrdcid)
