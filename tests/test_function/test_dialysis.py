@@ -1,7 +1,12 @@
 from tracemalloc import start
 from typing_extensions import assert_type
 from unittest import TestCase
-from ..utils import create_demo_patient, generate_treatment, generate_dialysis_session
+from ..utils import (
+    check_required_metadata,
+    create_demo_patient,
+    generate_treatment,
+    generate_dialysis_session,
+)
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from ukrdc_stats.calculators.dialysis import (
@@ -322,3 +327,12 @@ def test_calculate_access_incident(ukrdc3_session_demographics: Session):
         },
         "data": {"x": ["NLN", "TLN"], "y": [1, 2], "error_y": None},
     }
+
+
+def test_dialysis_complete_metadata(ukrdc3_session_demographics: Session):
+    calculator = DialysisStatsCalculator(
+        ukrdc3_session_demographics, FACILITY, START_TIME, END_TIME
+    )
+    stats = calculator.extract_stats()
+
+    check_required_metadata(stats)

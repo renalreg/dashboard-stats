@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     Address,
@@ -12,9 +13,7 @@ from ukrdc_sqla.ukrdc import (
 from mimesis import Generic
 from mimesis.locales import Locale
 
-# debug dependancies
-import pandas as pd
-from sqlalchemy import select
+import warnings
 
 ETHNICITY_GROUP_CODES = [
     "A",
@@ -203,3 +202,16 @@ def generate_dialysis_session(
     ukrdc3.commit()
 
     return
+
+
+def check_required_metadata(stats_output: BaseModel):
+    for k, stat in stats_output.dict().items():
+        # Exclude top level metadata
+        if k == "metadata":
+            pass
+
+        stat_metadata = stat.get("metadata", {})
+
+        for field in ("title", "summary", "description"):
+            if not stat_metadata.get(field):
+                warnings.warn(f"Required metadata field {field} is empty for stat {k}")

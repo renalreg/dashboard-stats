@@ -5,7 +5,7 @@ from freezegun import freeze_time
 
 from ukrdc_stats import DemographicStatsCalculator
 
-from ..utils import create_demo_patient
+from ..utils import check_required_metadata, create_demo_patient
 
 TEST_COHORT_SIZE = 20
 TEST_TIME = datetime(2022, 11, 22)
@@ -125,3 +125,11 @@ def test_extract_stats(ukrdc3_session_demographics: Session):
 
     # Test most basic composite stats
     assert stats.metadata.population == TEST_COHORT_SIZE
+
+
+@freeze_time(TEST_TIME)
+def test_demographics_complete_metadata(ukrdc3_session_demographics: Session):
+    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, "FACILITY_1")
+    stats = calculator.extract_stats()
+
+    check_required_metadata(stats)
