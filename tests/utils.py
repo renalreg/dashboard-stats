@@ -67,7 +67,16 @@ QHD20_CODES = ["TLN", "NLN", "AVF"]
 
 QBL05_CODES = ["HOSP", "HOME"]
 
-generic = Generic(Locale.EN_GB, seed="moo")
+GENERIC_DEMOGRAPHICS = Generic(Locale.EN_GB, seed="moo")
+GENERIC_DIA_TREATMENT = Generic(Locale.EN_GB, seed="moo")
+GENERIC_DIA_SESSION = Generic(Locale.EN_GB, seed="moo")
+
+
+def reset_generics():
+    global GENERIC_DEMOGRAPHICS, GENERIC_DIA_TREATMENT, GENERIC_DIA_SESSION
+    GENERIC_DEMOGRAPHICS = Generic(Locale.EN_GB, seed="moo")
+    GENERIC_DIA_TREATMENT = Generic(Locale.EN_GB, seed="moo")
+    GENERIC_DIA_SESSION = Generic(Locale.EN_GB, seed="moo")
 
 
 def create_demo_patient(
@@ -81,40 +90,39 @@ def create_demo_patient(
         pid=pid,
         sendingfacility=sending_facility,
         sendingextract=sending_extract,
-        localpatientid=f"{generic.numeric.integer_number(0):10d}",
-        # ukrdcid=f"{generic.numeric.integer_number(0):10d}",
+        localpatientid=f"{GENERIC_DEMOGRAPHICS.numeric.integer_number(0):10d}",
         ukrdcid=f"ukrdc_{pid}",
     )
 
     name = Name(
         id=id_,
         pid=pid,
-        family=generic.person.last_name(),
-        given=generic.person.first_name(),
+        family=GENERIC_DEMOGRAPHICS.person.last_name(),
+        given=GENERIC_DEMOGRAPHICS.person.first_name(),
         nameuse="L",
     )
 
     address = Address(
         id=id_,
         pid=pid,
-        street=generic.address.address(),
-        town=generic.address.city(),
-        county=generic.address.state(),
-        postcode=generic.address.postal_code(),
-        country_description=generic.address.country(),
+        street=GENERIC_DEMOGRAPHICS.address.address(),
+        town=GENERIC_DEMOGRAPHICS.address.city(),
+        county=GENERIC_DEMOGRAPHICS.address.state(),
+        postcode=GENERIC_DEMOGRAPHICS.address.postal_code(),
+        country_description=GENERIC_DEMOGRAPHICS.address.country(),
     )
 
     patient = Patient(
         pid=pid,
-        birth_time=generic.datetime.date(start=1950, end=2010),
-        gender=generic.person.gender(iso5218=True),
-        ethnic_group_code=generic.choice(ETHNICITY_GROUP_CODES),
-        country_of_birth=generic.address.country_code(),
+        birth_time=GENERIC_DEMOGRAPHICS.datetime.date(start=1950, end=2010),
+        gender=GENERIC_DEMOGRAPHICS.person.gender(iso5218=True),
+        ethnic_group_code=GENERIC_DEMOGRAPHICS.choice(ETHNICITY_GROUP_CODES),
+        country_of_birth=GENERIC_DEMOGRAPHICS.address.country_code(),
     )
     patient_number = PatientNumber(
         id=id_,
         pid=pid,
-        patientid=f"{generic.numeric.integer_number(0):10d}",
+        patientid=f"{GENERIC_DEMOGRAPHICS.numeric.integer_number(0):10d}",
         organization="NHS",
         numbertype="NI",
     )
@@ -128,7 +136,7 @@ def create_demo_patient(
     return pid
 
 
-def generate_treatment(
+def generate_dialysis_treatment(
     id_: int,
     pid: str,
     health_care_facility: str,
@@ -136,19 +144,20 @@ def generate_treatment(
     end_time: datetime,
     ukrdc3: Session,
 ):
-    # generic = Generic(Locale.EN_GB, seed=seed)
+    # Forces admit reason code to a DIALYSIS_MODALITY_CODES code,
+    # so every generated patient will be included in the dialysis stats extract
 
     # randomly select treatment modality
-    admit_reason_code = generic.choice(TREATMENT_MODALITY_CODES)
+    admit_reason_code = GENERIC_DIA_TREATMENT.choice(DIALYSIS_MODALITY_CODES)
 
     qbl05 = None
     # select some other options based on modality
     if admit_reason_code in ["1", "2", "3", "5"]:
-        qbl05 = generic.choice(QBL05_CODES)
+        qbl05 = GENERIC_DIA_TREATMENT.choice(QBL05_CODES)
 
     time_delta = timedelta(weeks=2)
-    incident = generic.choice([True, False])
-    prevalent = generic.choice([True, False])
+    incident = GENERIC_DIA_TREATMENT.choice([True, False])
+    prevalent = GENERIC_DIA_TREATMENT.choice([True, False])
     if incident:
         start_time = start_time + time_delta
     if prevalent:
@@ -187,7 +196,7 @@ def generate_dialysis_session(
         ) - timedelta(hours=2)
 
     procedure_time = session_period_start + timedelta(hours=1)
-    qhd20 = generic.choice(QHD20_CODES)
+    qhd20 = GENERIC_DIA_SESSION.choice(QHD20_CODES)
     for i in range(number_of_sessions):
         dialysis_session = DialysisSession(
             id=f"test:{id_}:{i}",

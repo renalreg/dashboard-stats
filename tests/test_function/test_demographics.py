@@ -5,7 +5,7 @@ from freezegun import freeze_time
 
 from ukrdc_stats import DemographicStatsCalculator
 
-from ..utils import check_required_metadata, create_demo_patient
+from ..utils import check_required_metadata, create_demo_patient, reset_generics
 
 TEST_COHORT_SIZE = 20
 TEST_TIME = datetime(2022, 11, 22)
@@ -13,6 +13,8 @@ TEST_TIME = datetime(2022, 11, 22)
 
 @pytest.fixture(scope="function")
 def ukrdc3_session_demographics(ukrdc3_session: Session):
+    reset_generics()
+
     for i in range(TEST_COHORT_SIZE):
         create_demo_patient(i, "FACILITY_1", "UKRDC", ukrdc3_session)
     ukrdc3_session.commit()
@@ -49,7 +51,7 @@ def test_calculate_gender(ukrdc3_session_demographics: Session):
         },
         "data": {
             "x": ["Female", "Indeterminate", "Male"],
-            "y": [8, 4, 4],
+            "y": [8, 3, 4],
             "error_y": None,
         },
     }
@@ -71,8 +73,8 @@ def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
             "units_y": None,
         },
         "data": {
-            "x": ["Asian", "Black", "Mixed", "Other", "White"],
-            "y": [7, 4, 3, 2, 1],
+            "x": ["Asian", "Black", "Mixed", "Not Stated", "Other", "White"],
+            "y": [6, 3, 4, 2, 1, 4],
             "error_y": None,
         },
     }
@@ -96,23 +98,28 @@ def test_calculate_age(ukrdc3_session_demographics: Session):
         },
         "data": {
             "x": [
-                "13",
-                "16",
-                "19",
-                "20",
-                "26",
+                "12",
+                "22",
+                "23",
                 "27",
-                "32",
-                "34",
-                "46",
-                "47",
+                "28",
+                "29",
+                "31",
+                "35",
+                "39",
+                "42",
+                "43",
+                "45",
+                "48",
                 "49",
-                "54",
-                "59",
-                "63",
-                "69",
+                "50",
+                "55",
+                "57",
+                "58",
+                "61",
+                "68",
             ],
-            "y": [1, 1, 2, 1, 1, 1, 2, 2, 1, 1, 1, 1, 2, 1, 2],
+            "y": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "error_y": None,
         },
     }
