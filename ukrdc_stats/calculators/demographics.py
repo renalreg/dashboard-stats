@@ -39,7 +39,7 @@ class DemographicsStats(BaseModel):
 
 
 def _calculate_base_patient_histogram(
-    cohort: pd.DataFrame, group: str, code_map: Optional[Dict] = None
+    cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
 ) -> pd.DataFrame:
     """Extract a histogram of the patient cohort, grouped by the given column
 
