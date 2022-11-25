@@ -7,7 +7,7 @@ from ukrdc_sqla.ukrdc import (
     PatientNumber,
     PatientRecord,
     Treatment,
-    DialysisSession
+    DialysisSession,
 )
 from mimesis import Generic
 from mimesis.locales import Locale
@@ -147,7 +147,6 @@ def generate_treatment(
     if admit_reason_code in ["1", "2", "3", "5"]:
         qbl05 = generic.choice(QBL05_CODES)
 
-
     time_delta = timedelta(weeks=2)
     incident = generic.choice([True, False])
     prevalent = generic.choice([True, False])
@@ -170,30 +169,33 @@ def generate_treatment(
 
     return
 
+
 def generate_dialysis_session(
-    id_:int, 
-    pid:str, 
-    session_period_start:datetime,
-    session_period_end:datetime, 
+    id_: int,
+    pid: str,
+    session_period_start: datetime,
+    session_period_end: datetime,
     number_of_sessions: int,
     ukrdc3: Session,
 ):
 
     # generate equally spaced treatments in time window to keep things simple
     if number_of_sessions <= 1:
-        timestep = (session_period_end - session_period_start)
-    else: 
-        timestep = (session_period_end - session_period_start) / (number_of_sessions -1) - timedelta(hours=2)
+        timestep = session_period_end - session_period_start
+    else:
+        timestep = (session_period_end - session_period_start) / (
+            number_of_sessions - 1
+        ) - timedelta(hours=2)
 
     procedure_time = session_period_start + timedelta(hours=1)
     qhd20 = generic.choice(QHD20_CODES)
     for i in range(number_of_sessions):
         dialysis_session = DialysisSession(
-            id = f"test:{id_}:{i}",
-            pid = pid,
-            procedure_type_code = "302497006",
-            procedure_time = procedure_time,
-            qhd20 = qhd20 
+            id=f"test:{id_}:{i}",
+            pid=pid,
+            procedure_type_code="302497006",
+            procedure_time=procedure_time,
+            qhd20=qhd20,
         )
         ukrdc3.add(dialysis_session)
         procedure_time = procedure_time + timestep
@@ -201,5 +203,3 @@ def generate_dialysis_session(
     ukrdc3.commit()
 
     return
-
-

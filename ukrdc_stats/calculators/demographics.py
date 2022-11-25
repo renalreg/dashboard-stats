@@ -133,7 +133,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Gender Distribution",
-                coding_standard_x="NHS_DATA_DICTIONARY",
+                summary="",
+                description="",
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -152,7 +153,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",
-                coding_standard_x="NHS_DATA_DICTIONARY",
+                summary="",
+                description="",
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -175,6 +177,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Age Distribution",
+                summary="",
+                description="",
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
             data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
