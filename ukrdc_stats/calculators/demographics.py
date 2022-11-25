@@ -199,7 +199,6 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # Crunch the numbers and make dataframes to produce "histograms" to display idividual bits of data
         pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 
         # Build output object
