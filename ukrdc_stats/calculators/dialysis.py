@@ -293,6 +293,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 row["fromtime"], row["totime"], row["sessioncount"]
             ),
             axis=1,
+            result_type="reduce",
         )
 
         # turn into  histogram
