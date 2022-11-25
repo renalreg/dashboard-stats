@@ -37,11 +37,14 @@ def test_calculate_gender(ukrdc3_session_demographics: Session):
     calculator.extract_patient_cohort()
 
     g = calculator._calculate_gender()
+
     assert g.dict() == {
         "metadata": {
             "title": "Gender Distribution",
+            "summary": "",
+            "description": "",
             "axis_titles": {"x": "Gender", "y": "No. of Patients"},
-            "coding_standard_x": "NHS_DATA_DICTIONARY",
+            "coding_standard_x": None,
             "units_y": None,
         },
         "data": {
@@ -61,8 +64,10 @@ def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
     assert g.dict() == {
         "metadata": {
             "title": "Ethnic Group",
+            "summary": "",
+            "description": "",
             "axis_titles": {"x": "Ethnicity", "y": "No. of Patients"},
-            "coding_standard_x": "NHS_DATA_DICTIONARY",
+            "coding_standard_x": None,
             "units_y": None,
         },
         "data": {
@@ -83,6 +88,8 @@ def test_calculate_age(ukrdc3_session_demographics: Session):
     assert g.dict() == {
         "metadata": {
             "title": "Age Distribution",
+            "summary": "",
+            "description": "",
             "axis_titles": {"x": "Age", "y": "No. of Patients"},
             "coding_standard_x": None,
             "units_y": None,

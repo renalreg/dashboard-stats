@@ -4,7 +4,10 @@ from unittest import TestCase
 from ..utils import create_demo_patient, generate_treatment, generate_dialysis_session
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from ukrdc_stats.calculators.dialysis import DialysisStatsCalculator, _calculate_frequency
+from ukrdc_stats.calculators.dialysis import (
+    DialysisStatsCalculator,
+    _calculate_frequency,
+)
 
 
 import pandas as pd
@@ -12,7 +15,7 @@ from pandas import Timestamp
 
 import pytest
 
-#debug dependancies
+# debug dependancies
 from ukrdc_sqla.ukrdc import DialysisSession
 from sqlalchemy import select
 
@@ -127,7 +130,6 @@ def test_extract_incident_prevalent(ukrdc3_session_demographics: Session):
     assert cohort_dataframe[["prevalent", "incident"]].equals(incident_prevalent)
 
 
-
 def test_calculate_all_home_therapies():
 
     calculator = DialysisStatsCalculator(
@@ -141,6 +143,8 @@ def test_calculate_all_home_therapies():
     assert all_home.dict() == {
         "metadata": {
             "title": "Proportion of all Dialysis Patients on Home Therapies",
+            "summary": "",
+            "description": "",
             "total_population": None,
         },
         "node": {
@@ -170,10 +174,11 @@ def test_calculate_incident_home_therapies():
 
     incident_home = calculator._calculate_incident_home_therapies()
 
-
     assert incident_home.dict() == {
         "metadata": {
             "title": "Proportion of Incident Patients on Home Therapies",
+            "summary": "",
+            "description": "",
             "total_population": None,
         },
         "node": {
@@ -206,6 +211,8 @@ def test_calculate_prevalent_home_therapies():
     assert prevalent_home.dict() == {
         "metadata": {
             "title": "Proportion of Prevalent Patients on Home Therapies",
+            "summary": "",
+            "description": "",
             "total_population": None,
         },
         "node": {
@@ -224,6 +231,7 @@ def test_calculate_prevalent_home_therapies():
         },
     }
 
+
 def test_calculate_dialysis_frequency(ukrdc3_session_demographics: Session):
     calculator = DialysisStatsCalculator(
         ukrdc3_session_demographics, FACILITY, START_TIME, END_TIME
@@ -241,32 +249,47 @@ def test_calculate_dialysis_frequency(ukrdc3_session_demographics: Session):
             id_=i,
             pid=row["pid"],
             session_period_start=START_TIME,
-            session_period_end=START_TIME + timedelta(weeks = 1),
+            session_period_end=START_TIME + timedelta(weeks=1),
             number_of_sessions=average_sessions,
             ukrdc3=ukrdc3_session_demographics,
         )
 
-
     dialysis_freq = calculator._calculate_dialysis_frequency()
 
     assert dialysis_freq.dict() == {
-        'metadata': {
-            'title': 'In-Centre Dialysis Frequency', 
-            'axis_titles': {
-                'x': 'Frequency (days per week)', 
-                'y': 'No. of Patients'
-            }, 
-            'coding_standard_x': None, 
-            'units_y': None}, 
-            'data': {
-                'x': ['0.0- 0.5', '0.5- 1.0', '1.0- 1.5', '1.5- 2.0', '2.0- 2.5', '2.5- 3.0', '3.0- 3.5', '3.5- 4.0', '4.0- 4.5', '4.5- 5.0', '5.0- 5.5', '5.5- 6.0', '6.0- 6.5', '6.5- 7.0'], 
-                'y': [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0], 
-                'error_y': None}
-            }
+        "metadata": {
+            "title": "In-Centre Dialysis Frequency",
+            "summary": "",
+            "description": "",
+            "axis_titles": {"x": "Frequency (days per week)", "y": "No. of Patients"},
+            "coding_standard_x": None,
+            "units_y": None,
+        },
+        "data": {
+            "x": [
+                "0.0- 0.5",
+                "0.5- 1.0",
+                "1.0- 1.5",
+                "1.5- 2.0",
+                "2.0- 2.5",
+                "2.5- 3.0",
+                "3.0- 3.5",
+                "3.5- 4.0",
+                "4.0- 4.5",
+                "4.5- 5.0",
+                "5.0- 5.5",
+                "5.5- 6.0",
+                "6.0- 6.5",
+                "6.5- 7.0",
+            ],
+            "y": [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+            "error_y": None,
+        },
+    }
 
 
 def test_calculate_access_incident(ukrdc3_session_demographics: Session):
-    
+
     calculator = DialysisStatsCalculator(
         ukrdc3_session_demographics, FACILITY, START_TIME, END_TIME
     )
@@ -282,24 +305,20 @@ def test_calculate_access_incident(ukrdc3_session_demographics: Session):
             id_=i,
             pid=row["pid"],
             session_period_start=START_TIME,
-            session_period_end=START_TIME + timedelta(weeks = 1),
+            session_period_end=START_TIME + timedelta(weeks=1),
             number_of_sessions=average_sessions,
             ukrdc3=ukrdc3_session_demographics,
         )
 
     access = calculator._calculate_access_incident()
     assert access.dict() == {
-        'metadata': {
-            'title': 'Initial Vascular Access of Incident Patients', 
-            'axis_titles': {
-                'x': 'Line Type', 
-                'y': 'No. of Patients'}, 
-            'coding_standard_x': None, 
-            'units_y': None
-        }, 
-        'data': {
-            'x': ['NLN', 'TLN'], 
-            'y': [1, 2], 
-            'error_y': None
-            }
+        "metadata": {
+            "title": "Initial Vascular Access of Incident Patients",
+            "summary": "",
+            "description": "",
+            "axis_titles": {"x": "Line Type", "y": "No. of Patients"},
+            "coding_standard_x": None,
+            "units_y": None,
+        },
+        "data": {"x": ["NLN", "TLN"], "y": [1, 2], "error_y": None},
     }
