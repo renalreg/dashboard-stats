@@ -3,7 +3,7 @@ Patient cohort dialysis stats calculator
 """
 
 import datetime as dt
-from typing import Literal, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -30,12 +30,19 @@ from ..models.generic_2d import (
 from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
 
 
+class DialysisMetadata(BaseModel):
+    population: Optional[int] = None
+    from_time: dt.datetime
+    to_time: dt.datetime
+
+
 class DialysisStats(BaseModel):
     all_patients_home_therapies: LabelledNetwork
     incident_home_therapies: LabelledNetwork
     prevalent_home_therapies: LabelledNetwork
     incentre_dialysis_frequency: Labelled2d
     incident_initial_access: Labelled2d
+    metadata: DialysisMetadata
 
 
 def _calculate_frequency(
@@ -433,9 +440,14 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # TODO: Do we want metadata like population size here?
-        #       See DemographicStatsCalculator.extract_stats
+        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
+
         return DialysisStats(
+            metadata=DialysisMetadata(
+                population=pop_size,
+                from_time=self.time_window[0],
+                to_time=self.time_window[1],
+            ),
             all_patients_home_therapies=self._calculate_all_home_therapies(),
             incident_home_therapies=self._calculate_incident_home_therapies(),
             prevalent_home_therapies=self._calculate_prevalent_home_therapies(),
