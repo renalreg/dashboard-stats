@@ -1,13 +1,4 @@
-from tracemalloc import start
-from typing_extensions import assert_type
-from unittest import TestCase
-from ..utils import (
-    check_required_metadata,
-    create_demo_patient,
-    generate_dialysis_treatment,
-    generate_dialysis_session,
-    reset_generics,
-)
+from ..utils import check_required_metadata, FakeDataGenerator
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from ukrdc_stats.calculators.dialysis import (
@@ -15,15 +6,10 @@ from ukrdc_stats.calculators.dialysis import (
     _calculate_frequency,
 )
 
-
 import pandas as pd
 from pandas import Timestamp
 
 import pytest
-
-# debug dependancies
-from ukrdc_sqla.ukrdc import DialysisSession
-from sqlalchemy import select
 
 
 TEST_COHORT_SIZE = 10
@@ -98,18 +84,19 @@ INCIDENT_PREVALENT = {
 
 @pytest.fixture(scope="function")
 def ukrdc3_session_dialysis(ukrdc3_session: Session):
-    reset_generics()
+    generator = FakeDataGenerator("moo")
+
     # hard code a bunch of treatments
     FACILITY = "Hogwarts"
     for i in range(TEST_COHORT_SIZE):
-        pid = create_demo_patient(
+        pid = generator.create_demo_patient(
             id_=i,
             sending_facility=FACILITY,
             sending_extract="UKRDC",
             ukrdc3=ukrdc3_session,
         )
 
-        generate_dialysis_treatment(
+        generator.generate_dialysis_treatment(
             id_=i,
             pid=pid,
             health_care_facility=FACILITY,
@@ -265,19 +252,19 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
     )
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
 
-    average_sessions = 3
     patient_data = pd.DataFrame(data=DATA)
 
     # generate dialysis sessions
+    generator = FakeDataGenerator("moo")
     for i, row in patient_data[
         patient_data.admitreasoncode.isin(["1", "2", "3", "5"])
     ].iterrows():
-        generate_dialysis_session(
+        generator.generate_dialysis_session(
             id_=i,
             pid=row["pid"],
             session_period_start=START_TIME,
             session_period_end=START_TIME + timedelta(weeks=1),
-            number_of_sessions=average_sessions,
+            number_of_sessions=3,
             ukrdc3=ukrdc3_session_dialysis,
         )
 
@@ -323,17 +310,17 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
     patient_data = pd.DataFrame(data=DATA)
 
-    average_sessions = 1
     # generate dialysis sessions
+    generator = FakeDataGenerator("moo")
     for i, row in patient_data[
         patient_data.admitreasoncode.isin(["1", "2", "3", "5"])
     ].iterrows():
-        generate_dialysis_session(
+        generator.generate_dialysis_session(
             id_=i,
             pid=row["pid"],
             session_period_start=START_TIME,
             session_period_end=START_TIME + timedelta(weeks=1),
-            number_of_sessions=average_sessions,
+            number_of_sessions=1,
             ukrdc3=ukrdc3_session_dialysis,
         )
 

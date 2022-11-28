@@ -5,7 +5,7 @@ from freezegun import freeze_time
 
 from ukrdc_stats import DemographicStatsCalculator
 
-from ..utils import check_required_metadata, create_demo_patient, reset_generics
+from ..utils import check_required_metadata, FakeDataGenerator
 
 TEST_COHORT_SIZE = 20
 TEST_TIME = datetime(2022, 11, 22)
@@ -13,10 +13,10 @@ TEST_TIME = datetime(2022, 11, 22)
 
 @pytest.fixture(scope="function")
 def ukrdc3_session_demographics(ukrdc3_session: Session):
-    reset_generics()
+    generator = FakeDataGenerator("moo")
 
     for i in range(TEST_COHORT_SIZE):
-        create_demo_patient(i, "FACILITY_1", "UKRDC", ukrdc3_session)
+        generator.create_demo_patient(i, "FACILITY_1", "UKRDC", ukrdc3_session)
     ukrdc3_session.commit()
     return ukrdc3_session
 
