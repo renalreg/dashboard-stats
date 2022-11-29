@@ -4,9 +4,11 @@ Abstract base classes for the ukrdc_stats package
 
 from abc import ABC, abstractmethod
 from typing import Optional
+
 import pandas as pd
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from ..models.base import JSONModel
 
 
 class AbstractFacilityStatsCalculator(ABC):
@@ -34,10 +36,10 @@ class AbstractFacilityStatsCalculator(ABC):
         """
 
     @abstractmethod
-    def extract_stats(self) -> BaseModel:
+    def extract_stats(self) -> JSONModel:
         """
         Extract all stats from the patient cohort and return them in a Pydantic object
 
         Returns:
-            BaseModel: Pydantic object containing all related stats
+            JSONModel: Pydantic object containing all related stats
         """

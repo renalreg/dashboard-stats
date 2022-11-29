@@ -13,32 +13,31 @@ from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient, Code
 from ukrdc_stats.exceptions import NoCohortError
 from .models.generic_2d import Labelled2d, Labelled2dMetadata, Labelled2dData
-from pydantic import BaseModel
-
+from .models.base import JSONModel
 
 # pydantic classes for the api
-class BiomarkerMetaData(BaseModel):
+class BiomarkerMetaData(JSONModel):
     title: str
     summary: str
     description: str
     data_axis_titles: List[str]
 
 
-class BiomarkerData(BaseModel):
+class BiomarkerData(JSONModel):
     timestamps: List[dt.datetime]
     testresult: List[Union[float, None]]
     orderid: List[str]
     resultid: List[str]
 
 
-class PatientBiomarker(BaseModel):
+class PatientBiomarker(JSONModel):
     ukrdcid: str
     median_result: Union[float, None]
     most_recent_result: Union[float, None]
     data: BiomarkerData
 
 
-class PatientBiomarkers(BaseModel):
+class PatientBiomarkers(JSONModel):
     meta_data: BiomarkerMetaData
     patient_data: List[PatientBiomarker]
 
