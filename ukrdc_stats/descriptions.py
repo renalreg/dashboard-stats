@@ -1,15 +1,17 @@
-from textwrap import dedent
+"""
+Module to contain the long descriptions for the pydantic output
+"""
 
-# this file contains the long desriptions of all the statistics returned by the api
+from textwrap import dedent
 
 
 dialysis_descriptions = {
     "ALL_PATIENTS_HOME_THERAPIES": dedent(
-        """ 
-        # All Patients Home Therapies 
+        """
+        # All Patients Home Therapies
 
-        For a specified unit and time window All Patients Home Therapies contain the following numbers:  
-        * Number of patients on Haemodialysis. This is defined as the number of patients registered for haemodialysis, haemofiltration, haemodiafiltration or ultrafiltration treatments. 
+        For a specified unit and time window All Patients Home Therapies contain the following numbers:
+        * Number of patients on Haemodialysis. This is defined as the number of patients registered for haemodialysis, haemofiltration, haemodiafiltration or ultrafiltration treatments.
         * Number of patients on Peritoneal Dialysis.Defined as the number of patients registered for CAPD or APD treatments.
         * Number of patients on home therapies. Total number of patients on Peritoneal Dialysis as defined above combined with the number of patients on heamodialysis on home therapies.
         * Number of patients on In centre therapies. Total number of patients registered for Haemodialysis in-centre
@@ -21,39 +23,39 @@ dialysis_descriptions = {
     ),
     "INCIDENT_HOME_THERAPIES": dedent(
         """
-        # Incident Patients Home Therapies 
-        For a specified unit and time window contains :  
+        # Incident Patients Home Therapies
+        For a specified unit and time window contains:
         * Number of incident patients on Haemodialysis. Defined as the number of patients registered for haemodialysis, haemofiltration, haemodiafiltration or ultrafiltration treatments.
         * Number of incident patients on Peritoneal Dialysis. Defined as the number of patients registered for CAPD or APD treatments.
         * Number of incident patients on home therapies.Total number of patients on Peritoneal Dialysis as defined above combined with the number of patients on heamodialysis on home therapies.
         * Number of incident patients on In centre therapies.
-        
+
         Total number of patients registered for Haemodialysis in-centre
 
-        Incidence in this instance is defined as the patients who begin treatment within the time window and have no other registered dialysis or transplant modalities. 
+        Incidence in this instance is defined as the patients who begin treatment within the time window and have no other registered dialysis or transplant modalities.
         """
     ),
     "PREVELENT_HOME_THERAPIES": dedent(
         """
-        # Prevalent Patients Home Therapies 
+        # Prevalent Patients Home Therapies
 
-        For a specified unit and time window contains:  
+        For a specified unit and time window contains:
         * Number of prevalent patients on Haemodialysis. Defined as the number of patients registered for haemodialysis, haemofiltration, haemodiafiltration or ultrafiltration treatments.
         * Number of prevalent patients on Peritoneal Dialysis. Defined as the number of patients registered for CAPD or APD treatments.
         * Number of prevalent patients on home therapies. Total number of patients on Peritoneal Dialysis as defined above combined with the number of patients on heamodialysis on home therapies.
-        * Number of prevalent patients on In centre therapies. Total number of patients registered for Haemodialysis in-centre. 
+        * Number of prevalent patients on In centre therapies. Total number of patients registered for Haemodialysis in-centre.
 
-        Incidence in this instance is defined as the patients who begin treatment within the time window and have no other registered dialysis or transplant modalities. 
+        Incidence in this instance is defined as the patients who begin treatment within the time window and have no other registered dialysis or transplant modalities.
     """
     ),
     "INCENTRE_DIALYSIS_FREQ": dedent(
         """
-        ipsum lopsum quantum 
+        ipsum lopsum quantum
         """
     ),
     "INCIDENT_INITIAL_ACCESS": dedent(
         """
-        ipsum lopsum quantum 
+        ipsum lopsum quantum
         """
     ),
 }
@@ -62,17 +64,17 @@ dialysis_descriptions = {
 demographic_descriptions = {
     "GENDER_DESCRIPTION": dedent(
         """
-        ipsum lopsum quantum 
+        ipsum lopsum quantum
         """
     ),
     "ETHNIC_GROUP_DESCRIPTION": dedent(
         """
-        ipsum lopsum quantum 
+        ipsum lopsum quantum
         """
     ),
     "AGE_DESCRIPTION": dedent(
         """
-        ipsum lopsum quantum 
+        ipsum lopsum quantum
         """
     ),
 }
