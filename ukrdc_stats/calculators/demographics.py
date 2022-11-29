@@ -17,7 +17,7 @@ from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import age_from_dob
 
 from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
-
+from ..descriptions import demographic_descriptions
 
 from ..models.generic_2d import (
     Labelled2d,
@@ -133,8 +133,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Gender Distribution",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["GENDER_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -153,8 +153,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["ETHNIC_GROUP_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -177,8 +177,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Age Distribution",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
             data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
