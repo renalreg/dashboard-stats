@@ -40,20 +40,10 @@ def test_calculate_gender(ukrdc3_session_demographics: Session):
 
     g = calculator._calculate_gender()
 
-    assert g.dict() == {
-        "metadata": {
-            "title": "Gender Distribution",
-            "summary": "",
-            "description": "",
-            "axis_titles": {"x": "Gender", "y": "No. of Patients"},
-            "coding_standard_x": None,
-            "units_y": None,
-        },
-        "data": {
-            "x": ["Female", "Indeterminate", "Male"],
-            "y": [8, 3, 4],
-            "error_y": None,
-        },
+    assert g.dict()["data"] == {
+        "x": ["Female", "Indeterminate", "Male"],
+        "y": [8, 3, 4],
+        "error_y": None,
     }
 
 
@@ -63,20 +53,10 @@ def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
     calculator.extract_patient_cohort()
 
     g = calculator._calculate_ethnic_group_code()
-    assert g.dict() == {
-        "metadata": {
-            "title": "Ethnic Group",
-            "summary": "",
-            "description": "",
-            "axis_titles": {"x": "Ethnicity", "y": "No. of Patients"},
-            "coding_standard_x": None,
-            "units_y": None,
-        },
-        "data": {
-            "x": ["Asian", "Black", "Mixed", "Not Stated", "Other", "White"],
-            "y": [6, 3, 4, 2, 1, 4],
-            "error_y": None,
-        },
+    assert g.dict()["data"] == {
+        "x": ["Asian", "Black", "Mixed", "Not Stated", "Other", "White"],
+        "y": [6, 3, 4, 2, 1, 4],
+        "error_y": None,
     }
 
 
@@ -87,41 +67,31 @@ def test_calculate_age(ukrdc3_session_demographics: Session):
 
     g = calculator._calculate_age()
 
-    assert g.dict() == {
-        "metadata": {
-            "title": "Age Distribution",
-            "summary": "",
-            "description": "",
-            "axis_titles": {"x": "Age", "y": "No. of Patients"},
-            "coding_standard_x": None,
-            "units_y": None,
-        },
-        "data": {
-            "x": [
-                "12",
-                "22",
-                "23",
-                "27",
-                "28",
-                "29",
-                "31",
-                "35",
-                "39",
-                "42",
-                "43",
-                "45",
-                "48",
-                "49",
-                "50",
-                "55",
-                "57",
-                "58",
-                "61",
-                "68",
-            ],
-            "y": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            "error_y": None,
-        },
+    assert g.dict()["data"] == {
+        "x": [
+            "12",
+            "22",
+            "23",
+            "27",
+            "28",
+            "29",
+            "31",
+            "35",
+            "39",
+            "42",
+            "43",
+            "45",
+            "48",
+            "49",
+            "50",
+            "55",
+            "57",
+            "58",
+            "61",
+            "68",
+        ],
+        "y": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        "error_y": None,
     }
 
 

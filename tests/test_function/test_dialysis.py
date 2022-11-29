@@ -154,13 +154,7 @@ def test_calculate_all_home_therapies():
 
     all_home = calculator._calculate_all_home_therapies()
 
-    assert all_home.dict() == {
-        "metadata": {
-            "title": "Proportion of all Dialysis Patients on Home Therapies",
-            "summary": "",
-            "description": "",
-            "total_population": None,
-        },
+    assert {key: item for key, item in all_home.dict().items() if key!="metadata"} == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -188,13 +182,7 @@ def test_calculate_incident_home_therapies():
 
     incident_home = calculator._calculate_incident_home_therapies()
 
-    assert incident_home.dict() == {
-        "metadata": {
-            "title": "Proportion of Incident Patients on Home Therapies",
-            "summary": "",
-            "description": "",
-            "total_population": None,
-        },
+    assert {key:item for key, item in incident_home.dict().items() if key != "metadata"} == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -222,13 +210,7 @@ def test_calculate_prevalent_home_therapies():
 
     prevalent_home = calculator._calculate_prevalent_home_therapies()
 
-    assert prevalent_home.dict() == {
-        "metadata": {
-            "title": "Proportion of Prevalent Patients on Home Therapies",
-            "summary": "",
-            "description": "",
-            "total_population": None,
-        },
+    assert {key:item for key, item in prevalent_home.dict().items() if key !="metadata"} == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -270,16 +252,7 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     dialysis_freq = calculator._calculate_dialysis_frequency()
 
-    assert dialysis_freq.dict() == {
-        "metadata": {
-            "title": "In-Centre Dialysis Frequency",
-            "summary": "",
-            "description": "",
-            "axis_titles": {"x": "Frequency (days per week)", "y": "No. of Patients"},
-            "coding_standard_x": None,
-            "units_y": None,
-        },
-        "data": {
+    assert dialysis_freq.dict()["data"]== {
             "x": [
                 "0.0- 0.5",
                 "0.5- 1.0",
@@ -298,8 +271,7 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
             ],
             "y": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
             "error_y": None,
-        },
-    }
+        }
 
 
 def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
@@ -326,17 +298,7 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
 
     access = calculator._calculate_access_incident()
 
-    assert access.dict() == {
-        "metadata": {
-            "title": "Initial Vascular Access of Incident Patients",
-            "summary": "",
-            "description": "",
-            "axis_titles": {"x": "Line Type", "y": "No. of Patients"},
-            "coding_standard_x": None,
-            "units_y": None,
-        },
-        "data": {"x": ["AVF"], "y": [1], "error_y": None},
-    }
+    assert access.dict()["data"] == {"x": ["AVF"], "y": [1], "error_y": None}
 
 
 def test_dialysis_complete_metadata(ukrdc3_session_dialysis: Session):
