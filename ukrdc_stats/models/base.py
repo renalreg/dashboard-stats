@@ -1,3 +1,7 @@
+"""
+Base Pydantic class with JSON aliasing, used in the UKRDC API
+"""
+
 from pydantic import BaseModel
 
 

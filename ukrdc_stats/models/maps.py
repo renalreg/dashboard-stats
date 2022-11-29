@@ -5,7 +5,7 @@ Generic 3D/map data model for UKRDC stats
 from datetime import datetime
 from typing import List, Union, Optional
 
-from .models.base import JSONModel
+from .base import JSONModel
 
 Number = Union[int, float]
 
