@@ -3,35 +3,32 @@ Patient cohort demographics stats calculator
 """
 
 import datetime as dt
-from typing import Optional, Dict
-import pandas as pd
+from typing import Dict, Optional
 
+import pandas as pd
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
 from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
-from pydantic import BaseModel
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
 from ukrdc_stats.exceptions import NoCohortError
-
 from ukrdc_stats.utils import age_from_dob
 
-from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
-
-
 from ..models.generic_2d import (
+    AxisLabels2d,
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
-    AxisLabels2d,
 )
+from ..models.base import JSONModel
 
 
-class DemographicsMetadata(BaseModel):
+class DemographicsMetadata(JSONModel):
     population: Optional[int] = None
 
 
-class DemographicsStats(BaseModel):
+class DemographicsStats(JSONModel):
     gender: Labelled2d
     ethnic_group: Labelled2d
     age: Labelled2d

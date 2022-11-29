@@ -5,14 +5,14 @@ Generic 2D data model for UKRDC stats
 from datetime import datetime
 from typing import List, Optional, Union
 
-from pydantic import BaseModel
+from .base import JSONModel
 
 Number = Union[int, float, None]
 
 # Generics
 
 
-class AxisLabels2d(BaseModel):
+class AxisLabels2d(JSONModel):
     """
     Generic class for any x/y axis labels
     """
@@ -21,7 +21,7 @@ class AxisLabels2d(BaseModel):
     y: Optional[str] = None
 
 
-class Basic2dMetadata(BaseModel):
+class Basic2dMetadata(JSONModel):
     """
     Stats/plot metadata generic to all 2D data sets
     """
@@ -35,7 +35,7 @@ class Basic2dMetadata(BaseModel):
 # Time series
 
 
-class TimeSeries2dData(BaseModel):
+class TimeSeries2dData(JSONModel):
     """
     x-y data for a time series plot
     """
@@ -55,7 +55,7 @@ class TimeSeries2dMetadata(Basic2dMetadata):
     units_y: Optional[str] = None
 
 
-class TimeSeries2d(BaseModel):
+class TimeSeries2d(JSONModel):
     """
     Return data class for a time series plot
     """
@@ -67,7 +67,7 @@ class TimeSeries2d(BaseModel):
 # Numeric
 
 
-class Numeric2dData(BaseModel):
+class Numeric2dData(JSONModel):
     """
     x-y data for a numeric plot
     """
@@ -89,7 +89,7 @@ class Numeric2dMetadata(Basic2dMetadata):
     units_y: Optional[str] = None
 
 
-class Numeric2d(BaseModel):
+class Numeric2d(JSONModel):
     """
     Return data class for a numeric plot
     """
@@ -98,7 +98,7 @@ class Numeric2d(BaseModel):
     data: Numeric2dData
 
 
-class Labelled2dData(BaseModel):
+class Labelled2dData(JSONModel):
     """
     x-y data for a labelled plot
     """
@@ -120,7 +120,7 @@ class Labelled2dMetadata(Basic2dMetadata):
     units_y: Optional[str] = None
 
 
-class Labelled2d(BaseModel):
+class Labelled2d(JSONModel):
     """
     Return data class for a labelled plot
     """
