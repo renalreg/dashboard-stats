@@ -1,20 +1,21 @@
+import warnings
 from datetime import datetime, timedelta
 from typing import Dict
-from pydantic import BaseModel
+
+from mimesis import Generic
+from mimesis.locales import Locale
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     Address,
+    DialysisSession,
     Name,
     Patient,
     PatientNumber,
     PatientRecord,
     Treatment,
-    DialysisSession,
 )
-from mimesis import Generic
-from mimesis.locales import Locale
 
-import warnings
+from ukrdc_stats.models.base import JSONModel
 
 ETHNICITY_GROUP_CODES = [
     "A",
@@ -222,7 +223,7 @@ class FakeDataGenerator:
         return
 
 
-def check_required_metadata(stats_output: BaseModel):
+def check_required_metadata(stats_output: JSONModel):
     for k, stat in stats_output.dict().items():
         # Exclude top level metadata
         if k == "metadata":

@@ -7,15 +7,9 @@ from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import (
-    DialysisSession,
-    Patient,
-    PatientRecord,
-    Treatment,
-)
+from ukrdc_sqla.ukrdc import DialysisSession, Patient, PatientRecord, Treatment
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
@@ -26,17 +20,17 @@ from ..models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
-
 from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
+from ..models.base import JSONModel
 
 
-class DialysisMetadata(BaseModel):
+class DialysisMetadata(JSONModel):
     population: Optional[int] = None
     from_time: dt.datetime
     to_time: dt.datetime
 
 
-class DialysisStats(BaseModel):
+class DialysisStats(JSONModel):
     all_patients_home_therapies: LabelledNetwork
     incident_home_therapies: LabelledNetwork
     prevalent_home_therapies: LabelledNetwork
