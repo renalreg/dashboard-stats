@@ -154,7 +154,9 @@ def test_calculate_all_home_therapies():
 
     all_home = calculator._calculate_all_home_therapies()
 
-    assert {key: item for key, item in all_home.dict().items() if key!="metadata"} == {
+    assert {
+        key: item for key, item in all_home.dict().items() if key != "metadata"
+    } == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -182,7 +184,9 @@ def test_calculate_incident_home_therapies():
 
     incident_home = calculator._calculate_incident_home_therapies()
 
-    assert {key:item for key, item in incident_home.dict().items() if key != "metadata"} == {
+    assert {
+        key: item for key, item in incident_home.dict().items() if key != "metadata"
+    } == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -210,7 +214,9 @@ def test_calculate_prevalent_home_therapies():
 
     prevalent_home = calculator._calculate_prevalent_home_therapies()
 
-    assert {key:item for key, item in prevalent_home.dict().items() if key !="metadata"} == {
+    assert {
+        key: item for key, item in prevalent_home.dict().items() if key != "metadata"
+    } == {
         "node": {
             "node_labels": [
                 "Haemodialysis",
@@ -252,26 +258,26 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     dialysis_freq = calculator._calculate_dialysis_frequency()
 
-    assert dialysis_freq.dict()["data"]== {
-            "x": [
-                "0.0- 0.5",
-                "0.5- 1.0",
-                "1.0- 1.5",
-                "1.5- 2.0",
-                "2.0- 2.5",
-                "2.5- 3.0",
-                "3.0- 3.5",
-                "3.5- 4.0",
-                "4.0- 4.5",
-                "4.5- 5.0",
-                "5.0- 5.5",
-                "5.5- 6.0",
-                "6.0- 6.5",
-                "6.5- 7.0",
-            ],
-            "y": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            "error_y": None,
-        }
+    assert dialysis_freq.dict()["data"] == {
+        "x": [
+            "0.0- 0.5",
+            "0.5- 1.0",
+            "1.0- 1.5",
+            "1.5- 2.0",
+            "2.0- 2.5",
+            "2.5- 3.0",
+            "3.0- 3.5",
+            "3.5- 4.0",
+            "4.0- 4.5",
+            "4.5- 5.0",
+            "5.0- 5.5",
+            "5.5- 6.0",
+            "6.0- 6.5",
+            "6.5- 7.0",
+        ],
+        "y": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        "error_y": None,
+    }
 
 
 def test_calculate_access_incident(ukrdc3_session_dialysis: Session):

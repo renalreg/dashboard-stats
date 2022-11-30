@@ -155,7 +155,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             base_cohort.fromtime > self.time_window[0]
         ].drop_duplicates()
 
-        # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window these will be discounted
+        # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window: these will be discounted
         not_incident_ids_query = (
             select(PatientRecord.ukrdcid)
             .join(Treatment)
@@ -296,13 +296,15 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         session_data = pd.read_sql(query, self.session.bind)
 
         # calculate frequency of dialysis
-        session_data["freq"] = session_data.apply(
+        session_data["freq"] = session_data[session_data.sessioncount > 1].apply(
             lambda row: _calculate_frequency(
                 row["fromtime"], row["totime"], row["sessioncount"]
             ),
             axis=1,
             result_type="reduce",
         )
+
+        # TODO: combine pids
 
         # turn into  histogram
         nbins = 15
@@ -315,7 +317,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="In-Centre Dialysis Frequency",
-                summary="meaningful words",
+                summary="Histogram of frequency of dialysis in per/week units",
                 description=dialysis_descriptions["INCENTRE_DIALYSIS_FREQ"],
                 axis_titles=AxisLabels2d(
                     x="Frequency (days per week)", y="No. of Patients"
@@ -362,7 +364,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Initial Vascular Access of Incident Patients",
-                summary="meaningful words",
+                summary="Vascular access for incident patients registered on their first dialysis session",
                 description=dialysis_descriptions["INCIDENT_INITIAL_ACCESS"],
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
             ),
@@ -380,7 +382,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return LabelledNetwork(
             metadata=NetworkMetaData(
                 title="Proportion of all Dialysis Patients on Home Therapies",
-                summary="This shows the breakdown of all patients on dialysis by PD and HD, and by home thereapies and in-centre therapies.",
+                summary="The breakdown of all patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
             ),
             node=all_patients_nodes,
@@ -396,7 +398,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return LabelledNetwork(
             metadata=NetworkMetaData(
                 title="Proportion of Incident Patients on Home Therapies",
-                summary="meaningful words",
+                summary="The breakdown of incident patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
             ),
             node=incident_nodes,
@@ -412,7 +414,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         return LabelledNetwork(
             metadata=NetworkMetaData(
                 title="Proportion of Prevalent Patients on Home Therapies",
-                summary="meaningful words",
+                summary="The breakdown of prevalent patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["PREVELENT_HOME_THERAPIES"],
             ),
             node=prevalent_nodes,
