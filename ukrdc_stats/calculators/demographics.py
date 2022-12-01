@@ -4,6 +4,7 @@ Patient cohort demographics stats calculator
 
 import datetime as dt
 from typing import Dict, Optional
+from pydantic import Field
 
 import pandas as pd
 from sqlalchemy import and_, select
@@ -15,24 +16,32 @@ from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import age_from_dob
 
+from ..descriptions import demographic_descriptions
+from ..models.base import JSONModel
 from ..models.generic_2d import (
     AxisLabels2d,
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
 )
-from ..models.base import JSONModel
 
 
 class DemographicsMetadata(JSONModel):
-    population: Optional[int] = None
+    population: Optional[int] = Field(
+        None, description="Population demographics are calculated from"
+    )
 
 
 class DemographicsStats(JSONModel):
-    gender: Labelled2d
-    ethnic_group: Labelled2d
-    age: Labelled2d
-    metadata: DemographicsMetadata
+    gender: Labelled2d = Field(..., description="Gender demographic stats")
+    ethnic_group: Labelled2d = Field(
+        ...,
+        description="Ethnicity Histogram based on the 5 ethnicity groupings used in the annual report",
+    )
+    age: Labelled2d = Field(..., description="Age statistics of living patients")
+    metadata: DemographicsMetadata = Field(
+        ..., description="Metadata describing demographic stats"
+    )
 
 
 def _calculate_base_patient_histogram(
@@ -113,6 +122,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     PatientRecord.sendingextract == "UKRDC",
                     PatientRecord.sendingfacility == self.facility,
+                    Patient.death_time.is_(
+                        None
+                    ),  # only calculate demographics for living patients
                 )
             )
         )
@@ -130,8 +142,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Gender Distribution",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["GENDER_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -150,8 +162,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["ETHNIC_GROUP_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
@@ -174,8 +186,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Age Distribution",
-                summary="",
-                description="",
+                summary="meaningful words",
+                description=demographic_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
             data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
