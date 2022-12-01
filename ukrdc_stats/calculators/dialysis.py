@@ -137,7 +137,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                     PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
-                        Patient.dead.is_(None), Patient.death_time > self.time_window[0]
+                        Patient.death_time.is_(None),
+                        Patient.death_time > self.time_window[0],
                     ),
                     # filter on dialysis modalities
                     or_(

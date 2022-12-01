@@ -114,6 +114,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     PatientRecord.sendingextract == "UKRDC",
                     PatientRecord.sendingfacility == self.facility,
+                    Patient.death_time.is_(
+                        None
+                    ),  # only calculate demographics for living patients
                 )
             )
         )
