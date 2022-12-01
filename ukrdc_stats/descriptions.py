@@ -66,18 +66,23 @@ demographic_descriptions = {
     "GENDER_DESCRIPTION": dedent(
         """
         # Patient Gender
-        The gender recorded for each patient registered with a particular unit over all time.
+
+        Translated gender identity codes recorded for each living patient registered with the renal unit over all time.
         """
     ),
     "ETHNIC_GROUP_DESCRIPTION": dedent(
         """
         # Patient Ethnicity
-        The ethnicity recorded for each patient registered with a particular unit over all time. The five ethnicity groupings used to map the ethnicity codes onto the displayed ethnicities are the same as those used in the annual report.
+
+        Translated ethnicity group code recorded for each living patient registered with the renal unit over all time.
+        The five ethnicity groupings used to map ethnicity codes onto the displayed ethnicity values are the same as those used in the Renal Registry Annual Report.
         """
     ),
     "AGE_DESCRIPTION": dedent(
         """
-        The age of all patients calcualated from dob registered over all time.
+        # Patient Age
+
+        The age, calcualated from date of birth, recorded for each living patient registered with the renal unit over all time.
         """
     ),
 }

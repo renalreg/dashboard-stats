@@ -142,7 +142,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Gender Distribution",
-                summary="Gender breakdown of patients at unit",
+                summary="Breakdown of patient gender identity codes",
                 description=demographic_descriptions["GENDER_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
@@ -162,7 +162,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",
-                summary="Ethnic group breakdown of patients at renal unit",
+                summary="Breakdown of patient ethnic group codes",
                 description=demographic_descriptions["ETHNIC_GROUP_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
@@ -186,7 +186,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Age Distribution",
-                summary="Age distribution of patients at renal unit",
+                summary="Distribution of patient ages",
                 description=demographic_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
