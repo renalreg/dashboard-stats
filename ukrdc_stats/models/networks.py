@@ -13,8 +13,8 @@ class NetworkMetaData(JSONModel):
     this is used to generate api calls for sankey diagrams
     """
 
-    title: str = Field(..., description="Title of plot or statistic")
-    summary: str = Field(..., description="Summary of plot")
+    title: str = Field(..., description="Title of plot or statistic", max_length=40)
+    summary: str = Field(..., description="Summary of plot", max_length=100)
     description: str = Field(
         ..., description="In depth description of how statistics are calculated"
     )

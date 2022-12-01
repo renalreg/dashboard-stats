@@ -3,6 +3,7 @@ Patient cohort dialysis stats calculator
 """
 
 import datetime as dt
+
 from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
@@ -386,7 +387,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
-                title="Initial Vascular Access of Incident Patients",
+                title="Vascular Access on First HD Session",
                 summary="Vascular access for incident patients registered on their first dialysis session",
                 description=dialysis_descriptions["INCIDENT_INITIAL_ACCESS"],
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
@@ -406,8 +407,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of all Dialysis Patients on Home Therapies",
-                summary="The breakdown of all patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
+                title="All Dialysis Patients Therapy Types",
+                summary="The breakdown of all patients on both PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
             ),
             node=all_patients_nodes,
@@ -422,8 +423,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of Incident Patients on Home Therapies",
-                summary="The breakdown of incident patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
+                title="Incident Patients Therapy Types",
+                summary="The breakdown of incident patients on PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
             ),
             node=incident_nodes,
@@ -440,8 +441,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
-                title="Proportion of Prevalent Patients on Home Therapies",
-                summary="The breakdown of prevalent patients on dialysis by PD and HD, and by home therapies and in-centre therapies.",
+                title="Prevalent Patients Therapy Types",
+                summary="The breakdown of prevalent patients by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["PREVELENT_HOME_THERAPIES"],
             ),
             node=prevalent_nodes,

@@ -27,9 +27,11 @@ class Basic2dMetadata(JSONModel):
     Stats/plot metadata generic to all 2D data sets
     """
 
-    title: str = Field(..., description="Title of plot or statistics")
+    title: str = Field(..., description="Title of plot or statistics", max_length=40)
     summary: str = Field(
-        ..., description="Summary of what the plot or statistic is trying to achieve"
+        ...,
+        description="Summary of what the plot or statistic is trying to achieve",
+        max_length=100,
     )
     description: str = Field(
         ...,
