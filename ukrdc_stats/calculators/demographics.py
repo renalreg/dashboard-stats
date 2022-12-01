@@ -4,6 +4,7 @@ Patient cohort demographics stats calculator
 
 import datetime as dt
 from typing import Dict, Optional
+from pydantic import Field
 
 import pandas as pd
 from sqlalchemy import and_, select
@@ -26,14 +27,21 @@ from ..models.generic_2d import (
 
 
 class DemographicsMetadata(JSONModel):
-    population: Optional[int] = None
+    population: Optional[int] = Field(
+        None, description="Population demographics are calculated from"
+    )
 
 
 class DemographicsStats(JSONModel):
-    gender: Labelled2d
-    ethnic_group: Labelled2d
-    age: Labelled2d
-    metadata: DemographicsMetadata
+    gender: Labelled2d = Field(..., description="Gender demographic stats")
+    ethnic_group: Labelled2d = Field(
+        ...,
+        description="Ethnicity Histogram based on the 5 ethnicity groupings used in the annual report",
+    )
+    age: Labelled2d = Field(..., description="Age statistics of living patients")
+    metadata: DemographicsMetadata = Field(
+        ..., description="Metadata describing demographic stats"
+    )
 
 
 def _calculate_base_patient_histogram(
