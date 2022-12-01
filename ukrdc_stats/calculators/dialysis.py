@@ -13,6 +13,8 @@ from ukrdc_sqla.ukrdc import DialysisSession, Patient, PatientRecord, Treatment
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
+from pydantic import Field
+
 
 from ..models.generic_2d import (
     AxisLabels2d,
@@ -20,23 +22,50 @@ from ..models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
-from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Vertices
+
+from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Connections
 from ..descriptions import dialysis_descriptions
 from ..models.base import JSONModel
 
 
 class DialysisMetadata(JSONModel):
-    population: Optional[int] = None
-    from_time: dt.datetime
-    to_time: dt.datetime
+    population: Optional[int] = Field(
+        None,
+        description="Number of patients in the cohort for dialysis stats calculation",
+    )
+    from_time: dt.datetime = Field(
+        ..., description="Start time of dialysis stats calculations"
+    )
+    to_time: dt.datetime = Field(
+        ..., description="End time of dialysis stats calculations"
+    )
 
 
 class DialysisStats(JSONModel):
-    all_patients_home_therapies: LabelledNetwork
-    incident_home_therapies: LabelledNetwork
-    prevalent_home_therapies: LabelledNetwork
-    incentre_dialysis_frequency: Labelled2d
-    incident_initial_access: Labelled2d
+    """
+    Container class for all the dialysis stats
+    """
+
+    all_patients_home_therapies: LabelledNetwork = Field(
+        ...,
+        description="statistical breakdown of therapy types for all patients in cohort",
+    )
+    incident_home_therapies: LabelledNetwork = Field(
+        ...,
+        description="statistical breakdown of therapy types for incident patients in cohort",
+    )
+    prevalent_home_therapies: LabelledNetwork = Field(
+        ...,
+        description="statistical breakdown of therapy types for prevalent patients in cohort",
+    )
+    incentre_dialysis_frequency: Labelled2d = Field(
+        ...,
+        description="per week frequency of dialysis for all in-centre dialysis patients",
+    )
+    incident_initial_access: Labelled2d = Field(
+        ...,
+        description="vascular access of incident dialysis patients on their first session",
+    )
     metadata: DialysisMetadata
 
 
@@ -178,7 +207,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
     def _calculate_therapy_types(
         self, scope: Literal["all", "incident", "prevalent"]
-    ) -> Tuple[Nodes, Vertices]:
+    ) -> Tuple[Nodes, Connections]:
         """
         Breakdown of dialysis patients on home and in-centre therapies.
         The information is returned using pydantic classes designed handle
@@ -188,7 +217,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             Scope: allows stats to be calculated for incident, prevalent or all patients
 
         Returns:
-            Nodes, Vertices: pydantic classes containing calculated data
+            Nodes, Connections: pydantic classes containing calculated data
         """
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
@@ -246,13 +275,13 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ]
         )
 
-        vertices = Vertices(
+        connections = Connections(
             source=["0", "0", "0", "1"],
             target=["2", "3", "4", "2"],
             value=[str(home_hd), str(hosp_hd), str(na_hd), str(home_pd)],
         )
 
-        return nodes, vertices
+        return nodes, connections
 
     def _calculate_dialysis_frequency(self):
         """
@@ -371,7 +400,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        all_patients_nodes, all_patients_vertices = self._calculate_therapy_types("all")
+        all_patients_nodes, all_patients_connections = self._calculate_therapy_types(
+            "all"
+        )
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
@@ -380,14 +411,14 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
             ),
             node=all_patients_nodes,
-            link=all_patients_vertices,
+            link=all_patients_connections,
         )
 
     def _calculate_incident_home_therapies(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        incident_nodes, incident_vertices = self._calculate_therapy_types("incident")
+        incident_nodes, incident_connections = self._calculate_therapy_types("incident")
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
@@ -396,14 +427,16 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
             ),
             node=incident_nodes,
-            link=incident_vertices,
+            link=incident_connections,
         )
 
     def _calculate_prevalent_home_therapies(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        prevalent_nodes, prevalent_vertices = self._calculate_therapy_types("prevalent")
+        prevalent_nodes, prevalent_connections = self._calculate_therapy_types(
+            "prevalent"
+        )
 
         return LabelledNetwork(
             metadata=NetworkMetaData(
@@ -412,7 +445,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 description=dialysis_descriptions["PREVELENT_HOME_THERAPIES"],
             ),
             node=prevalent_nodes,
-            link=prevalent_vertices,
+            link=prevalent_connections,
         )
 
     def extract_patient_cohort(self):
