@@ -444,7 +444,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=NetworkMetaData(
                 title="Prevalent Patients Therapy Types",
                 summary="Breakdown of prevalent patients by PD and HD, and by home therapies and in-centre therapies.",
-                description=dialysis_descriptions["PREVELENT_HOME_THERAPIES"],
+                description=dialysis_descriptions["PREVALENT_HOME_THERAPIES"],
             ),
             node=prevalent_nodes,
             link=prevalent_connections,
