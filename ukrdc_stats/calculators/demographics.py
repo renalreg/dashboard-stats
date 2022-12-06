@@ -110,6 +110,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # TODO: Add ability to filter on modality
 
         # select all patients with modalities that haven't finished
+        # TODO: What does the above comment mean?
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
@@ -125,6 +126,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     Patient.death_time.is_(
                         None
                     ),  # only calculate demographics for living patients
+                        # TODO: 1) Should this be "or date_death > self.date" ?
+                        # TODO: 2) We're only looking for DOD on this patient record
+                        # which would not include TRACING etc. Should it be across all?
+                    
                 )
             )
         )

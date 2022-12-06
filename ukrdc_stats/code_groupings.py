@@ -2,6 +2,9 @@
 Maybe these should be in the database?
 """
 
+# TODO: I would do this in the normal CODE_MAPPING way.
+# For simple description lookups that should be in CODE_LIST
+
 
 # 5 ethnicity group mapping
 ETHNIC_GROUP_MAP = {

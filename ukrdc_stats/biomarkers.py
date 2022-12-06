@@ -5,11 +5,11 @@ The stats here are loosly based on the metrics of chapter 5 of the annual report
 
 import datetime as dt
 from typing import List, Union
+
 import pandas as pd
-
-
 from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
+
 from ukrdc_sqla.ukrdc import ResultItem, LabOrder, CauseOfDeath, Patient, Code
 from ukrdc_stats.exceptions import NoCohortError
 from .models.generic_2d import Labelled2d, Labelled2dMetadata, Labelled2dData
@@ -104,8 +104,17 @@ def generic_biomarkers_query(
             LabOrder.pid,
             ResultItem.id.label("resultid"),
             ResultItem.value,
+            # TODO: This is correct for numeric values but any which are POS/NEG/UNK will be stored in
+            # ResultItem.InterpretationCodes
             ResultItem.service_id,
+            # TODO: I think you need ResultItem.service_id_code_std too.
             LabOrder.entered_on,
+            # TODO: entered_on is (at best) the date the request was entered into the Renal System
+            # You should be using
+            # LabOrder.SpecimenCollectedTime (date blood taken)
+            # or
+            # ResultItem.ObservationTime (date test result processed)
+            # This is the case in several places.
             ResultItem.order_id,
         )
         .join(LabOrder, LabOrder.id == ResultItem.order_id)
@@ -188,6 +197,9 @@ def haemoglobin(
         test_data_id_merged[test_data_id_merged.serviceidcode == "QBLE1"].resultvalue
         * 10.0
     )
+    
+    # TODO: I think this is fine - but we could do with doing a separate check that QBLE1 / QBLEB contain
+    # the expected UoMs - As we do in the Validation ( https://github.com/renalreg/rr_data/blob/master/rr_data/tables/periodic_treatment.py#L69 )
 
     return produce_output(
         test_data_id_merged,

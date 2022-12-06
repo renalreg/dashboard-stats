@@ -6,6 +6,9 @@ import datetime as dt
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
+
+    # TODO: Should this have an optional DOD parameter?
+
     """Returns the age on a given date
 
     Args:
@@ -46,7 +49,7 @@ def age_from_dob_exact(date: dt.date, dob: dt.date) -> float:
 
 
 def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
-    """returns a date a fixed number of years before give date
+    """returns a date a fixed number of years before given date
 
     Args:
         date (dt.date): date to calculate from

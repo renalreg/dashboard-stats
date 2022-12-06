@@ -5,17 +5,16 @@ Patient cohort dialysis stats calculator
 import datetime as dt
 
 from typing import Literal, Optional, Tuple, Union
+from pydantic import Field
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import DialysisSession, Patient, PatientRecord, Treatment
 
+from ukrdc_sqla.ukrdc import DialysisSession, Patient, PatientRecord, Treatment
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
-from pydantic import Field
-
 
 from ..models.generic_2d import (
     AxisLabels2d,
@@ -23,7 +22,6 @@ from ..models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
-
 from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Connections
 from ..descriptions import dialysis_descriptions
 from ..models.base import JSONModel
@@ -141,6 +139,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                         Patient.death_time > self.time_window[0],
                     ),
                     # filter on dialysis modalities
+                    # TODO: I would do this the same as in the UKRR Extract
+                    # https://github.com/renalreg/ukrdc-sqla/blob/a95ff9d91aef5885aeb8897b74eb17cbd5693755/ukrdc_sqla/ukrdc.py#L1337
+                    # Where registry_code_type = 'HD' or 'PD'
                     or_(
                         Treatment.admit_reason_code == "1",
                         Treatment.admit_reason_code == "2",
@@ -178,6 +179,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # Get a list of patients to check for incidence status. All incident patients start within the timewindow.
         incident_ids = base_cohort[["ukrdcid"]][
             base_cohort.fromtime > self.time_window[0]
+            # TODO: What if fromtime > self.time_window[1] ?(i.e. started after the end of the period.)
         ].drop_duplicates()
 
         # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window: these will be discounted
@@ -187,6 +189,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             .where(
                 and_(
                     Treatment.admit_reason_code.in_(
+                        # TODO: I would do this the same as in the UKRR Extract - as above.
                         ["1", "2", "3", "5", "11", "12", "20", "29", "78"]
                     ),
                     Treatment.from_time < self.time_window[0],
@@ -238,6 +241,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # filter patients in cohort with Haemodialysis modalities who are receiving therapies in hospital
         hosp_hd = len(
             patient_cohort[
+                # TODO: I would do this the same as in the UKRR Extract - as above.
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
                 & (patient_cohort.qbl05 == "HOSP")
             ]["ukrdcid"].drop_duplicates()
@@ -246,14 +250,18 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # filter "" on home therapies
         home_hd = len(
             patient_cohort[
+                # TODO: I would do this the same as in the UKRR Extract - as above.
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
                 & (patient_cohort.qbl05 == "HOME")
-            ]["ukrdcid"].drop_duplicates()
+            ]["ukrdcid"].drop_duplicates() 
         )
+        
+        # TODO: Why not SATL HD?
 
         # filter "" where database does not provide information
         na_hd = len(
             patient_cohort[
+                # TODO: I would do this the same as in the UKRR Extract - as above.
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
                 & patient_cohort.qbl05.isnull()
             ]["ukrdcid"].drop_duplicates()
@@ -261,6 +269,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # patients on peritoneal dialysis which presumably all happens at home
         home_pd = len(
+            # TODO: I would do this the same as in the UKRR Extract - as above.
             patient_cohort[patient_cohort.admitreasoncode.isin(["11", "12"])][
                 "ukrdcid"
             ].drop_duplicates()
@@ -294,8 +303,10 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # get list of hd patients
         patient_list = self._patient_cohort[
+            # TODO: I would do this the same as in the UKRR Extract - as above.
             (self._patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"]))
             & (self._patient_cohort.qbl05 == "HOSP")
+            # TODO: Why not SATL/NULL ?
         ].ukrdcid.drop_duplicates()
 
         # get number of dialysis sessions per patient and the date of the first and last one
