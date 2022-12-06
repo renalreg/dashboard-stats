@@ -197,7 +197,7 @@ def haemoglobin(
         test_data_id_merged[test_data_id_merged.serviceidcode == "QBLE1"].resultvalue
         * 10.0
     )
-    
+
     # TODO: I think this is fine - but we could do with doing a separate check that QBLE1 / QBLEB contain
     # the expected UoMs - As we do in the Validation ( https://github.com/renalreg/rr_data/blob/master/rr_data/tables/periodic_treatment.py#L69 )
 

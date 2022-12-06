@@ -178,7 +178,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Get a list of patients to check for incidence status. All incident patients start within the timewindow.
         incident_ids = base_cohort[["ukrdcid"]][
-            base_cohort.fromtime > self.time_window[0]
+            base_cohort.fromtime
+            > self.time_window[0]
             # TODO: What if fromtime > self.time_window[1] ?(i.e. started after the end of the period.)
         ].drop_duplicates()
 
@@ -253,9 +254,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 # TODO: I would do this the same as in the UKRR Extract - as above.
                 patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
                 & (patient_cohort.qbl05 == "HOME")
-            ]["ukrdcid"].drop_duplicates() 
+            ]["ukrdcid"].drop_duplicates()
         )
-        
+
         # TODO: Why not SATL HD?
 
         # filter "" where database does not provide information

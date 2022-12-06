@@ -126,10 +126,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     Patient.death_time.is_(
                         None
                     ),  # only calculate demographics for living patients
-                        # TODO: 1) Should this be "or date_death > self.date" ?
-                        # TODO: 2) We're only looking for DOD on this patient record
-                        # which would not include TRACING etc. Should it be across all?
-                    
+                    # TODO: 1) Should this be "or date_death > self.date" ?
+                    # TODO: 2) We're only looking for DOD on this patient record
+                    # which would not include TRACING etc. Should it be across all?
                 )
             )
         )
