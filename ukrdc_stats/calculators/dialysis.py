@@ -200,6 +200,12 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
         not_incident_ids = self.session.execute(not_incident_ids_query).all()
 
+        # TODO: You also need to exclude those who have a value for AdmissionSource.
+        # This means that the Renal Unit were aware that the patient was "somewhere"
+        # prior to going to them - hence their Treatment entry cannot be the first
+        # This is needed because we will never have 100% completeness of Treatment records
+        # but especially now with only 3 or 4 sites worth of data.
+
         # label patients identified in incident_ids who do not appear in previous group as incident
         incident_ids["incident"] = ~incident_ids.ukrdcid.isin(
             [id[0] for id in not_incident_ids]
