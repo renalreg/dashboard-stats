@@ -10,7 +10,13 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import DialysisSession, Patient, PatientRecord, Treatment
+from ukrdc_sqla.ukrdc import (
+    DialysisSession,
+    Patient,
+    PatientRecord,
+    Treatment,
+    ModalityCodes,
+)
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
@@ -121,15 +127,19 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.ukrdcid,
                 Patient.pid,
                 Treatment.admit_reason_code,
+                ModalityCodes.registry_code_type,
                 Treatment.qbl05,
                 Treatment.hdp04,
                 Treatment.from_time,
                 Treatment.to_time,
                 Patient.death_time,
-                Patient.dead,
             )  # type:ignore
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .join(PatientRecord, PatientRecord.pid == Patient.pid)  # type:ignore
+            .join(
+                ModalityCodes,
+                ModalityCodes.registry_code == Treatment.admit_reason_code,
+            )
             .where(
                 and_(
                     # filter for facility
@@ -142,12 +152,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                     ),
                     # filter on dialysis modalities
                     or_(
-                        Treatment.admit_reason_code == "1",
-                        Treatment.admit_reason_code == "2",
-                        Treatment.admit_reason_code == "3",
-                        Treatment.admit_reason_code == "5",
-                        Treatment.admit_reason_code == "11",
-                        Treatment.admit_reason_code == "12",
+                        ModalityCodes.registry_code_type == "HD",
+                        ModalityCodes.registry_code_type == "PD",
                     ),
                 )
             )
@@ -183,12 +189,21 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # Run query to test if they have appeared as hd, pd, or Tx prior to beginning of window: these will be discounted
         not_incident_ids_query = (
             select(PatientRecord.ukrdcid)
-            .join(Treatment)
+            .join(Treatment, PatientRecord.pid == Treatment.pid)
+            .join(
+                ModalityCodes,
+                ModalityCodes.registry_code == Treatment.admit_reason_code,
+            )
             .where(
                 and_(
-                    Treatment.admit_reason_code.in_(
-                        ["1", "2", "3", "5", "11", "12", "20", "29", "78"]
+                    or_(
+                        ModalityCodes.registry_code_type == "HD",
+                        ModalityCodes.registry_code_type == "PD",
+                        ModalityCodes.registry_code_type == "Tx",
                     ),
+                    Treatment.admission_source_code.is_(
+                        None
+                    ),  # Patients transferred in from another unit
                     Treatment.from_time < self.time_window[0],
                     PatientRecord.ukrdcid.in_(incident_ids.ukrdcid.to_numpy()),
                 )
@@ -235,10 +250,12 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         else:
             raise ValueError("Invalid scope")
 
+        # TODO: combine these with a pandas group_by(registycodetype, qbl05)
         # filter patients in cohort with Haemodialysis modalities who are receiving therapies in hospital
+
         hosp_hd = len(
             patient_cohort[
-                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                (patient_cohort.registry_code_type == "HD")
                 & (patient_cohort.qbl05 == "HOSP")
             ]["ukrdcid"].drop_duplicates()
         )
@@ -246,7 +263,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # filter "" on home therapies
         home_hd = len(
             patient_cohort[
-                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                (patient_cohort.registry_code_type == "HD")
                 & (patient_cohort.qbl05 == "HOME")
             ]["ukrdcid"].drop_duplicates()
         )
@@ -254,14 +271,14 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # filter "" where database does not provide information
         na_hd = len(
             patient_cohort[
-                patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"])
+                (patient_cohort.registry_code_type == "HD")
                 & patient_cohort.qbl05.isnull()
             ]["ukrdcid"].drop_duplicates()
         )
 
         # patients on peritoneal dialysis which presumably all happens at home
         home_pd = len(
-            patient_cohort[patient_cohort.admitreasoncode.isin(["11", "12"])][
+            patient_cohort[patient_cohort.registry_code_type == "PD"][
                 "ukrdcid"
             ].drop_duplicates()
         )
@@ -294,7 +311,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # get list of hd patients
         patient_list = self._patient_cohort[
-            (self._patient_cohort.admitreasoncode.isin(["1", "2", "3", "5"]))
+            (self._patient_cohort.registry_code_type == "HD")
             & (self._patient_cohort.qbl05 == "HOSP")
         ].ukrdcid.drop_duplicates()
 
@@ -328,8 +345,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             axis=1,
             result_type="reduce",
         )
-
-        # TODO: combine pids
 
         # turn into  histogram
         bins = np.linspace(0, 7, nbins)
