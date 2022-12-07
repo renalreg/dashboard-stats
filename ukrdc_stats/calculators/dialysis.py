@@ -285,7 +285,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return nodes, connections
 
-    def _calculate_dialysis_frequency(self):
+    def _calculate_dialysis_frequency(self, nbins: int = 8):
         """
         Calculate the frequency with which dialysis occurs
         """
@@ -332,7 +332,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # TODO: combine pids
 
         # turn into  histogram
-        nbins = 15
         bins = np.linspace(0, 7, nbins)
         labels = [f"{bins[i-1]}- {bins[i]}" for i in range(1, nbins)]
         hist = pd.cut(session_data.freq, bins=bins, labels=labels).value_counts(

@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from pydantic import Field
 
 import pandas as pd
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
@@ -85,7 +85,7 @@ def _calculate_base_patient_histogram(
 
 
 class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
-    """Calculates the demographics information based on the personal infomation listed in the patient table"""
+    """Calculates the demographics information based on the personal information listed in the patient table"""
 
     def __init__(
         self, session: Session, facility: str, date: Optional[dt.datetime] = None
@@ -102,34 +102,69 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # Set the date to calculate at, defaulting to today
         self.date: dt.datetime = date or dt.datetime.today()
 
-    def _extract_base_patient_cohort(self) -> pd.DataFrame:
-        """
-        Extracts the patient cohort from the database into a pandas dataframe
+    def _extract_base_patient_cohort(
+        self, include_tracing: bool = False
+    ) -> pd.DataFrame:
+        """Main database queries to produce a dataframe containing the patient demographics
+        for a specified Unit.
+
+        Args:
+            include_tracing (bool, optional): Switch to use tracing rec. Defaults to False.
+
+        Returns:
+            pd.DataFrame: _description_
         """
 
         # TODO: Add ability to filter on modality
 
-        # select all patients with modalities that haven't finished
+        # select all patients who have a patientrecord sent from the facility
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
                 Patient.gender,
                 Patient.ethnic_group_code,
                 Patient.birth_time,
+                Patient.death_time,
             )  # type:ignore
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
             .where(
                 and_(
                     PatientRecord.sendingextract == "UKRDC",
                     PatientRecord.sendingfacility == self.facility,
-                    Patient.death_time.is_(
-                        None
+                    or_(
+                        Patient.death_time.is_(None), Patient.death_time > self.date
                     ),  # only calculate demographics for living patients
                 )
             )
         )
 
-        return pd.read_sql(patient_query, self.session.bind)
+        patients = pd.read_sql(patient_query, self.session.bind)
+
+        if include_tracing:
+            # look to see to find data that might exclude patients from statistics
+            # TODO: I still think there is more nuance than this. What if a patient has
+            # been discharged or moved abroad or any other reason that they might appear
+            # but not have their death recorded.
+            exclude_patients = (
+                select(PatientRecord.ukrdcid)
+                .join(Patient, Patient.pid == PatientRecord.pid)  # type:ignore
+                .where(
+                    and_(
+                        # PatientRecord.sendingfacility == "TRACING",
+                        PatientRecord.ukrdcid.in_(
+                            patients[pd.isna(patients.deathtime)].ukrdcid
+                        ),
+                        Patient.death_time < self.date,
+                    )
+                )
+            )
+
+            exclude_patients_list = pd.read_sql(exclude_patients, self.session.bind)
+
+            # filter out patients in the exclusion list
+            patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
+
+        return patients
 
     def _calculate_gender(self) -> Labelled2d:
         if self._patient_cohort is None:
@@ -177,9 +212,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
-        self._patient_cohort["age"] = self._patient_cohort["birthtime"].apply(
-            lambda dob: age_from_dob(self.date, dob)
-        )
+        self._patient_cohort["age"] = self._patient_cohort["birthtime"][
+            pd.isna(self._patient_cohort.deathtime)
+        ].apply(lambda dob: age_from_dob(self.date, dob))
 
         age = _calculate_base_patient_histogram(self._patient_cohort, "age")
 
@@ -196,8 +231,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
     def extract_patient_cohort(self):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
+        include_tracing switch allows patient records created by nhs tracing to be searched
+        for DoD.
         """
-        self._patient_cohort = self._extract_base_patient_cohort()
+        self._patient_cohort = self._extract_base_patient_cohort(include_tracing=True)
 
     def extract_stats(self) -> DemographicsStats:
         """Extract all stats for the demographics module
