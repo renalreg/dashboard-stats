@@ -250,54 +250,37 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         else:
             raise ValueError("Invalid scope")
 
-        # TODO: combine these with a pandas group_by(registycodetype, qbl05)
-        # filter patients in cohort with Haemodialysis modalities who are receiving therapies in hospital
+        # Count patients based on modalities
+        patient_cohort.loc[patient_cohort.registry_code_type == "PD", "qbl05"] = "HOME"
+        patient_cohort.loc[
+            (patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(),
+            "qbl05",
+        ] = "Incomplete/Not given"
+        grouped_patients = patient_cohort.groupby(
+            ["registry_code_type", "qbl05"], as_index=False
+        ).count()[["ukrdcid", "registry_code_type", "qbl05"]]
 
-        hosp_hd = len(
-            patient_cohort[
-                (patient_cohort.registry_code_type == "HD")
-                & (patient_cohort.qbl05 == "HOSP")
-            ]["ukrdcid"].drop_duplicates()
-        )
+        # get label of each of the catagories(nodes)
+        node_labels = [
+            *grouped_patients["registry_code_type"].unique(),
+            *grouped_patients["qbl05"].unique(),
+        ]
 
-        # filter "" on home therapies
-        home_hd = len(
-            patient_cohort[
-                (patient_cohort.registry_code_type == "HD")
-                & (patient_cohort.qbl05 == "HOME")
-            ]["ukrdcid"].drop_duplicates()
-        )
-
-        # filter "" where database does not provide information
-        na_hd = len(
-            patient_cohort[
-                (patient_cohort.registry_code_type == "HD")
-                & patient_cohort.qbl05.isnull()
-            ]["ukrdcid"].drop_duplicates()
-        )
-
-        # patients on peritoneal dialysis which presumably all happens at home
-        home_pd = len(
-            patient_cohort[patient_cohort.registry_code_type == "PD"][
-                "ukrdcid"
-            ].drop_duplicates()
-        )
+        source = []
+        target = []
+        value = []
+        for ind, row in grouped_patients.iterrows():
+            source.append(str(node_labels.index(row.registry_code_type)))
+            target.append(str(node_labels.index(row.qbl05)))
+            value.append(str(row.ukrdcid))
 
         # assemble calculated numbers into the pydantic data structures used by the api
-        nodes = Nodes(
-            node_labels=[
-                "Haemodialysis",
-                "Peritoneal dialysis",
-                "Home therapies",
-                "In-centre therapies",
-                "Incomplete/Not given",
-            ]
-        )
+        nodes = Nodes(node_labels=node_labels)
 
         connections = Connections(
-            source=["0", "0", "0", "1"],
-            target=["2", "3", "4", "2"],
-            value=[str(home_hd), str(hosp_hd), str(na_hd), str(home_pd)],
+            source=source,
+            target=target,
+            value=value,
         )
 
         return nodes, connections
@@ -399,6 +382,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         initial_access_data = pd.read_sql(initial_access_query, self.session.bind)
+        initial_access_data.loc[
+            initial_access_data.qhd20.isna(), "qhd20"
+        ] = "Unknown/Incomplete"
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
