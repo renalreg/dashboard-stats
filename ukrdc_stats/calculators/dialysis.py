@@ -155,6 +155,14 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                         ModalityCodes.registry_code_type == "HD",
                         ModalityCodes.registry_code_type == "PD",
                     ),
+                    # filter on treatment start time
+                    and_(
+                        Treatment.from_time < self.time_window[1],
+                        or_(
+                            Treatment.to_time > self.time_window[0],
+                            Treatment.to_time.is_(None),
+                        ),
+                    ),
                 )
             )
         )
