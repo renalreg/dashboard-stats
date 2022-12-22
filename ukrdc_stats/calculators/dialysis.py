@@ -149,11 +149,19 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                         Treatment.admit_reason_code == "11",
                         Treatment.admit_reason_code == "12",
                     ),
+                    # filter on treatment start time
+                    and_(
+                        Treatment.from_time < self.time_window[1],
+                        or_(
+                            Treatment.to_time > self.time_window[0],
+                            Treatment.to_time.is_(None),
+                        ),
+                    ),
                 )
             )
         )
 
-        return pd.read_sql(patient_query, self.session.bind)
+        return pd.read_sql(patient_query, self.session.bind).drop_duplicates()
 
     def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
         """
@@ -386,6 +394,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         initial_access_data = pd.read_sql(initial_access_query, self.session.bind)
 
+        print(initial_access_data)
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Vascular Access on First HD Session",
