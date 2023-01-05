@@ -4,7 +4,7 @@ Patient cohort dialysis stats calculator
 
 import datetime as dt
 
-from typing import Literal, Optional, Tuple, Union, List, Dict
+from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -53,15 +53,15 @@ class DialysisStats(JSONModel):
     Container class for all the dialysis stats
     """
 
-    all_patients_home_therapies: Labelled2d = Field(
+    all_patients_home_therapies: LabelledNetwork = Field(
         ...,
         description="statistical breakdown of therapy types for all patients in cohort",
     )
-    incident_home_therapies: Labelled2d = Field(
+    incident_home_therapies: LabelledNetwork = Field(
         ...,
         description="statistical breakdown of therapy types for incident patients in cohort",
     )
-    prevalent_home_therapies: Labelled2d = Field(
+    prevalent_home_therapies: LabelledNetwork = Field(
         ...,
         description="statistical breakdown of therapy types for prevalent patients in cohort",
     )
@@ -76,15 +76,8 @@ class DialysisStats(JSONModel):
     metadata: DialysisMetadata
 
 
-class UnitLevelStats(JSONModel):
-    units: Dict[str, DialysisStats]
-
-
 def _calculate_frequency(
-    from_time: dt.datetime,
-    to_time: dt.datetime,
-    no_of_events: int,
-    subunit: str = "all",
+    from_time: dt.datetime, to_time: dt.datetime, no_of_events: int
 ):
     """calculates the frequency in per week units of events in a given timewindow
 
@@ -107,47 +100,8 @@ def _calculate_frequency(
     return None
 
 
-def calculate_therapy_types(
-    patient_cohort: pd.DataFrame,
-) -> Tuple[List[str], List[int]]:
-    """
-    Breakdown of dialysis patients on home and in-centre therapies.
-    The information is returned using pydantic classes designed handle
-    networks (this is essentially what a sankey plot is)
-
-    Args:
-        Scope: allows stats to be calculated for incident, prevalent or all patients
-
-    Returns:
-        Nodes, Connections: pydantic classes containing calculated data
-    """
-
-    # Count patients based on modalities
-    patient_cohort.loc[patient_cohort.registry_code_type == "PD", "qbl05"] = ""
-    patient_cohort.loc[
-        (patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(),
-        "qbl05",
-    ] = "Unknown/Incomplete"
-
-    patient_cohort.loc[patient_cohort.qbl05 == "HOSP", "qbl05"] = "In-centre"
-
-    patient_cohort.loc[patient_cohort.qbl05 == "SATL", "qbl05"] = "In-centre"
-
-    grouped_patients = patient_cohort.groupby(
-        ["registry_code_type", "qbl05"], as_index=False
-    ).count()[["ukrdcid", "registry_code_type", "qbl05"]]
-
-    labels = []
-    patients = []
-    for _, row in grouped_patients.iterrows():
-        labels.append(f"{row.registry_code_type} {row.qbl05}".rstrip())
-        patients.append(row.ukrdcid)
-
-    return labels, patients
-
-
 class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
-    """class to calculate metrics associated with dialysis modalities"""
+    """class to calcuate metrics associated with dialysis modalities"""
 
     def __init__(
         self,
@@ -172,8 +126,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             select(
                 PatientRecord.ukrdcid,
                 Patient.pid,
-                Treatment.health_care_facility_code,
-                Treatment.entered_at_code,
+                Treatment.admit_reason_code,
                 ModalityCodes.registry_code_type,
                 Treatment.qbl05,
                 Treatment.hdp04,
@@ -189,8 +142,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             )
             .where(
                 and_(
-                    # filter for facility,
-                    PatientRecord.sendingfacility == self.facility,
+                    # filter for facility
+                    Treatment.health_care_facility_code == self.facility,
                     PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
@@ -277,36 +230,81 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return merged
 
-    def _calculate_dialysis_frequency(
-        self, nbins: int = 8, subunit: str = "all"
-    ) -> Labelled2d:
+    def _calculate_therapy_types(
+        self, scope: Literal["all", "incident", "prevalent"]
+    ) -> Tuple[Nodes, Connections]:
+        """
+        Breakdown of dialysis patients on home and in-centre therapies.
+        The information is returned using pydantic classes designed handle
+        networks (this is essentially what a sankey plot is)
 
-        """Calculate the per week frequency with which dialysis occurs.
-
-        Raises:
-            NoCohortError: e.g if extract_patient_cohort has not been run
+        Args:
+            Scope: allows stats to be calculated for incident, prevalent or all patients
 
         Returns:
-            Labelled2d: returns histogram of dialysis frequency with nbins as the number of bins
+            Nodes, Connections: pydantic classes containing calculated data
         """
-
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # filter the patient cohort down to in-centre "HD patients"
-        # Is this necessary? will non in-centre HD patients have dialysis sessions?
-        patient_list = self._patient_cohort[
-            (self._patient_cohort.registry_code_type == "HD")
-            & (self._patient_cohort.qbl05 == "In-centre")
+        # Filter patient cohort based on incident, prevalent or all
+        patient_cohort: Union[pd.DataFrame, pd.Series]
+        if scope == "all":
+            patient_cohort = self._patient_cohort
+        elif scope == "incident":
+            patient_cohort = self._patient_cohort[self._patient_cohort.incident]
+        elif scope == "prevalent":
+            patient_cohort = self._patient_cohort[self._patient_cohort.prevalent]
+        else:
+            raise ValueError("Invalid scope")
+
+        # Count patients based on modalities
+        patient_cohort.loc[patient_cohort.registry_code_type == "PD", "qbl05"] = "HOME"
+        patient_cohort.loc[
+            (patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(),
+            "qbl05",
+        ] = "Incomplete/Not given"
+        grouped_patients = patient_cohort.groupby(
+            ["registry_code_type", "qbl05"], as_index=False
+        ).count()[["ukrdcid", "registry_code_type", "qbl05"]]
+
+        # get label of each of the catagories(nodes)
+        node_labels = [
+            *grouped_patients["registry_code_type"].unique(),
+            *grouped_patients["qbl05"].unique(),
         ]
 
-        # filter on satellite unit
-        if subunit != "all":
-            patient_list = patient_list[
-                patient_list.healthcarefacilitycode == subunit
-            ].ukrdcid.drop_duplicates()
-        else:
-            patient_list = patient_list.ukrdcid.drop_duplicates()
+        source = []
+        target = []
+        value = []
+        for ind, row in grouped_patients.iterrows():
+            source.append(str(node_labels.index(row.registry_code_type)))
+            target.append(str(node_labels.index(row.qbl05)))
+            value.append(str(row.ukrdcid))
+
+        # assemble calculated numbers into the pydantic data structures used by the api
+        nodes = Nodes(node_labels=node_labels)
+
+        connections = Connections(
+            source=source,
+            target=target,
+            value=value,
+        )
+
+        return nodes, connections
+
+    def _calculate_dialysis_frequency(self, nbins: int = 8):
+        """
+        Calculate the frequency with which dialysis occurs
+        """
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        # get list of hd patients
+        patient_list = self._patient_cohort[
+            (self._patient_cohort.registry_code_type == "HD")
+            & (self._patient_cohort.qbl05 == "HOSP")
+        ].ukrdcid.drop_duplicates()
 
         # get number of dialysis sessions per patient and the date of the first and last one
         query = (
@@ -330,9 +328,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         session_data = pd.read_sql(query, self.session.bind)
 
-        # calculate frequency of dialysis by function to rows
-        # this function takes the number of sessions and dividing by a time period
-        # the time period is defined by the difference between the first and last session
+        # calculate frequency of dialysis
         session_data["freq"] = session_data[session_data.sessioncount > 1].apply(
             lambda row: _calculate_frequency(
                 row["fromtime"], row["totime"], row["sessioncount"]
@@ -341,7 +337,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             result_type="reduce",
         )
 
-        # Make a histogram of the dialysis frequency
+        # turn into  histogram
         bins = np.linspace(0, 7, nbins)
         labels = [f"{bins[i-1]}- {bins[i]}" for i in range(1, nbins)]
         hist = pd.cut(session_data.freq, bins=bins, labels=labels).value_counts(
@@ -362,32 +358,10 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
-    def _calculate_access_incident(self, subunit: str = "all") -> Labelled2d:
-        """Displays the vascular access of incident patients on their first dialysis session
-
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-
-        Raises:
-            NoCohortError: e.g. if extract_patient_cohort has not been run
-
-        Returns:
-            Labelled2d: Number of incident patients with each type of access
-        """
-
+    def _calculate_access_incident(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # filter by subunit
-        if subunit != "all":
-            patient_list = self._patient_cohort[
-                self._patient_cohort.incident
-                & (self._patient_cohort.healthcarefacilitycode == subunit)
-            ].ukrdcid
-        else:
-            patient_list = self._patient_cohort[self._patient_cohort.incident].ukrdcid
-
-        # window function to rank the procedures in the order they happened
         window = (
             select(
                 PatientRecord.ukrdcid,
@@ -404,12 +378,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             .where(
                 PatientRecord.ukrdcid.in_(
                     # pylint: disable=singleton-comparison
-                    patient_list
+                    self._patient_cohort[self._patient_cohort.incident == True].ukrdcid
                 )
             )
         ).subquery()
 
-        # query to select the type of access used on the first session
         initial_access_query = (
             select(window.c.qhd20, func.count(window.c.ukrdcid).label("no"))
             .group_by(window.c.qhd20)
@@ -433,121 +406,56 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
-    def _calculate_therapies_all_patients(self, subunit: str = "all") -> Labelled2d:
-        """Calculate breakdown of therapy types for all
-
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-
-        Raises:
-            NoCohortError: _description_
-
-        Returns:
-            Labelled2d: Breakdown of all patients
-        """
-
+    def _calculate_all_home_therapies(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        if subunit == "all":
-            all_patients_labels, all_patients_no = calculate_therapy_types(
-                self._patient_cohort
-            )
-        else:
-            all_patients_labels, all_patients_no = calculate_therapy_types(
-                self._patient_cohort[
-                    self._patient_cohort.healthcarefacilitycode == subunit
-                ]
-            )
+        all_patients_nodes, all_patients_connections = self._calculate_therapy_types(
+            "all"
+        )
 
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
                 title="All Dialysis Patients Therapy Types",
                 summary="Breakdown of all patients on both PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
-                population_size=sum(all_patients_no),
             ),
-            data=Labelled2dData(x=all_patients_labels, y=all_patients_no),
+            node=all_patients_nodes,
+            link=all_patients_connections,
         )
 
-    def _calculate_therapies_incident_patients(
-        self, subunit: str = "all"
-    ) -> Labelled2d:
-        """Wrapper for calculate_therapy_types to calculate therapy types for an incident cohort
-
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-
-        Raises:
-            NoCohortError: _description_
-
-        Returns:
-            Labelled2d: Types of dialysis for incident patient cohort
-        """
-
+    def _calculate_incident_home_therapies(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        if subunit == "all":
-            incident_labels, incident_no = calculate_therapy_types(
-                self._patient_cohort[self._patient_cohort.incident]
-            )
-        else:
-            incident_labels, incident_no = calculate_therapy_types(
-                self._patient_cohort[
-                    self._patient_cohort.incident
-                    & (self._patient_cohort.healthcarefacilitycode == subunit)
-                ]
-            )
+        incident_nodes, incident_connections = self._calculate_therapy_types("incident")
 
-        # incident_nodes, incident_connections = self._calculate_therapy_types("incident")
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
                 title="Incident Patients Therapy Types",
                 summary="Breakdown of incident patients on PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
-                population_size=sum(incident_no),
             ),
-            data=Labelled2dData(x=incident_labels, y=incident_no),
+            node=incident_nodes,
+            link=incident_connections,
         )
 
-    def _calculate_therapies_prevalent_patients(self, subunit: str = "all"):
-        """Wrapper for calculate_therapy_types to calculate therapy types for an prevalent cohort
-
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-
-        Raises:
-            NoCohortError: _description_
-
-        Returns:
-            Labelled2d: Types of dialysis for prevalent patient cohort
-        """
-
+    def _calculate_prevalent_home_therapies(self):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        if subunit == "all":
-            prevalent_labels, prevalent_no = calculate_therapy_types(
-                self._patient_cohort[self._patient_cohort.prevalent]
-            )
-        else:
-            prevalent_labels, prevalent_no = calculate_therapy_types(
-                self._patient_cohort[
-                    self._patient_cohort.prevalent
-                    & (self._patient_cohort.healthcarefacilitycode == subunit)
-                ]
-            )
+        prevalent_nodes, prevalent_connections = self._calculate_therapy_types(
+            "prevalent"
+        )
 
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
                 title="Prevalent Patients Therapy Types",
                 summary="Breakdown of prevalent patients by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["PREVALENT_HOME_THERAPIES"],
-                population_size=sum(prevalent_no),
             ),
-            data=Labelled2dData(x=prevalent_labels, y=prevalent_no),
+            node=prevalent_nodes,
+            link=prevalent_connections,
         )
 
     def extract_patient_cohort(self):
@@ -556,35 +464,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         """
         self._patient_cohort = self._extract_incident_prevalent(
             self._extract_base_patient_cohort()
-        )
-
-    def extract_satellite_stats(self, unit: str = "all") -> DialysisStats:
-        """
-        Returns:
-            DialysisStats:
-        """
-
-        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
-
-        return DialysisStats(
-            metadata=DialysisMetadata(
-                population=pop_size,
-                from_time=self.time_window[0],
-                to_time=self.time_window[1],
-            ),
-            all_patients_home_therapies=self._calculate_therapies_all_patients(
-                subunit=unit
-            ),
-            incident_home_therapies=self._calculate_therapies_incident_patients(
-                subunit=unit
-            ),
-            prevalent_home_therapies=self._calculate_therapies_prevalent_patients(
-                subunit=unit
-            ),
-            incentre_dialysis_frequency=self._calculate_dialysis_frequency(
-                subunit=unit
-            ),
-            incident_initial_access=self._calculate_access_incident(subunit=unit),
         )
 
     def extract_stats(self) -> DialysisStats:
@@ -601,12 +480,17 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # calculate stats for all units
-        unit_stats = {"all": self.extract_satellite_stats()}
+        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 
-        # loop over each unit and calculate stats
-        for unit in self._patient_cohort.healthcarefacilitycode.unique():
-            print(unit)
-            unit_stats[unit] = self.extract_satellite_stats(unit)
-
-        return UnitLevelStats(units=unit_stats)
+        return DialysisStats(
+            metadata=DialysisMetadata(
+                population=pop_size,
+                from_time=self.time_window[0],
+                to_time=self.time_window[1],
+            ),
+            all_patients_home_therapies=self._calculate_all_home_therapies(),
+            incident_home_therapies=self._calculate_incident_home_therapies(),
+            prevalent_home_therapies=self._calculate_prevalent_home_therapies(),
+            incentre_dialysis_frequency=self._calculate_dialysis_frequency(),
+            incident_initial_access=self._calculate_access_incident(),
+        )
