@@ -3,6 +3,7 @@ Common utility functions useful in multiple statistics
 """
 
 import datetime as dt
+import fileinput
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
@@ -57,3 +58,12 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
     """
 
     return date - dt.timedelta(days=age * 365.25)
+
+
+def strip_whitespace(filepath: str):
+    """Run to stop pylint complaining about trailing whitespace"""
+
+    for line in fileinput.input(filepath, inplace=True):
+        line = line.rstrip()
+        if line:
+            print(line)

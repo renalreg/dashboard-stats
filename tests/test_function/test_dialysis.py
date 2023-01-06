@@ -218,10 +218,12 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
-    
-    #assert 1 == 2
+
+    # assert 1 == 2
     # This transformation currently happens in calculate_therapy_types (and I don't like it)
-    calculator._patient_cohort.loc[calculator._patient_cohort.qbl05 == "HOSP", "qbl05"] = "In-centre"
+    calculator._patient_cohort.loc[
+        calculator._patient_cohort.qbl05 == "HOSP", "qbl05"
+    ] = "In-centre"
 
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
@@ -236,7 +238,6 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
         )
 
     dialysis_freq = calculator._calculate_dialysis_frequency()
-
 
     assert dialysis_freq.data.dict() == {
         "x": [
@@ -263,9 +264,7 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
 
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
-    for i, row in patient_data[
-        patient_data.registry_code_type == "HD"
-    ].iterrows():
+    for i, row in patient_data[patient_data.registry_code_type == "HD"].iterrows():
         generator.generate_dialysis_session(
             id_=i,
             pid=row["pid"],
