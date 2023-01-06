@@ -4,7 +4,7 @@ Patient cohort dialysis stats calculator
 
 import datetime as dt
 
-from typing import Literal, Optional, Tuple, Union, List, Dict
+from typing import Optional, Tuple, List, Dict
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,6 @@ from ..models.generic_2d import (
     Labelled2dMetadata,
 )
 
-from ..models.networks import LabelledNetwork, NetworkMetaData, Nodes, Connections
 from ..descriptions import dialysis_descriptions
 from ..models.base import JSONModel
 
@@ -84,7 +83,6 @@ def _calculate_frequency(
     from_time: dt.datetime,
     to_time: dt.datetime,
     no_of_events: int,
-    subunit: str = "all",
 ):
     """calculates the frequency in per week units of events in a given timewindow
 
@@ -123,6 +121,9 @@ def calculate_therapy_types(
     """
 
     # Count patients based on modalities
+    # TODO: some of these lines should be moved to extract patient cohort or something like that
+    # I don't like the side effects of changing the the values in the dataframe here
+
     patient_cohort.loc[patient_cohort.registry_code_type == "PD", "qbl05"] = ""
     patient_cohort.loc[
         (patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(),
@@ -173,7 +174,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.ukrdcid,
                 Patient.pid,
                 Treatment.health_care_facility_code,
-                Treatment.entered_at_code,
                 ModalityCodes.registry_code_type,
                 Treatment.qbl05,
                 Treatment.hdp04,
@@ -564,7 +564,10 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             DialysisStats:
         """
 
-        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        pop_size = len(self._patient_cohort.ukrdcid.unique())
 
         return DialysisStats(
             metadata=DialysisMetadata(
@@ -587,7 +590,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             incident_initial_access=self._calculate_access_incident(subunit=unit),
         )
 
-    def extract_stats(self) -> DialysisStats:
+    def extract_stats(self) -> UnitLevelStats:
         """Extract all stats for the dialysis module
 
         Returns:

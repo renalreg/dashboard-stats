@@ -1,4 +1,4 @@
-from ..utils import check_required_metadata, FakeDataGenerator
+from ..utils import check_required_metadata, generate_modality_lookup, FakeDataGenerator
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from ukrdc_stats.calculators.dialysis import (
@@ -45,7 +45,19 @@ DATA = {
         "test:8",
         "test:9",
     ],
-    "admitreasoncode": ["11", "12", "12", "12", "12", "11", "12", "5", "11", "5"],
+    "healthcarefacilitycode": [
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+        "Hogwarts",
+    ],
+    "registry_code_type": ["PD", "PD", "PD", "PD", "PD", "PD", "PD", "HD", "PD", "HD"],
     "qbl05": [None, None, None, None, None, None, None, "HOME", None, "HOSP"],
     "hdp04": [None, None, None, None, None, None, None, None, None, None],
     "fromtime": [
@@ -73,7 +85,6 @@ DATA = {
         Timestamp("2019-12-01 00:00:00"),
     ],
     "deathtime": [None, None, None, None, None, None, None, None, None, None],
-    "death": [None, None, None, None, None, None, None, None, None, None],
 }
 
 INCIDENT_PREVALENT = {
@@ -84,6 +95,10 @@ INCIDENT_PREVALENT = {
 
 @pytest.fixture(scope="function")
 def ukrdc3_session_dialysis(ukrdc3_session: Session):
+
+    # add loopup tables to database
+    generate_modality_lookup(ukrdc3=ukrdc3_session)
+
     generator = FakeDataGenerator("moo")
 
     # hard code a bunch of treatments
@@ -144,7 +159,7 @@ def test_extract_incident_prevalent(ukrdc3_session_dialysis: Session):
     assert cohort_dataframe[["prevalent", "incident"]].equals(incident_prevalent)
 
 
-def test_calculate_all_home_therapies():
+def test_calculate_therapies_all_patients():
 
     calculator = DialysisStatsCalculator(
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
@@ -152,29 +167,17 @@ def test_calculate_all_home_therapies():
 
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
 
-    all_home = calculator._calculate_all_home_therapies()
+    all_patients = calculator._calculate_therapies_all_patients()
 
-    assert {
-        key: item for key, item in all_home.dict().items() if key != "metadata"
-    } == {
-        "node": {
-            "node_labels": [
-                "Haemodialysis",
-                "Peritoneal dialysis",
-                "Home therapies",
-                "In-centre therapies",
-                "Incomplete/Not given",
-            ]
-        },
-        "link": {
-            "source": ["0", "0", "0", "1"],
-            "target": ["2", "3", "4", "2"],
-            "value": ["1", "1", "0", "8"],
-        },
+    assert all_patients.data.dict() == {
+        "x": ["HD HOME", "HD In-centre", "PD"],
+        "y": [1, 1, 8],
+        "error_y": None,
     }
+    assert all_patients.metadata.population_size == 10
 
 
-def test_calculate_incident_home_therapies():
+def test_calculate_therapies_incident_patients():
 
     calculator = DialysisStatsCalculator(
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
@@ -182,29 +185,17 @@ def test_calculate_incident_home_therapies():
 
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
 
-    incident_home = calculator._calculate_incident_home_therapies()
+    incident_patients = calculator._calculate_therapies_incident_patients()
 
-    assert {
-        key: item for key, item in incident_home.dict().items() if key != "metadata"
-    } == {
-        "node": {
-            "node_labels": [
-                "Haemodialysis",
-                "Peritoneal dialysis",
-                "Home therapies",
-                "In-centre therapies",
-                "Incomplete/Not given",
-            ]
-        },
-        "link": {
-            "source": ["0", "0", "0", "1"],
-            "target": ["2", "3", "4", "2"],
-            "value": ["1", "0", "0", "3"],
-        },
+    assert incident_patients.data.dict() == {
+        "x": ["HD HOME", "PD"],
+        "y": [1, 3],
+        "error_y": None,
     }
+    assert incident_patients.metadata.population_size == 4
 
 
-def test_calculate_prevalent_home_therapies():
+def test_calculate_therapies_prevalent_patients():
 
     calculator = DialysisStatsCalculator(
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
@@ -212,26 +203,14 @@ def test_calculate_prevalent_home_therapies():
 
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
 
-    prevalent_home = calculator._calculate_prevalent_home_therapies()
+    prevalent_patients = calculator._calculate_therapies_prevalent_patients()
 
-    assert {
-        key: item for key, item in prevalent_home.dict().items() if key != "metadata"
-    } == {
-        "node": {
-            "node_labels": [
-                "Haemodialysis",
-                "Peritoneal dialysis",
-                "Home therapies",
-                "In-centre therapies",
-                "Incomplete/Not given",
-            ]
-        },
-        "link": {
-            "source": ["0", "0", "0", "1"],
-            "target": ["2", "3", "4", "2"],
-            "value": ["1", "0", "0", "4"],
-        },
+    assert prevalent_patients.data.dict() == {
+        "x": ["HD HOME", "PD"],
+        "y": [1, 4],
+        "error_y": None,
     }
+    assert prevalent_patients.metadata.population_size == 5
 
 
 def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
@@ -239,17 +218,17 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
     calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
-
-    patient_data = pd.DataFrame(data=DATA)
+    
+    #assert 1 == 2
+    # This transformation currently happens in calculate_therapy_types (and I don't like it)
+    calculator._patient_cohort.loc[calculator._patient_cohort.qbl05 == "HOSP", "qbl05"] = "In-centre"
 
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
-    for i, row in patient_data[
-        patient_data.admitreasoncode.isin(["1", "2", "3", "5"])
-    ].iterrows():
+    for i, pid in enumerate(DATA["pid"]):
         generator.generate_dialysis_session(
             id_=i,
-            pid=row["pid"],
+            pid=pid,
             session_period_start=START_TIME,
             session_period_end=START_TIME + timedelta(weeks=1),
             number_of_sessions=3,
@@ -258,24 +237,18 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     dialysis_freq = calculator._calculate_dialysis_frequency()
 
-    assert dialysis_freq.dict()["data"] == {
+
+    assert dialysis_freq.data.dict() == {
         "x": [
-            "0.0- 0.5",
-            "0.5- 1.0",
-            "1.0- 1.5",
-            "1.5- 2.0",
-            "2.0- 2.5",
-            "2.5- 3.0",
-            "3.0- 3.5",
-            "3.5- 4.0",
-            "4.0- 4.5",
-            "4.5- 5.0",
-            "5.0- 5.5",
-            "5.5- 6.0",
-            "6.0- 6.5",
-            "6.5- 7.0",
+            "0.0- 1.0",
+            "1.0- 2.0",
+            "2.0- 3.0",
+            "3.0- 4.0",
+            "4.0- 5.0",
+            "5.0- 6.0",
+            "6.0- 7.0",
         ],
-        "y": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        "y": [0, 0, 0, 1, 0, 0, 0],
         "error_y": None,
     }
 
@@ -291,7 +264,7 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
     for i, row in patient_data[
-        patient_data.admitreasoncode.isin(["1", "2", "3", "5"])
+        patient_data.registry_code_type == "HD"
     ].iterrows():
         generator.generate_dialysis_session(
             id_=i,
