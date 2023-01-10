@@ -103,7 +103,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         self.date: dt.datetime = date or dt.datetime.today()
 
     def _extract_base_patient_cohort(
-        self, include_tracing: bool = False
+        self,
+        include_tracing: Optional[bool] = False,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
     ) -> pd.DataFrame:
         """Main database queries to produce a dataframe containing the patient demographics
         for a specified Unit.
@@ -129,7 +132,6 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
             .where(
                 and_(
-                    PatientRecord.sendingextract == "UKRDC",
                     PatientRecord.sendingfacility == self.facility,
                     or_(
                         Patient.death_time.is_(None), Patient.death_time > self.date
@@ -138,7 +140,20 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
-        patients = pd.read_sql(patient_query, self.session.bind)
+        # limit stats to ukrdc
+        if limit_to_ukrdc:
+            patient_query.where(PatientRecord.sendingextract == "UKRDC")
+
+        # limit number of records returned (for benchmarking)
+        if limit_query_length:
+            patients = next(
+                pd.read_sql(
+                    patient_query, self.session.bind, chunksize=limit_query_length
+                )
+            )
+
+        else:
+            patients = pd.read_sql(patient_query, self.session.bind)
 
         if include_tracing:
             # look to see to find data that might exclude patients from statistics
@@ -228,15 +243,29 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
         )
 
-    def extract_patient_cohort(self):
+    def extract_patient_cohort(
+        self,
+        include_tracing: Optional[bool] = False,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
         include_tracing switch allows patient records created by nhs tracing to be searched
         for DoD.
         """
-        self._patient_cohort = self._extract_base_patient_cohort(include_tracing=True)
+        self._patient_cohort = self._extract_base_patient_cohort(
+            include_tracing=include_tracing,
+            limit_to_ukrdc=limit_to_ukrdc,
+            limit_query_length=limit_query_length,
+        )
 
-    def extract_stats(self) -> DemographicsStats:
+    def extract_stats(
+        self,
+        include_tracing: Optional[bool] = False,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ) -> DemographicsStats:
         """Extract all stats for the demographics module
 
         Returns:
@@ -244,7 +273,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         """
         # If we don't already have a patient cohort, extract one
         if self._patient_cohort is None:
-            self.extract_patient_cohort()
+            self.extract_patient_cohort(
+                include_tracing=include_tracing,
+                limit_to_ukrdc=limit_to_ukrdc,
+                limit_query_length=limit_query_length,
+            )
 
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")

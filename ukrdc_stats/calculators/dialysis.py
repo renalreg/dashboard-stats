@@ -162,7 +162,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # Create a precisely 2 element time window tuple
         self.time_window: Tuple[dt.datetime, dt.datetime] = (from_time, to_time)
 
-    def _extract_base_patient_cohort(self) -> pd.DataFrame:
+    def _extract_base_patient_cohort(
+        self,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ) -> pd.DataFrame:
         """Extract a base patient cohort dataframe from the database
 
         Returns:
@@ -191,7 +195,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     # filter for facility,
                     PatientRecord.sendingfacility == self.facility,
-                    PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
                         Patient.death_time.is_(None),
@@ -214,7 +217,22 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
-        return pd.read_sql(patient_query, self.session.bind)
+        # limit stats to ukrdc
+        if limit_to_ukrdc:
+            patient_query.where(PatientRecord.sendingextract == "UKRDC")
+
+        # limit number of records returned (for benchmarking)
+        if limit_query_length:
+            patients = next(
+                pd.read_sql(
+                    patient_query, self.session.bind, chunksize=limit_query_length
+                )
+            )
+
+        else:
+            patients = pd.read_sql(patient_query, self.session.bind)
+
+        return patients
 
     def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
         """
@@ -550,12 +568,19 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             data=Labelled2dData(x=prevalent_labels, y=prevalent_no),
         )
 
-    def extract_patient_cohort(self):
+    def extract_patient_cohort(
+        self,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
         """
         self._patient_cohort = self._extract_incident_prevalent(
-            self._extract_base_patient_cohort()
+            self._extract_base_patient_cohort(
+                limit_to_ukrdc=limit_to_ukrdc,
+                limit_query_length=limit_query_length,
+            )
         )
 
     def extract_satellite_stats(self, unit: str = "all") -> DialysisStats:
@@ -590,7 +615,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             incident_initial_access=self._calculate_access_incident(subunit=unit),
         )
 
-    def extract_stats(self) -> UnitLevelStats:
+    def extract_stats(
+        self,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ) -> UnitLevelStats:
         """Extract all stats for the dialysis module
 
         Returns:
@@ -599,7 +628,10 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # If we don't already have a patient cohort, extract one
 
         if self._patient_cohort is None:
-            self.extract_patient_cohort()
+            self.extract_patient_cohort(
+                limit_to_ukrdc=limit_to_ukrdc,
+                limit_query_length=limit_query_length,
+            )
 
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
@@ -609,7 +641,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # loop over each unit and calculate stats
         for unit in self._patient_cohort.healthcarefacilitycode.unique():
-            print(unit)
             unit_stats[unit] = self.extract_satellite_stats(unit)
 
         return UnitLevelStats(units=unit_stats)
