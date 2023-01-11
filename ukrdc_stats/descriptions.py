@@ -15,10 +15,10 @@ dialysis_descriptions = {
         - HD In-center: patients registered for haemodialysis, haemofiltration, haemodiafiltration, or ultrafiltration treatments within the unit or satellite unit.
         - HD Home: patients registered for any of the above treatments at home.
         - HD Unknown/Incomplete: patients for whom it is not recorded whether treatment was received at home or in-center.
-        - PD: patients registered for CAPD or APD treatments. 
+        - PD: patients registered for CAPD or APD treatments.
 
         ## Study Methods
-        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit. 
+        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit.
         - Any patients with a time of death before the beginning of the time window were excluded from the cohort, as were any patients whose treatments started before and ended after it.
         - The numbers were calculated from the Patient and Treatment records in the UKRDC.
         - Patient's therapy types was selected using the admission reason and the unit, and were further split into home and in-center therapy groups (with all patients on PD included in the home therapies group).
@@ -39,10 +39,10 @@ dialysis_descriptions = {
         - HD In-center: patients registered for haemodialysis, haemofiltration, haemodiafiltration, or ultrafiltration treatments within the unit or satellite unit.
         - HD Home: patients registered for any of the above treatments at home.
         - HD Unknown/Incomplete: patients for whom it is not recorded whether treatment was received at home or in-center.
-        - PD: patients registered for CAPD or APD treatments. 
+        - PD: patients registered for CAPD or APD treatments.
 
         ## Study Methods
-        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit.      
+        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit.
         - Any patients with a time of death before the beginning of the time window were excluded from the cohort, as were any patients whose treatments started before and ended after it.
         - Any patient with a transplant or dialysis treatment prior to the beginning of the time window was excluded.
         - The numbers were calculated from the Patient and Treatment records in the UKRDC.
@@ -64,10 +64,10 @@ dialysis_descriptions = {
         - HD In-center: patients registered for haemodialysis, haemofiltration, haemodiafiltration, or ultrafiltration treatments within the unit or satellite unit.
         - HD Home: patients registered for any of the above treatments at home.
         - HD Unknown/Incomplete: patients for whom it is not recorded whether treatment was received at home or in-center.
-        - PD: patients registered for CAPD or APD treatments. 
+        - PD: patients registered for CAPD or APD treatments.
 
         ## Study Methods
-        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit.      
+        - The cohort was created from all patients admitted for HD or PD (as defined by the modality code mappings) at the specified unit or satellite unit.
         - Any patients with a time of death before the beginning of the time window were excluded from the cohort, as were any patients whose treatments started before and ended after it.
         - Any patient with a treatment to time or date of death before todays date are excluded
         - Any patient with a transplant or dialysis treatment prior to the beginning of the time window was excluded.
@@ -104,8 +104,8 @@ dialysis_descriptions = {
         Segment of pie chart records which proportion of incident patients have that type of vascular access recorded on their first session.
         ## Definition
         The type of vascular access recorded in the UKRDC for the first dialysis session of incident patients. Incidence is defined as patients which start treatment without any dialysis or transplant treatments prior to the beginning of the time window.
-        ## Study Methods 
-        - This cohort is identical to that used for incident patients treatment breakdown 
+        ## Study Methods
+        - This cohort is identical to that used for incident patients treatment breakdown
         - patients with less than 2 dialysis sessions were rejected
         - [Dialysis Session](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2005565449/Dialysis+Session+Procedure) qhd20 of the first recorded dialysis record
         """
