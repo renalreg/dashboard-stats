@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     Address,
     DialysisSession,
+    ModalityCodes,
     Name,
     Patient,
     PatientNumber,
@@ -38,28 +39,21 @@ ETHNICITY_GROUP_CODES = [
     "99",
 ]
 
-
-TREATMENT_MODALITY_CODES = [
-    "1",
-    "2",
-    "3",
-    "5",
-    "110",
-    "11",
-    "12",
-    "20",
-    "78",
-    "29",
-    "81",
-    "82",
-    "83",
-    "88",
-    "904",
-    "903",
-    "902",
-    "900",
-    "901",
-]
+# treatment
+REGISTRY_CODE_TYPES = {
+    "1": "HD",
+    "2": "HD",
+    "3": "HD",
+    "5": "HD",
+    "10": "PD",
+    "11": "PD",
+    "12": "PD",
+    "20": "Tx",
+    "29": "Tx",
+    "81": "HD",
+    "82": "HD",
+    "83": "PD",
+}
 
 
 DIALYSIS_MODALITY_CODES = ["1", "2", "3", "5", "11", "12"]
@@ -68,6 +62,13 @@ DIALYSIS_MODALITY_CODES = ["1", "2", "3", "5", "11", "12"]
 QHD20_CODES = ["TLN", "NLN", "AVF"]
 
 QBL05_CODES = ["HOSP", "HOME"]
+
+
+def generate_modality_lookup(ukrdc3: Session):
+    # at some point this needs to be done in a sensible way which restores all lookup tables
+    for code, codetype in REGISTRY_CODE_TYPES.items():
+        modalitycode = ModalityCodes(registry_code=code, registry_code_type=codetype)
+        ukrdc3.add(modalitycode)
 
 
 class FakeDataGenerator:

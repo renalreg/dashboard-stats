@@ -92,11 +92,11 @@ def generic_biomarkers_query(
         start_time (dt.datetime): start of window
         end_time (dt.datetime): end of window
         patients (pd.DataFrame): list of patient identifiers must contain both the pid and the ukrdcid
-        service_codes (List): list of service codes specifing the type of test
+        service_codes (List): list of service codes specifying the type of test
         session (Session):
 
     Returns:
-        pd.DataFrame: result of queary
+        pd.DataFrame: result of query
     """
 
     generic_query = (

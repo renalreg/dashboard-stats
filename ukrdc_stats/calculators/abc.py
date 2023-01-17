@@ -26,6 +26,7 @@ class AbstractFacilityStatsCalculator(ABC):
         self.session: Session = session
         # Store the facility code
         self.facility: str = facility
+
         # Create a pandas dataframe to store the results
         self._patient_cohort: Optional[pd.DataFrame] = None
 

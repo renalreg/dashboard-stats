@@ -40,6 +40,10 @@ class Basic2dMetadata(JSONModel):
     axis_titles: Optional[AxisLabels2d] = Field(
         None, description="x and y labels for data"
     )
+    population_size: Optional[int] = Field(
+        None,
+        description="Total population size of cohort used for statistic e.g total number of patients in pie chart",
+    )
 
 
 # Time series
