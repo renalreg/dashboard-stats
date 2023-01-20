@@ -9,20 +9,20 @@ from pydantic import Field
 import pandas as pd
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import Patient, PatientRecord
+from ukrdc_sqla.ukrdc import Patient, PatientRecord, RenalDiagnosis
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
-from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import age_from_dob
 
 from ..descriptions import demographic_descriptions
+from ..code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP, PRD_CODE_MAP
 from ..models.base import JSONModel
-from ..models.generic_2d import (
-    AxisLabels2d,
-    Labelled2d,
-    Labelled2dData,
-    Labelled2dMetadata,
+from ..models.maps import (
+    DoubleLabelled3d,
+    Basic3dMetadata,
+    AxisLabel3d,
+    DoubleLabelled3dData,
 )
 
 
@@ -33,25 +33,24 @@ class DemographicsMetadata(JSONModel):
 
 
 class DemographicsStats(JSONModel):
-    gender: Labelled2d = Field(..., description="Gender demographic stats")
-    ethnic_group: Labelled2d = Field(
-        ...,
-        description="Ethnicity Histogram based on the 5 ethnicity groupings used in the annual report",
+    gender: DoubleLabelled3d = Field(..., description="Gender PRD demographic stats")
+    ethnic_group: DoubleLabelled3d = Field(
+        ..., description="Ethnic group PRD demographic stats"
     )
-    age: Labelled2d = Field(..., description="Age statistics of living patients")
+    age: DoubleLabelled3d = Field(..., description="Age PRD demographic stats")
     metadata: DemographicsMetadata = Field(
         ..., description="Metadata describing demographic stats"
     )
 
 
-def _calculate_base_patient_histogram(
+def calculate_base_patient_histogram_3D(
     cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
 ) -> pd.DataFrame:
     """Extract a histogram of the patient cohort, grouped by the given column
 
     Args:
         cohort (pd.DataFrame): Patient cohort
-        group (str): Column to group by
+        group (str): Column to group bys
 
     Raises:
         NoCohortError: If the patient cohort is empty
@@ -65,18 +64,18 @@ def _calculate_base_patient_histogram(
         cohort[mapped_column] = cohort[group].map(code_map)
 
         histogram = (
-            cohort[["ukrdcid", mapped_column]]
+            cohort[["ukrdcid", mapped_column, "PRD"]]
             .drop_duplicates()
-            .groupby([mapped_column])
+            .groupby([mapped_column, "PRD"])
             .count()
             .reset_index()
         )
 
     else:
         histogram = (
-            cohort[["ukrdcid", group]]
+            cohort[["ukrdcid", group, "PRD"]]
             .drop_duplicates()
-            .groupby([group])
+            .groupby([group, "PRD"])
             .count()
             .reset_index()
         )
@@ -84,7 +83,7 @@ def _calculate_base_patient_histogram(
     return histogram.rename(columns={"ukrdcid": "Count"})
 
 
-class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
+class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal information listed in the patient table"""
 
     def __init__(
@@ -118,18 +117,19 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: _description_
         """
 
-        # TODO: Add ability to filter on modality
-
         # select all patients who have a patientrecord sent from the facility
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
                 Patient.gender,
                 Patient.ethnic_group_code,
+                RenalDiagnosis.diagnosis_code,
+                RenalDiagnosis.diagnosis_code_std,
                 Patient.birth_time,
                 Patient.death_time,
             )  # type:ignore
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
+            .join(RenalDiagnosis, RenalDiagnosis.pid == PatientRecord.pid)
             .where(
                 and_(
                     PatientRecord.sendingfacility == self.facility,
@@ -179,46 +179,32 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             # filter out patients in the exclusion list
             patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
 
+        # map primary renal diagnosis
+        patients["PRD"] = patients["diagnosiscode"].replace(PRD_CODE_MAP)
+
         return patients
 
-    def _calculate_gender(self) -> Labelled2d:
+    def _calculate_gender(self) -> DoubleLabelled3d:
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        gender = _calculate_base_patient_histogram(
+        gender = calculate_base_patient_histogram_3D(
             self._patient_cohort, "gender", GENDER_GROUP_MAP
         )
 
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="Gender Distribution",
-                summary="Breakdown of patient gender identity codes",
+        return DoubleLabelled3d(
+            metadata=Basic3dMetadata(
+                title="PRD by Gender",
+                summary="Breakdown of patient primary renal diagnosis separated by gender",
                 description=demographic_descriptions["GENDER_DESCRIPTION"],
-                axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
+                axis_titles=AxisLabel3d(
+                    x="Gender", y="Primary Renal Diagnosis", z="No. of Patients"
+                ),
             ),
-            data=Labelled2dData(
-                x=gender.gender_mapped.tolist(), y=gender.Count.tolist()
-            ),
-        )
-
-    def _calculate_ethnic_group_code(self):
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort, "ethnicgroupcode", ETHNIC_GROUP_MAP
-        )
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="Ethnic Group",
-                summary="Breakdown of patient ethnic group codes",
-                description=demographic_descriptions["ETHNIC_GROUP_DESCRIPTION"],
-                axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
-            ),
-            data=Labelled2dData(
-                x=ethnic_group_code.ethnicgroupcode_mapped.tolist(),
-                y=ethnic_group_code.Count.tolist(),
+            data=DoubleLabelled3dData(
+                x=gender.gender_mapped.tolist(),
+                y=gender.PRD.tolist(),
+                z=gender.Count.tolist(),
             ),
         )
 
@@ -231,16 +217,42 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             pd.isna(self._patient_cohort.deathtime)
         ].apply(lambda dob: age_from_dob(self.date, dob))
 
-        age = _calculate_base_patient_histogram(self._patient_cohort, "age")
+        age = calculate_base_patient_histogram_3D(self._patient_cohort, "age")
 
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
+        return DoubleLabelled3d(
+            metadata=Basic3dMetadata(
                 title="Age Distribution",
                 summary="Distribution of patient ages",
                 description=demographic_descriptions["AGE_DESCRIPTION"],
-                axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
+                axis_titles=AxisLabel3d(x="Gender", y="Primary Renal Diagnosis", z=""),
             ),
-            data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
+            data=DoubleLabelled3dData(
+                x=age.age.tolist(),
+                y=age.PRD.tolist(),
+                z=age.Count.tolist(),
+            ),
+        )
+
+    def _calculate_ethnic_group_code(self):
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        ethnic_group_code = calculate_base_patient_histogram_3D(
+            self._patient_cohort, "ethnicgroupcode", ETHNIC_GROUP_MAP
+        )
+
+        return DoubleLabelled3d(
+            metadata=Basic3dMetadata(
+                title="Ethnic Group",
+                summary="Breakdown of patient ethnic group codes",
+                description=demographic_descriptions["ETHNIC_GROUP_DESCRIPTION"],
+                axis_titles=AxisLabel3d(x="Ethnicity", y="No. of Patients"),
+            ),
+            data=DoubleLabelled3dData(
+                x=ethnic_group_code.ethnicgroupcode_mapped.tolist(),
+                y=ethnic_group_code.PRD.tolist(),
+                z=ethnic_group_code.Count.tolist(),
+            ),
         )
 
     def extract_patient_cohort(
@@ -287,7 +299,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # Build output object
         return DemographicsStats(
             metadata=DemographicsMetadata(population=pop_size),
-            ethnic_group=self._calculate_ethnic_group_code(),
             gender=self._calculate_gender(),
+            ethnic_group=self._calculate_ethnic_group_code(),
             age=self._calculate_age(),
         )

@@ -17,6 +17,12 @@ class TimeSeries3dData(JSONModel):
     z: List[Number]
 
 
+class DoubleLabelled3dData(JSONModel):
+    x: List[str]
+    y: List[str]
+    z: List[Number]
+
+
 class AxisLabel3d(JSONModel):
     x: Optional[str]
     y: Optional[str]
@@ -43,5 +49,10 @@ class Basic3dMetadata(JSONModel):
 
 
 class TimeSeries3d(JSONModel):
-    meta_data: Basic3dMetadata
+    metadata: Basic3dMetadata
     data: TimeSeries3dData
+
+
+class DoubleLabelled3d(JSONModel):
+    metadata: Basic3dMetadata
+    data: DoubleLabelled3dData
