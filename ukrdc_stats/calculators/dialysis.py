@@ -125,6 +125,7 @@ def calculate_therapy_types(
     # I don't like the side effects of changing the the values in the dataframe here
 
     patient_cohort.loc[patient_cohort.registry_code_type == "PD", "qbl05"] = ""
+    patient_cohort.loc[patient_cohort.registry_code_type == "TX", "qbl05"] = ""
     patient_cohort.loc[
         (patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(),
         "qbl05",
@@ -134,9 +135,11 @@ def calculate_therapy_types(
 
     patient_cohort.loc[patient_cohort.qbl05 == "SATL", "qbl05"] = "In-centre"
 
-    grouped_patients = patient_cohort.groupby(
-        ["registry_code_type", "qbl05"], as_index=False
-    ).count()[["ukrdcid", "registry_code_type", "qbl05"]]
+    grouped_patients = (
+        patient_cohort.groupby(["registry_code_type", "qbl05"], as_index=False)
+        .count()[["ukrdcid", "registry_code_type", "qbl05"]]
+        .sort_values("registry_code_type")
+    )
 
     labels = []
     patients = []
@@ -176,6 +179,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
+                PatientRecord.sendingextract,
                 Patient.pid,
                 Treatment.health_care_facility_code,
                 ModalityCodes.registry_code_type,
@@ -184,6 +188,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 Treatment.from_time,
                 Treatment.to_time,
                 Patient.death_time,
+                Treatment.discharge_reason_code,
             )  # type:ignore
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
             .join(PatientRecord, PatientRecord.pid == Patient.pid)  # type:ignore
@@ -195,6 +200,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     # filter for facility,
                     PatientRecord.sendingfacility == self.facility,
+                    PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
                         Patient.death_time.is_(None),
@@ -204,6 +210,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                     or_(
                         ModalityCodes.registry_code_type == "HD",
                         ModalityCodes.registry_code_type == "PD",
+                        ModalityCodes.registry_code_type == "TX",
                     ),
                     # filter on treatment start time
                     and_(
@@ -360,8 +367,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         # Make a histogram of the dialysis frequency
-        bins = np.linspace(0, 7, nbins)
-        labels = [f"{bins[i-1]}- {bins[i]}" for i in range(1, nbins)]
+        # np.linspace(0, 7, nbins)
+        # labels = [f"{bins[i-1]}- {bins[i]}" for i in range(1, nbins)]
+        bins = [0.5, 1.5, 2.5, 3.5, 7.0]
+        labels = ["1", "2", "3", ">3"]
+
         hist = pd.cut(session_data.freq, bins=bins, labels=labels).value_counts(
             sort=False
         )
@@ -445,6 +455,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 summary="Vascular access for incident patients registered on their first dialysis session.",
                 description=dialysis_descriptions["INCIDENT_INITIAL_ACCESS"],
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
+                population_size=sum(list(initial_access_data.no)),
             ),
             data=Labelled2dData(
                 x=list(initial_access_data.qhd20), y=list(initial_access_data.no)
@@ -480,7 +491,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
-                title="All Dialysis Patients Therapy Types",
+                title="All KRT Modalities",
                 summary="Breakdown of all patients on both PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
                 population_size=sum(all_patients_no),
@@ -522,7 +533,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
-                title="Incident Patients Therapy Types",
+                title="Incident KRT Modalities",
                 summary="Breakdown of incident patients on PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
                 population_size=sum(incident_no),
@@ -560,7 +571,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
-                title="Prevalent Patients Therapy Types",
+                title="Prevalent KRT Modalities",
                 summary="Breakdown of prevalent patients by PD and HD, and by home therapies and in-centre therapies.",
                 description=dialysis_descriptions["PREVALENT_HOME_THERAPIES"],
                 population_size=sum(prevalent_no),

@@ -132,3 +132,6 @@ dmypy.json
 # Notebooks for testing
 .notebooks/
 
+# folder for extra bits not to commit
+.donotcommit/
+

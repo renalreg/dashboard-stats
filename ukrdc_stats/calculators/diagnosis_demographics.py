@@ -43,7 +43,7 @@ class DemographicsStats(JSONModel):
     )
 
 
-def calculate_base_patient_histogram_3D(
+def calculate_base_patient_histogram_3d(
     cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
 ) -> pd.DataFrame:
     """Extract a histogram of the patient cohort, grouped by the given column
@@ -188,7 +188,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        gender = calculate_base_patient_histogram_3D(
+        gender = calculate_base_patient_histogram_3d(
             self._patient_cohort, "gender", GENDER_GROUP_MAP
         )
 
@@ -217,7 +217,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
             pd.isna(self._patient_cohort.deathtime)
         ].apply(lambda dob: age_from_dob(self.date, dob))
 
-        age = calculate_base_patient_histogram_3D(self._patient_cohort, "age")
+        age = calculate_base_patient_histogram_3d(self._patient_cohort, "age")
 
         return DoubleLabelled3d(
             metadata=Basic3dMetadata(
@@ -237,7 +237,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        ethnic_group_code = calculate_base_patient_histogram_3D(
+        ethnic_group_code = calculate_base_patient_histogram_3d(
             self._patient_cohort, "ethnicgroupcode", ETHNIC_GROUP_MAP
         )
 
