@@ -84,7 +84,7 @@ def _calculate_frequency(
     to_time: dt.datetime,
     no_of_events: int,
 ):
-    """calculates the frequency in per week units of events in a given timewindow
+    """calculates the frequency in per week units of events in a given time window
 
     Args:
         from_time (dt.datetime): start of window
