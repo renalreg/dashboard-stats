@@ -19,15 +19,15 @@ def age_from_dob(date: dt.date, dob: dt.date) -> int:
     years_old: int
 
     # calculates age by common definition
-    years_old = date.year - dob.year - 1
-    try:
-        year_birthday = dt.datetime(date.year, dob.month, dob.day)
-    except ValueError:
-        # exemption triggered for people with birthday on leap year if not a leap year
+    years_old = date.year - dob.year
+    if (dob.month == 2) & (dob.day == 29):
+        # handles case where birthday is on leap day
         year_birthday = dt.datetime(date.year, dob.month, dob.day - 1)
+    else:
+        year_birthday = dt.datetime(date.year, dob.month, dob.day)
 
-    if year_birthday <= date:
-        years_old += 1
+    if year_birthday > date:
+        years_old -= 1
 
     return years_old
 
