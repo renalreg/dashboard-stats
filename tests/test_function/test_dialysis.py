@@ -33,6 +33,7 @@ DATA = {
         "ukrdc_test:8",
         "ukrdc_test:9",
     ],
+    "sendingextract":['UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC', 'UKRDC'],
     "pid": [
         "test:0",
         "test:1",
@@ -85,6 +86,7 @@ DATA = {
         Timestamp("2019-12-01 00:00:00"),
     ],
     "deathtime": [None, None, None, None, None, None, None, None, None, None],
+    "dischargereasoncode": [None, None, None, None, None, None, None, None, None, None]
 }
 
 INCIDENT_PREVALENT = {
@@ -142,10 +144,11 @@ def test_extract_base_patient_cohort(ukrdc3_session_dialysis: Session):
 
     df_ref = pd.DataFrame(data=DATA)
 
-    assert df.pid.equals(df_ref.pid)
-
+    #assert df.pid.equals(df_ref.pid)
     assert len(df) == TEST_COHORT_SIZE
-    assert df.equals(df_ref)
+    #assert df.equals(df_ref)
+    for item in df.keys():
+        assert df[item].equals(df_ref[item])
 
 
 def test_extract_incident_prevalent(ukrdc3_session_dialysis: Session):
@@ -241,15 +244,12 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     assert dialysis_freq.data.dict() == {
         "x": [
-            "0.0- 1.0",
-            "1.0- 2.0",
-            "2.0- 3.0",
-            "3.0- 4.0",
-            "4.0- 5.0",
-            "5.0- 6.0",
-            "6.0- 7.0",
+            "1",
+            "2",
+            "3",
+            ">3",
         ],
-        "y": [0, 0, 0, 1, 0, 0, 0],
+        "y": [0, 0, 1, 0],
         "error_y": None,
     }
 

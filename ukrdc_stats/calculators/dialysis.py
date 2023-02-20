@@ -6,7 +6,6 @@ import datetime as dt
 
 from typing import Optional, Tuple, List, Dict
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -294,9 +293,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return merged
 
-    def _calculate_dialysis_frequency(
-        self, nbins: int = 8, subunit: str = "all"
-    ) -> Labelled2d:
+    def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
 
         """Calculate the per week frequency with which dialysis occurs.
         Raises:
