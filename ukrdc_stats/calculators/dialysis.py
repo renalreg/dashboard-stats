@@ -129,6 +129,7 @@ def calculate_therapy_types(
     patient_cohort.loc[patient_cohort.qbl05 == "HOSP", "qbl05"] = "In-centre"
 
     patient_cohort.loc[patient_cohort.qbl05 == "SATL", "qbl05"] = "In-centre"
+    patient_cohort.loc[patient_cohort.qbl05 == "HOME", "qbl05"] = "Home"
 
     grouped_patients = (
         patient_cohort.groupby(["registry_code_type", "qbl05"], as_index=False)
