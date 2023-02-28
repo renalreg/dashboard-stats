@@ -9,7 +9,7 @@ dialysis_descriptions = {
         # All Patients Undergoing Kidney Replacement Therapy
 
         ## Overview
-        This pie chart illustrates the proportion of patients who received renal replacement therapy at a specified unit during a three-month period prior to the current date. The chart is broken down by the type of treatment, including HD In-center, HD Home, HD Unknown/Incomplete, PD, and Tx.
+        This pie chart illustrates the proportion of patients who received kidney replacement therapy at a specified unit during a three-month period prior to the current date. The chart is broken down by the type of treatment, including HD In-center, HD Home, HD Unknown/Incomplete, PD, and Tx.
 
         ## Treatment Definitions
         - HD: Haemodialysis patients (with a modality defined as HD by the UKRDC). This includes patients registered for haemodialysis, haemofiltration, haemodiafiltration, or ultrafiltration. 
@@ -67,7 +67,7 @@ dialysis_descriptions = {
         # Prevalent Patients Undergoing Kidney Replacement Therapy
 
         ## Overview
-        This pie chart illustrates the proportion of prevalent (to today's date) patients who received renal replacement therapy at a specified unit during a three-month period prior to the current date. The chart is broken down by type of treatment, including HD In-center, HD Home, HD Unknown/Incomplete, and PD.
+        This pie chart illustrates the proportion of prevalent (to today's date) patients who received kidney replacement therapy at a specified unit during a three-month period prior to the current date. The chart is broken down by type of treatment, including HD In-center, HD Home, HD Unknown/Incomplete, and PD.
 
         ## Treatment Definitions
         - HD: Haemodialysis patients (with a modality defined as HD by the UKRDC). This includes patients registered for haemodialysis, haemofiltration, haemodiafiltration, or ultrafiltration. 
@@ -120,7 +120,7 @@ dialysis_descriptions = {
         ## Methodology
         - This cohort is identical to that used for incident patients treatment breakdown.
         - The first session is selected by ranking the dialysis sessions in time.
-        - If the type of vascular access has been recorded it is counted according otherwise it is counted as Unknown/Incomplete.
+        - If the type of vascular access has been recorded it is counted accordingly otherwise it is counted as Unknown/Incomplete.
        
        ## UKRDC Entities Used
         - [Dialysis Session](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2005565449/Dialysis+Session+Procedure) qhd20 for first dialysis session. 
@@ -132,19 +132,34 @@ demographic_descriptions = {
         """
         # Patient Gender
         Gender identity recorded for each living patient registered with the renal unit.
+        
+        # Methodology
+
+        # UKRDC Entities Used
         """
     ),
     "ETHNIC_GROUP_DESCRIPTION": dedent(
         """
         # Patient Ethnicity
+
+        ## Overview 
         Ethnicity group code recorded for each living patient registered with the renal unit over all time.
         The five ethnicity groupings used to map ethnicity codes onto the displayed ethnicity values are the same as those used in the Renal Registry Annual Report.
+        
+        ## Methodology
+
+        ## UKRDC Entities Used
+        
         """
     ),
     "AGE_DESCRIPTION": dedent(
         """
         # Patient Age
         The age, calculated from date of birth, recorded for each living patient registered with the renal unit.
+        
+                # Methodology
+
+        # UKRDC Entities Used
         """
     ),
 }
