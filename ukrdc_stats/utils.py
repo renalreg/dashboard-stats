@@ -3,7 +3,12 @@ Common utility functions useful in multiple statistics
 """
 
 import datetime as dt
+import pandas as pd
 import fileinput
+
+from ukrdc_sqla.ukrdc import CodeMap
+from sqlalchemy.orm import Session
+from sqlalchemy import select, and_
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
@@ -58,6 +63,20 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
     """
 
     return date - dt.timedelta(days=age * 365.25)
+
+
+def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
+
+    query = select(CodeMap.source_code, CodeMap.destination_code).where(
+        and_(
+            CodeMap.source_coding_standard == source_std,
+            CodeMap.destination_coding_standard == destination_std,
+        )
+    )
+
+    codes = pd.read_sql(query, session.bind)
+    # print(codes.head())
+    return dict(zip(codes.source_code, codes.destination_code))
 
 
 def strip_whitespace(filepath: str):

@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import Patient, PatientRecord
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
-from ukrdc_stats.code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP
 from ukrdc_stats.exceptions import NoCohortError
-from ukrdc_stats.utils import age_from_dob
+from ukrdc_stats.utils import age_from_dob, map_codes
 
 from ..descriptions import demographic_descriptions
 from ..models.base import JSONModel
@@ -24,6 +23,9 @@ from ..models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
+
+# NHS digital gender map
+GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
 
 
 class DemographicsMetadata(JSONModel):
@@ -205,8 +207,14 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
+        #        print(ethnic_groups)
+
         ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort, "ethnicgroupcode", ETHNIC_GROUP_MAP
+            self._patient_cohort,
+            "ethnicgroupcode",
+            map_codes(
+                "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
+            ),  # ETHNIC_GROUP_MAP
         )
 
         return Labelled2d(

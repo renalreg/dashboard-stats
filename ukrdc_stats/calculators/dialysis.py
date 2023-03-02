@@ -435,7 +435,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
             ].ukrdcid.drop_duplicates()
 
-        print(len(patient_list))
+        # print(len(patient_list))
 
         # window function to rank the procedures in the order they happened
         window = (
@@ -467,7 +467,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         initial_access_data = pd.read_sql(initial_access_query, self.session.bind)
-        print(initial_access_data)
 
         initial_access_data.loc[
             initial_access_data.qhd20.isna(), "qhd20"
