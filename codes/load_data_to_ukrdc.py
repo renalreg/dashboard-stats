@@ -1,6 +1,6 @@
-    """This script inserts all of the code mappings into the ukrdc.
-        TODO: add something to remove all URTS codes before insertion
-    """
+"""This script inserts all of the code mappings into the ukrdc.
+    TODO: add something to remove all URTS codes before insertion
+"""
 
 
 from ukrdc.database import Connection
