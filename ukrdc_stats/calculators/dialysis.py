@@ -132,10 +132,10 @@ def calculate_therapy_types(
 
     # Duplicated rows shouldn't exist at this point anyway
     # This should catch them if they do
-    patient_cohort.drop_duplicates(inplace=True)
 
     grouped_patients = (
-        patient_cohort.groupby(["registry_code_type", "qbl05"], as_index=False)
+        patient_cohort.drop_duplicates()
+        .groupby(["registry_code_type", "qbl05"], as_index=False)
         .count()[["ukrdcid", "registry_code_type", "qbl05"]]
         .sort_values("registry_code_type")
     )
@@ -232,14 +232,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             patients = next(
                 pd.read_sql(
                     patient_query, self.session.bind, chunksize=limit_query_length
-                )
+                ).drop_duplicates()
             )
 
         else:
-            patients = pd.read_sql(patient_query, self.session.bind)
-
-        # drop duplicate records to prevent them causing issues
-        patients.drop_duplicates(inplace=True)
+            patients = pd.read_sql(patient_query, self.session.bind).drop_duplicates()
 
         # determine first and last treatment
         # TODO: I think this logic falls over with treatments of the first start date
