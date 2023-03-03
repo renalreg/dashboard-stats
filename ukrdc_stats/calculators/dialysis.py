@@ -664,6 +664,9 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # loop over each unit and calculate stats
         for unit in self._patient_cohort.healthcarefacilitycode.unique():
-            unit_stats[unit] = self.extract_satellite_stats(unit)
+            if unit:
+                unit_stats[unit] = self.extract_satellite_stats(unit)
+            else:
+                unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
 
         return UnitLevelStats(units=unit_stats)
