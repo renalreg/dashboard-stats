@@ -181,7 +181,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             # filter out patients in the exclusion list
             patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
 
-        return patients
+        return patients.drop_duplicates()
 
     def _calculate_gender(self) -> Labelled2d:
         if self._patient_cohort is None:
