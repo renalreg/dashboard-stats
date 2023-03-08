@@ -54,7 +54,9 @@ def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
     calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
     calculator.extract_patient_cohort()
 
+    #assert 1==2
     g = calculator._calculate_ethnic_group_code()
+    
     assert g.dict()["data"] == {
         "x": ["Asian", "Black", "Mixed", "Not Stated", "Other", "White"],
         "y": [6, 3, 4, 2, 1, 4],

@@ -51,6 +51,7 @@ DIALYSIS_COHORT_DATA = {
         "RFPUS",
         "RFPUS",
     ],
+    "admitreasoncode": ['51', '4', '51', '201', '56', '201', '242', '54', '45', '201'],
     "registry_code_type": ['PD', 'HD', 'PD', 'PD', 'PD', 'PD', 'PD', 'PD', 'HD', 'PD'],
     "qbl05": [None, None, None, None, None, None, None, None, None, None],
     "hdp04": [None, None, None, None, None, None, None, None, None, None],
@@ -58,6 +59,8 @@ DIALYSIS_COHORT_DATA = {
     "totime": [Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-15 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-15 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-01 00:00:00'), Timestamp('2019-12-01 00:00:00')],
     "deathtime": [None, None, None, None, None, None, None, None, None, None],
     "dischargereasoncode": [None, None, None, None, None, None, None, None, None, None],
+    "firsttreatment": [True, True, True, True, True, True, True, True, True, True],
+    "lasttreatment" : [True, True, True, True, True, True, True, True, True, True]
 }
 
 ETHNICITY_GROUP_CODES = [

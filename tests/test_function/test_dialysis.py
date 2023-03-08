@@ -132,7 +132,7 @@ def test_calculate_therapies_prevalent_patients():
     )
 
     prevalent_patients = calculator._calculate_therapies_prevalent_patients()
-
+    
     assert prevalent_patients.data.dict() == {'x': ['PD'], 'y': [2], 'error_y': None}
     assert prevalent_patients.metadata.population_size == sum(DIALYSIS_INCIDENT_PREVALENT['prevalent'])
 

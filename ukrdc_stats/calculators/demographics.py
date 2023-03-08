@@ -208,13 +208,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         #        print(ethnic_groups)
+        ethnic_group_map = map_codes(
+            "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
+        )
 
         ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort,
-            "ethnicgroupcode",
-            map_codes(
-                "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
-            ),  # ETHNIC_GROUP_MAP
+            self._patient_cohort, "ethnicgroupcode", ethnic_group_map
         )
 
         return Labelled2d(
