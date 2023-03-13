@@ -8,7 +8,7 @@ packages = [
 ]
 readme = "PKG-README.md"
 repository = "https://github.com/renalreg/dashboard-stats"
-version = "0.4.2"
+version = "1.0.0"
 
 [tool.poetry.dependencies]
 SQLAlchemy = "^1.4.40" 
