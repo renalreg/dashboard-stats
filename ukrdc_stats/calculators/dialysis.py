@@ -239,8 +239,12 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             patients = pd.read_sql(patient_query, self.session.bind).drop_duplicates()
 
         # determine first and last treatment
-        # TODO: I think this logic falls over with treatments of the first start date
-        # rank treatments by date
+        # I think this logic falls over with treatments of the first start date
+        # rank treatments by date. It needs careful thinking about but if two treatments
+        # have the same rank then they would both be counted as say the first treatment.
+        # this would result in a double count. Such double counts would be very
+        # pathalogical so I don't think they are a currently a priority.
+
         patients["treatmentrank"] = (
             patients.groupby(
                 "ukrdcid",
