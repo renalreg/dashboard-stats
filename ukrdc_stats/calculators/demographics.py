@@ -4,6 +4,7 @@ Patient cohort demographics stats calculator
 
 import datetime as dt
 from typing import Dict, Optional
+import warnings
 from pydantic import Field
 
 import pandas as pd
@@ -114,6 +115,9 @@ def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
     if mapped_column in df.columns:
         return df[mapped_column]
     else:
+        warnings.warn(
+            f"Column {mapped_column} does not exist in dataframe, returning {column} instead"
+        )
         return df[column]
 
 
