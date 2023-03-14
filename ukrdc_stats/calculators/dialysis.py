@@ -75,6 +75,7 @@ class DialysisStats(JSONModel):
 
 
 class UnitLevelStats(JSONModel):
+    all: DialysisStats
     units: Dict[str, DialysisStats]
 
 
@@ -664,7 +665,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # calculate stats for all units
-        unit_stats = {"all": self.extract_satellite_stats()}
+        unit_stats: Dict[str, DialysisStats] = {}
 
         # loop over each unit and calculate stats
         for unit in self._patient_cohort.healthcarefacilitycode.unique():
@@ -673,4 +674,4 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             else:
                 unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
 
-        return UnitLevelStats(units=unit_stats)
+        return UnitLevelStats(all=self.extract_satellite_stats(), units=unit_stats)
