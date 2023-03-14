@@ -1,3 +1,5 @@
+from .data import MODALITY_CODES, ETHNICITY_GROUP_CODES, QHD20_CODES, QBL05_CODES
+
 import warnings
 from datetime import datetime, timedelta
 from typing import Dict
@@ -5,6 +7,7 @@ from typing import Dict
 from mimesis import Generic
 from mimesis.locales import Locale
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import BIT
 from ukrdc_sqla.ukrdc import (
     Address,
     DialysisSession,
@@ -18,56 +21,25 @@ from ukrdc_sqla.ukrdc import (
 
 from ukrdc_stats.models.base import JSONModel
 
-ETHNICITY_GROUP_CODES = [
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    "H",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "P",
-    "R",
-    "S",
-    "Z",
-    "99",
-]
-
-# treatment
-REGISTRY_CODE_TYPES = {
-    "1": "HD",
-    "2": "HD",
-    "3": "HD",
-    "5": "HD",
-    "10": "PD",
-    "11": "PD",
-    "12": "PD",
-    "20": "Tx",
-    "29": "Tx",
-    "81": "HD",
-    "82": "HD",
-    "83": "PD",
-}
-
-
-DIALYSIS_MODALITY_CODES = ["1", "2", "3", "5", "11", "12"]
-
-
-QHD20_CODES = ["TLN", "NLN", "AVF"]
-
-QBL05_CODES = ["HOSP", "HOME"]
-
 
 def generate_modality_lookup(ukrdc3: Session):
     # at some point this needs to be done in a sensible way which restores all lookup tables
-    for code, codetype in REGISTRY_CODE_TYPES.items():
-        modalitycode = ModalityCodes(registry_code=code, registry_code_type=codetype)
+    for i in range(len(MODALITY_CODES["registry_code"])):
+        modalitycode = ModalityCodes(
+            registry_code = MODALITY_CODES["registry_code"][i],
+            registry_code_desc = MODALITY_CODES["registry_code_desc"][i], 
+            registry_code_type = MODALITY_CODES["registry_code_type"][i],
+            acute = MODALITY_CODES["acute"][i],
+            transfer_in = MODALITY_CODES["transfer_in"][i],
+            ckd = MODALITY_CODES["ckd"][i],
+            cons = MODALITY_CODES["cons"][i],
+            rrt = MODALITY_CODES["rrt"][i],
+            end_of_care = MODALITY_CODES["end_of_care"][i],
+            is_imprecise = MODALITY_CODES["is_imprecise"][i],
+        )
+
+        
+
         ukrdc3.add(modalitycode)
 
 
@@ -95,7 +67,9 @@ class FakeDataGenerator:
             sendingfacility=sending_facility,
             sendingextract=sending_extract,
             localpatientid=f"{generic.numeric.integer_number(0):10d}",
-            ukrdcid=f"ukrdc_{pid}",
+            repositorycreationdate = datetime(1969,6,9),
+            repositoryupdatedate = datetime(1969,6,9),
+            ukrdcid=f"ID_{pid}",
         )
 
         name = Name(
@@ -156,12 +130,15 @@ class FakeDataGenerator:
         # so every generated patient will be included in the dialysis stats extract
 
         # randomly select treatment modality
-        admit_reason_code = generic.choice(DIALYSIS_MODALITY_CODES)
+        admit_reason_code = generic.choice(MODALITY_CODES["registry_code"])
+        code_type = MODALITY_CODES["registry_code"][MODALITY_CODES["registry_code"].index(admit_reason_code)]
 
         qbl05 = None
         # select some other options based on modality
-        if admit_reason_code in ["1", "2", "3", "5"]:
+        if code_type in "HD":
             qbl05 = generic.choice(QBL05_CODES)
+        else:
+            qbl05 = None
 
         time_delta = timedelta(weeks=2)
         incident = generic.choice([True, False])

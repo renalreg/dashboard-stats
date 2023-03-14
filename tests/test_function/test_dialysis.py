@@ -1,4 +1,5 @@
 from ..utils import check_required_metadata, generate_modality_lookup, FakeDataGenerator
+from ..data import DIALYSIS_COHORT_DATA, DIALYSIS_INCIDENT_PREVALENT
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from ukrdc_stats.calculators.dialysis import (
@@ -15,82 +16,8 @@ import pytest
 TEST_COHORT_SIZE = 10
 START_TIME = datetime(2018, 12, 1)
 END_TIME = datetime(2019, 12, 1)
-FACILITY = "Hogwarts"
+FACILITY = "RFPUS"
 SEED = "Avada kedavra"
-
-
-# data to create _patient_cohort dataframe from (and to check the functions which query the database against)
-DATA = {
-    "ukrdcid": [
-        "ukrdc_test:0",
-        "ukrdc_test:1",
-        "ukrdc_test:2",
-        "ukrdc_test:3",
-        "ukrdc_test:4",
-        "ukrdc_test:5",
-        "ukrdc_test:6",
-        "ukrdc_test:7",
-        "ukrdc_test:8",
-        "ukrdc_test:9",
-    ],
-    "pid": [
-        "test:0",
-        "test:1",
-        "test:2",
-        "test:3",
-        "test:4",
-        "test:5",
-        "test:6",
-        "test:7",
-        "test:8",
-        "test:9",
-    ],
-    "healthcarefacilitycode": [
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-        "Hogwarts",
-    ],
-    "registry_code_type": ["PD", "PD", "PD", "PD", "PD", "PD", "PD", "HD", "PD", "HD"],
-    "qbl05": [None, None, None, None, None, None, None, "HOME", None, "HOSP"],
-    "hdp04": [None, None, None, None, None, None, None, None, None, None],
-    "fromtime": [
-        Timestamp("2018-12-15 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-        Timestamp("2018-12-15 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-        Timestamp("2018-12-15 00:00:00"),
-        Timestamp("2018-12-15 00:00:00"),
-        Timestamp("2018-12-01 00:00:00"),
-    ],
-    "totime": [
-        Timestamp("2019-12-01 00:00:00"),
-        Timestamp("2019-12-15 00:00:00"),
-        Timestamp("2019-12-15 00:00:00"),
-        Timestamp("2019-12-01 00:00:00"),
-        Timestamp("2019-12-01 00:00:00"),
-        Timestamp("2019-12-15 00:00:00"),
-        Timestamp("2019-12-15 00:00:00"),
-        Timestamp("2019-12-15 00:00:00"),
-        Timestamp("2019-12-01 00:00:00"),
-        Timestamp("2019-12-01 00:00:00"),
-    ],
-    "deathtime": [None, None, None, None, None, None, None, None, None, None],
-}
-
-INCIDENT_PREVALENT = {
-    "prevalent": [False, True, True, False, False, True, True, True, False, False],
-    "incident": [True, False, False, False, True, False, False, True, True, False],
-}
 
 
 @pytest.fixture(scope="function")
@@ -102,7 +29,7 @@ def ukrdc3_session_dialysis(ukrdc3_session: Session):
     generator = FakeDataGenerator("moo")
 
     # hard code a bunch of treatments
-    FACILITY = "Hogwarts"
+    #FACILITY = "Hogwarts"
     for i in range(TEST_COHORT_SIZE):
         pid = generator.create_demo_patient(
             id_=i,
@@ -140,12 +67,13 @@ def test_extract_base_patient_cohort(ukrdc3_session_dialysis: Session):
 
     df = calculator._extract_base_patient_cohort()
 
-    df_ref = pd.DataFrame(data=DATA)
+    df_ref = pd.DataFrame(data=DIALYSIS_COHORT_DATA)
 
-    assert df.pid.equals(df_ref.pid)
-
+    # assert df.pid.equals(df_ref.pid)
     assert len(df) == TEST_COHORT_SIZE
-    assert df.equals(df_ref)
+    # assert df.equals(df_ref)
+    for item in df.keys():
+        assert df[item].equals(df_ref[item])
 
 
 def test_extract_incident_prevalent(ukrdc3_session_dialysis: Session):
@@ -153,8 +81,10 @@ def test_extract_incident_prevalent(ukrdc3_session_dialysis: Session):
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
 
-    cohort_dataframe = calculator._extract_incident_prevalent(pd.DataFrame(data=DATA))
-    incident_prevalent = pd.DataFrame(data=INCIDENT_PREVALENT)
+    cohort_dataframe = calculator._extract_incident_prevalent(
+        pd.DataFrame(data=DIALYSIS_COHORT_DATA)
+    )
+    incident_prevalent = pd.DataFrame(data=DIALYSIS_INCIDENT_PREVALENT)
 
     assert cohort_dataframe[["prevalent", "incident"]].equals(incident_prevalent)
 
@@ -165,15 +95,13 @@ def test_calculate_therapies_all_patients():
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
 
-    calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
+    calculator._patient_cohort = pd.DataFrame(
+        data={**DIALYSIS_COHORT_DATA, **DIALYSIS_INCIDENT_PREVALENT}
+    )
 
     all_patients = calculator._calculate_therapies_all_patients()
 
-    assert all_patients.data.dict() == {
-        "x": ["HD HOME", "HD In-centre", "PD"],
-        "y": [1, 1, 8],
-        "error_y": None,
-    }
+    assert all_patients.data.dict() == {'x': ['HD Unknown/Incomplete', 'PD'], 'y': [2, 8], 'error_y': None}
     assert all_patients.metadata.population_size == 10
 
 
@@ -183,16 +111,14 @@ def test_calculate_therapies_incident_patients():
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
 
-    calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
+    calculator._patient_cohort = pd.DataFrame(
+        data={**DIALYSIS_COHORT_DATA, **DIALYSIS_INCIDENT_PREVALENT}
+    )
 
     incident_patients = calculator._calculate_therapies_incident_patients()
 
-    assert incident_patients.data.dict() == {
-        "x": ["HD HOME", "PD"],
-        "y": [1, 3],
-        "error_y": None,
-    }
-    assert incident_patients.metadata.population_size == 4
+    assert incident_patients.data.dict() == {'x': ['HD Unknown/Incomplete', 'PD'], 'y': [2, 7], 'error_y': None}
+    assert incident_patients.metadata.population_size == sum(DIALYSIS_INCIDENT_PREVALENT['incident'])
 
 
 def test_calculate_therapies_prevalent_patients():
@@ -201,23 +127,23 @@ def test_calculate_therapies_prevalent_patients():
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
 
-    calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
+    calculator._patient_cohort = pd.DataFrame(
+        data={**DIALYSIS_COHORT_DATA, **DIALYSIS_INCIDENT_PREVALENT}
+    )
 
     prevalent_patients = calculator._calculate_therapies_prevalent_patients()
-
-    assert prevalent_patients.data.dict() == {
-        "x": ["HD HOME", "PD"],
-        "y": [1, 4],
-        "error_y": None,
-    }
-    assert prevalent_patients.metadata.population_size == 5
+    
+    assert prevalent_patients.data.dict() == {'x': ['PD'], 'y': [2], 'error_y': None}
+    assert prevalent_patients.metadata.population_size == sum(DIALYSIS_INCIDENT_PREVALENT['prevalent'])
 
 
 def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
     calculator = DialysisStatsCalculator(
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
-    calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
+    calculator._patient_cohort = pd.DataFrame(
+        data={**DIALYSIS_COHORT_DATA, **DIALYSIS_INCIDENT_PREVALENT}
+    )
 
     # assert 1 == 2
     # This transformation currently happens in calculate_therapy_types (and I don't like it)
@@ -227,7 +153,7 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
-    for i, pid in enumerate(DATA["pid"]):
+    for i, pid in enumerate(DIALYSIS_COHORT_DATA["pid"]):
         generator.generate_dialysis_session(
             id_=i,
             pid=pid,
@@ -241,15 +167,12 @@ def test_calculate_dialysis_frequency(ukrdc3_session_dialysis: Session):
 
     assert dialysis_freq.data.dict() == {
         "x": [
-            "0.0- 1.0",
-            "1.0- 2.0",
-            "2.0- 3.0",
-            "3.0- 4.0",
-            "4.0- 5.0",
-            "5.0- 6.0",
-            "6.0- 7.0",
+            "1",
+            "2",
+            "3",
+            ">3",
         ],
-        "y": [0, 0, 0, 1, 0, 0, 0],
+        "y": [0, 0, 0, 0],
         "error_y": None,
     }
 
@@ -259,8 +182,10 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
     calculator = DialysisStatsCalculator(
         ukrdc3_session_dialysis, FACILITY, START_TIME, END_TIME
     )
-    calculator._patient_cohort = pd.DataFrame(data={**DATA, **INCIDENT_PREVALENT})
-    patient_data = pd.DataFrame(data=DATA)
+    calculator._patient_cohort = pd.DataFrame(
+        data={**DIALYSIS_COHORT_DATA, **DIALYSIS_INCIDENT_PREVALENT}
+    )
+    patient_data = pd.DataFrame(data=DIALYSIS_COHORT_DATA)
 
     # generate dialysis sessions
     generator = FakeDataGenerator("moo")
@@ -276,7 +201,7 @@ def test_calculate_access_incident(ukrdc3_session_dialysis: Session):
 
     access = calculator._calculate_access_incident()
 
-    assert access.dict()["data"] == {"x": ["AVF"], "y": [1], "error_y": None}
+    assert access.dict()["data"] == {'x': ['AVF', 'TLN'], 'y': [1, 1], 'error_y': None}
 
 
 def test_dialysis_complete_metadata(ukrdc3_session_dialysis: Session):
