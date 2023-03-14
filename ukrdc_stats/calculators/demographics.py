@@ -47,6 +47,14 @@ class DemographicsStats(JSONModel):
 
 
 def _mapped_key(key: str) -> str:
+    """Tiny convenience function to return a common mapped column name
+
+    Args:
+        key (str): Column to map
+
+    Returns:
+        str: Mapped column name
+    """
     return f"{key}_mapped"
 
 
@@ -91,6 +99,17 @@ def _calculate_base_patient_histogram(
 
 
 def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
+    """
+    Convenience function to return the mapped column if it exists,
+    otherwise return the original column
+
+    Args:
+        df (pd.DataFrame): Input dataframe
+        column (str): Column to return
+
+    Returns:
+        pd.Series: Mapped column if it exists, otherwise the original column
+    """
     mapped_column: str = _mapped_key(column)
     if mapped_column in df.columns:
         return df[mapped_column]
