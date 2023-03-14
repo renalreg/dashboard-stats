@@ -46,6 +46,10 @@ class DemographicsStats(JSONModel):
     )
 
 
+def _mapped_key(key: str) -> str:
+    return f"{key}_mapped"
+
+
 def _calculate_base_patient_histogram(
     cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
 ) -> pd.DataFrame:
@@ -63,7 +67,7 @@ def _calculate_base_patient_histogram(
     """
 
     if code_map:
-        mapped_column = f"{group}_mapped"
+        mapped_column = _mapped_key(group)
         cohort[mapped_column] = cohort[group].map(code_map)
 
         histogram = (
@@ -84,6 +88,14 @@ def _calculate_base_patient_histogram(
         )
 
     return histogram.rename(columns={"ukrdcid": "Count"})
+
+
+def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
+    mapped_column: str = _mapped_key(column)
+    if mapped_column in df.columns:
+        return df[mapped_column]
+    else:
+        return df[column]
 
 
 class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
@@ -199,7 +211,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=gender.gender_mapped.tolist(), y=gender.Count.tolist()
+                x=_mapped_if_exists(gender, "gender").tolist(), y=gender.Count.tolist()
             ),
         )
 
@@ -224,7 +236,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=ethnic_group_code.ethnicgroupcode_mapped.tolist(),
+                x=_mapped_if_exists(ethnic_group_code, "ethnicgroupcode").tolist(),
                 y=ethnic_group_code.Count.tolist(),
             ),
         )
