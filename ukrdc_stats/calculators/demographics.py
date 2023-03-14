@@ -4,6 +4,7 @@ Patient cohort demographics stats calculator
 
 import datetime as dt
 from typing import Dict, Optional
+import warnings
 from pydantic import Field
 
 import pandas as pd
@@ -46,6 +47,18 @@ class DemographicsStats(JSONModel):
     )
 
 
+def _mapped_key(key: str) -> str:
+    """Tiny convenience function to return a common mapped column name
+
+    Args:
+        key (str): Column to map
+
+    Returns:
+        str: Mapped column name
+    """
+    return f"{key}_mapped"
+
+
 def _calculate_base_patient_histogram(
     cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
 ) -> pd.DataFrame:
@@ -63,7 +76,7 @@ def _calculate_base_patient_histogram(
     """
 
     if code_map:
-        mapped_column = f"{group}_mapped"
+        mapped_column = _mapped_key(group)
         cohort[mapped_column] = cohort[group].map(code_map)
 
         histogram = (
@@ -84,6 +97,28 @@ def _calculate_base_patient_histogram(
         )
 
     return histogram.rename(columns={"ukrdcid": "Count"})
+
+
+def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
+    """
+    Convenience function to return the mapped column if it exists,
+    otherwise return the original column
+
+    Args:
+        df (pd.DataFrame): Input dataframe
+        column (str): Column to return
+
+    Returns:
+        pd.Series: Mapped column if it exists, otherwise the original column
+    """
+    mapped_column: str = _mapped_key(column)
+    if mapped_column in df.columns:
+        return df[mapped_column]
+    else:
+        warnings.warn(
+            f"Column {mapped_column} does not exist in dataframe, returning {column} instead"
+        )
+        return df[column]
 
 
 class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
@@ -199,7 +234,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=gender.gender_mapped.tolist(), y=gender.Count.tolist()
+                x=_mapped_if_exists(gender, "gender").tolist(), y=gender.Count.tolist()
             ),
         )
 
@@ -224,7 +259,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=ethnic_group_code.ethnicgroupcode_mapped.tolist(),
+                x=_mapped_if_exists(ethnic_group_code, "ethnicgroupcode").tolist(),
                 y=ethnic_group_code.Count.tolist(),
             ),
         )
