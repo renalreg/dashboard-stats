@@ -74,7 +74,8 @@ class DialysisStats(JSONModel):
     metadata: DialysisMetadata
 
 
-class UnitLevelStats(JSONModel):
+class UnitLevelDialysisStats(JSONModel):
+    all: DialysisStats
     units: Dict[str, DialysisStats]
 
 
@@ -647,7 +648,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         self,
         limit_to_ukrdc: Optional[bool] = True,
         limit_query_length: Optional[int] = None,
-    ) -> UnitLevelStats:
+    ) -> UnitLevelDialysisStats:
         """Extract all stats for the dialysis module
         Returns:
             DialysisStats: Dialysis statistics object
@@ -664,7 +665,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # calculate stats for all units
-        unit_stats = {"all": self.extract_satellite_stats()}
+        unit_stats: Dict[str, DialysisStats] = {}
 
         # loop over each unit and calculate stats
         for unit in self._patient_cohort.healthcarefacilitycode.unique():
@@ -673,4 +674,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             else:
                 unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
 
-        return UnitLevelStats(units=unit_stats)
+        return UnitLevelDialysisStats(
+            all=self.extract_satellite_stats(), units=unit_stats
+        )
