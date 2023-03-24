@@ -19,7 +19,7 @@ FACILITY = "Hogwarts"
 SEED = "Avada kedavra"
 
 
-# data to create _patient_cohort dataframe from (and to check the functions which query the database against)
+#data to create _patient_cohort dataframe from (and to check the functions which query the database against)
 DATA = {
     "ukrdcid": [
         "ukrdc_test:0",
