@@ -17,8 +17,6 @@ from ukrdc_sqla.ukrdc import (
     ModalityCodes,
 )
 
-from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
-from ukrdc_stats.exceptions import NoCohortError
 from pydantic import Field
 
 
@@ -29,6 +27,8 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dMetadata,
 )
 
+from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.descriptions import dialysis_descriptions
 from ukrdc_stats.models.base import JSONModel
 

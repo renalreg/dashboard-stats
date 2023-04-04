@@ -16,9 +16,6 @@ from ukrdc_sqla.ukrdc import Patient, PatientRecord, RenalDiagnosis
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import age_from_dob, map_codes
-
-from ukrdc_stats.descriptions import demographic_descriptions
-#from ..code_groupings import ETHNIC_GROUP_MAP, GENDER_GROUP_MAP, PRD_CODE_MAP
 from ukrdc_stats.models.base import JSONModel
 from ukrdc_stats.models.maps import (
     DoubleLabelled3d,
@@ -31,11 +28,11 @@ from ukrdc_stats.models.maps import (
 GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
 
 
-
 class DemographicsMetadata(JSONModel):
     population: Optional[int] = Field(
         None, description="Population demographics are calculated from"
     )
+
 
 class DemographicsStatsPRD(JSONModel):
     gender: DoubleLabelled3d = Field(..., description="Gender PRD demographic stats")
@@ -47,6 +44,7 @@ class DemographicsStatsPRD(JSONModel):
         ..., description="Metadata describing demographic stats"
     )
 
+
 def _mapped_key(key: str) -> str:
     """Tiny convenience function to return a common mapped column name
 
@@ -57,6 +55,7 @@ def _mapped_key(key: str) -> str:
         str: Mapped column name
     """
     return f"{key}_mapped"
+
 
 def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
     """
@@ -78,6 +77,7 @@ def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
             f"Column {mapped_column} does not exist in dataframe, returning {column} instead"
         )
         return df[column]
+
 
 def calculate_base_patient_histogram_3d(
     cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
@@ -114,6 +114,7 @@ def calculate_base_patient_histogram_3d(
         )
 
     return histogram.rename(columns={"ukrdcid": "Count"})
+
 
 class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal information listed in the patient table"""
@@ -164,7 +165,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
                 Patient.death_time,
             )  # type:ignore
             .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
-            .join(RenalDiagnosis,RenalDiagnosis.pid==PatientRecord.pid, isouter=True)
+            .join(RenalDiagnosis, RenalDiagnosis.pid == PatientRecord.pid, isouter=True)
             .where(
                 and_(
                     PatientRecord.sendingfacility == self.facility,
@@ -179,9 +180,11 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
         if limit_to_ukrdc:
             patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # limit to patients with complete prd 
+        # limit to patients with complete prd
         if not include_incomplete_prd:
-            patient_query = patient_query.where(RenalDiagnosis.diagnosis_code.is_not(None))
+            patient_query = patient_query.where(
+                RenalDiagnosis.diagnosis_code.is_not(None)
+            )
 
         # limit number of records returned (for benchmarking)
         if limit_query_length:
@@ -219,57 +222,62 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
             patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
 
         return patients.drop_duplicates()
-    
+
     def _calculate_gender(self) -> DoubleLabelled3d:
         if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")        
+            raise NoCohortError("No patient cohort has been extracted")
 
-        
-        gender = calculate_base_patient_histogram_3d(self._patient_cohort, "gender",GENDER_GROUP_MAP)
+        gender = calculate_base_patient_histogram_3d(
+            self._patient_cohort, "gender", GENDER_GROUP_MAP
+        )
 
         return DoubleLabelled3d(
             metadata=Basic3dMetadata(
-                title = "PRD by Gender",
-                summary = "Breakdown of patient primary renal diagnosis separated by gender",
-                description = "",
+                title="PRD by Gender",
+                summary="Breakdown of patient primary renal diagnosis separated by gender",
+                description="",
                 axis_titles=AxisLabel3d(
                     x="Gender", y="Primary Renal Diagnosis", z="No. of Patients"
-                ), 
+                ),
             ),
             data=DoubleLabelled3dData(
-                x = _mapped_if_exists(gender, "gender").tolist(),
-                y = gender.PRD.tolist(),
-                z = gender.Count.tolist(),
-            )
+                x=_mapped_if_exists(gender, "gender").tolist(),
+                y=gender.PRD.tolist(),
+                z=gender.Count.tolist(),
+            ),
         )
 
-    def _calculate_ethnic_group_code(self)->DoubleLabelled3d:
+    def _calculate_ethnic_group_code(self) -> DoubleLabelled3d:
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
-        
-        ethnic_group_map = map_codes("NHS_DATA_DICTIONARY","URTS_ETHNIC_GROUPING",self.session)
-        ethnicity = calculate_base_patient_histogram_3d(self._patient_cohort, "ethnicgroupcode", ethnic_group_map)
-        
+
+        ethnic_group_map = map_codes(
+            "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
+        )
+        ethnicity = calculate_base_patient_histogram_3d(
+            self._patient_cohort, "ethnicgroupcode", ethnic_group_map
+        )
+
         return DoubleLabelled3d(
             metadata=Basic3dMetadata(
-                title = "PRD by Ethnicity",
-                summary = "Breakdown of patient ethnic group codes",
-                description = "",
+                title="PRD by Ethnicity",
+                summary="Breakdown of patient ethnic group codes",
+                description="",
                 axis_titles=AxisLabel3d(
                     x="Ethnicity", y="Primary Renal Diagnosis", z="No. of Patients"
-                ), 
+                ),
             ),
             data=DoubleLabelled3dData(
-                x = _mapped_if_exists(ethnicity, "ethnicgroupcode").tolist(),
-                y = ethnicity.PRD.tolist(),
-                z = ethnicity.Count.tolist(),
-            )
+                x=_mapped_if_exists(ethnicity, "ethnicgroupcode").tolist(),
+                y=ethnicity.PRD.tolist(),
+                z=ethnicity.Count.tolist(),
+            ),
         )
-    
-    def _calculate_age(self)->DoubleLabelled3d:
+
+    def _calculate_age(self) -> DoubleLabelled3d:
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
-        
+
         # add column with ages and calculate histogram
         self._patient_cohort["age"] = self._patient_cohort["birthtime"][
             pd.isna(self._patient_cohort.deathtime)
@@ -278,20 +286,20 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return DoubleLabelled3d(
             metadata=Basic3dMetadata(
-                title = "PRD by Age",
-                summary = "Distribution of patient ages",
-                description = "",
+                title="PRD by Age",
+                summary="Distribution of patient ages",
+                description="",
                 axis_titles=AxisLabel3d(
                     x="Age", y="Primary Renal Diagnosis", z="No. of Patients"
-                ), 
+                ),
             ),
             data=DoubleLabelled3dData(
-                x = age.age.tolist(),
-                y = age.PRD.tolist(),
-                z = age.Count.tolist(),
-            )
-        )        
-        
+                x=age.age.tolist(),
+                y=age.PRD.tolist(),
+                z=age.Count.tolist(),
+            ),
+        )
+
     def extract_patient_cohort(
         self,
         include_tracing: Optional[bool] = False,
@@ -304,30 +312,33 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
         include_tracing switch allows patient records created by nhs tracing to be searched
         for DoD.
         """
-        
+
         self._patient_cohort = self._extract_base_patient_cohort(
             include_tracing=include_tracing,
             limit_to_ukrdc=limit_to_ukrdc,
             limit_query_length=limit_query_length,
-            include_incomplete_prd=include_incomplete_prd
+            include_incomplete_prd=include_incomplete_prd,
         )
 
-        
         # get prd coding standards and map to diagnosis code
-        prd_code_std = self._patient_cohort[~self._patient_cohort.diagnosiscodestd.isna()].diagnosiscodestd.unique()
+        prd_code_std = self._patient_cohort[
+            ~self._patient_cohort.diagnosiscodestd.isna()
+        ].diagnosiscodestd.unique()
         prd_code_map = {}
         for std in prd_code_std:
             prd_code_map.update(map_codes(std, "URTS_DIAGNOSIS_GROUPING", self.session))
-        self._patient_cohort["PRD"] = self._patient_cohort["diagnosiscode"].replace(prd_code_map)
+        self._patient_cohort["PRD"] = self._patient_cohort["diagnosiscode"].replace(
+            prd_code_map
+        )
         self._patient_cohort.loc[self._patient_cohort.PRD.isna(), "PRD"] = "No PRD"
 
     def extract_stats(
-            self,
-            include_tracing: Optional[bool] = False,
-            limit_to_ukrdc: Optional[bool] = True,
-            limit_query_length: Optional[int] = None,
-        )->DemographicsStatsPRD:
-        
+        self,
+        include_tracing: Optional[bool] = False,
+        limit_to_ukrdc: Optional[bool] = True,
+        limit_query_length: Optional[int] = None,
+    ) -> DemographicsStatsPRD:
+
         # If we don't already have a patient cohort, extract one
         if self._patient_cohort is None:
             self.extract_patient_cohort(
@@ -339,14 +350,11 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-
-
         pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 
         return DemographicsStatsPRD(
             metadata=DemographicsMetadata(population=pop_size),
             gender=self._calculate_gender(),
             ethnic_group=self._calculate_ethnic_group_code(),
-            age=self._calculate_age()
+            age=self._calculate_age(),
         )
-
