@@ -22,15 +22,15 @@ from ukrdc_stats.exceptions import NoCohortError
 from pydantic import Field
 
 
-from ..models.generic_2d import (
+from ukrdc_stats.models.generic_2d import (
     AxisLabels2d,
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
 )
 
-from ..descriptions import dialysis_descriptions
-from ..models.base import JSONModel
+from ukrdc_stats.descriptions import dialysis_descriptions
+from ukrdc_stats.models.base import JSONModel
 
 
 class DialysisMetadata(JSONModel):

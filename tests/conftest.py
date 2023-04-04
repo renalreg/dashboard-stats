@@ -15,10 +15,10 @@ postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir=socket_d
 postgresql_my = factories.postgresql("postgresql_my_proc")
 
 # if you have postgres runnin you can uncomment this line
-# postgresql_my = factories.postgresql('postgresql_noproc')
+postgresql_my = factories.postgresql('postgresql_noproc')
 
 # and run pytest with this line
-# pytest --postgresql-user ****** --postgresql-password ******
+# pytest --postgresql-user postgres --postgresql-password postgres
 
 
 @pytest.fixture()
