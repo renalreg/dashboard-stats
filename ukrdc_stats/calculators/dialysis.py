@@ -1,12 +1,11 @@
 """
 Patient cohort dialysis stats calculator
 """
-
 import datetime as dt
 
-from typing import Optional, Tuple, List, Dict
+from typing import Optional, Tuple, List, Dict, Any
 
-import pandas as pd
+import pandas as pds
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
@@ -27,10 +26,18 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dMetadata,
 )
 
+from ukrdc_stats.models.networks import (
+    LabelledNetwork,
+    NetworkMetaData,
+    Nodes,
+    Connections,
+)
+from ukrdc_stats.models.base import JSONModel
+
+
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.descriptions import dialysis_descriptions
-from ukrdc_stats.models.base import JSONModel
 
 
 class DialysisMetadata(JSONModel):
@@ -79,6 +86,31 @@ class UnitLevelDialysisStats(JSONModel):
     units: Dict[str, DialysisStats]
 
 
+class TimeSeriesTreatmentStats(JSONModel):
+    """
+    Model for historical treatment data
+    """
+
+    dates: List[dt.datetime] = Field(
+        ..., description="date or end date for which the calculation is made"
+    )
+    ichd: List[int] = Field(
+        ..., description="number of people on in centre hemodialysis"
+    )
+    hhd: List[int] = Field(..., description="number of people on home hemodialysis")
+    xxhd: List[int] = Field(
+        ..., description="number of people with an unknown dialysis type"
+    )
+    pd: List[int] = Field(..., description="number of people on peritoneal dialysis")
+    tx: List[int] = Field(..., description="number of people with transplant modality")
+
+
+class HistoricalTreatment(JSONModel):
+    treatment_changes: LabelledNetwork
+    incident_treatment_historical: TimeSeriesTreatmentStats
+    prevalent_treatment_historical: TimeSeriesTreatmentStats
+
+
 def _calculate_frequency(
     from_time: dt.datetime,
     to_time: dt.datetime,
@@ -104,7 +136,7 @@ def _calculate_frequency(
 
 
 def calculate_therapy_types(
-    patient_cohort: pd.DataFrame,
+    patient_cohort: pds.DataFrame,
 ) -> Tuple[List[str], List[int]]:
     """
     Breakdown of dialysis patients on home and in-centre therapies.
@@ -164,12 +196,13 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Create a precisely 2 element time window tuple
         self.time_window: Tuple[dt.datetime, dt.datetime] = (from_time, to_time)
+        self._patient_cohort: pds.DataFrame
 
     def _extract_base_patient_cohort(
         self,
         limit_to_ukrdc: Optional[bool] = True,
         limit_query_length: Optional[int] = None,
-    ) -> pd.DataFrame:
+    ) -> pds.DataFrame:
         """Extract a base patient cohort dataframe from the database
         Returns:
             pd.DataFrame: Patient cohort dataframe
@@ -231,13 +264,13 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # limit number of records returned (for benchmarking)
         if limit_query_length:
             patients = next(
-                pd.read_sql(
+                pds.read_sql(
                     patient_query, self.session.bind, chunksize=limit_query_length
                 ).drop_duplicates()
             )
 
         else:
-            patients = pd.read_sql(patient_query, self.session.bind).drop_duplicates()
+            patients = pds.read_sql(patient_query, self.session.bind).drop_duplicates()
 
         # determine first and last treatment
         # I think this logic falls over with treatments of the first start date
@@ -272,7 +305,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         # drop helper columns
         return patients.drop(columns=["treatmentrank", "rankmin", "rankmax"])
 
-    def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
+    def _extract_incident_prevalent(self, base_cohort: pds.DataFrame) -> pds.DataFrame:
         """
         Takes a base cohort from _extract_base_patient_cohort and extracts the incident and prevalent patients.
         This is currently a draft version and probably needs careful reviewing.
@@ -284,9 +317,11 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # If patients are alive and have not been discharged count them as prevalent
         base_cohort["prevalent"] = (
-            pd.isnull(base_cohort.deathtime)
+            pds.isnull(base_cohort.deathtime)
             | (base_cohort.deathtime > self.time_window[1])
-        ) & ((base_cohort.totime > self.time_window[1]) | pd.isnull(base_cohort.totime))
+        ) & (
+            (base_cohort.totime > self.time_window[1]) | pds.isnull(base_cohort.totime)
+        )
         base_cohort.prevalent.fillna(False)
 
         # Get a list of patients to check for incidence status. All incident patients start within the timewindow.
@@ -325,7 +360,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         # merge into patient cohort and replace NaN with false
-        merged = pd.merge(base_cohort, incident_ids, how="left", on="ukrdcid")
+        merged = pds.merge(base_cohort, incident_ids, how="left", on="ukrdcid")
         merged.incident = merged.incident.fillna(False)
 
         return merged
@@ -377,7 +412,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             .group_by(PatientRecord.ukrdcid)
         )
 
-        session_data = pd.read_sql(query, self.session.bind)
+        session_data = pds.read_sql(query, self.session.bind)
 
         # calculate frequency of dialysis by function to rows
         # this function takes the number of sessions and dividing by a time period
@@ -394,7 +429,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         bins = [0.5, 1.5, 2.5, 3.5, 7.0]
         labels = ["1", "2", "3", ">3"]
 
-        hist = pd.cut(session_data.freq, bins=bins, labels=labels).value_counts(
+        hist = pds.cut(session_data.freq, bins=bins, labels=labels).value_counts(
             sort=False
         )
 
@@ -437,8 +472,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
             ].ukrdcid.drop_duplicates()
 
-        # print(len(patient_list))
-
         # window function to rank the procedures in the order they happened
         window = (
             select(
@@ -468,7 +501,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             .where(window.c.rnk == 1)
         )
 
-        initial_access_data = pd.read_sql(initial_access_query, self.session.bind)
+        initial_access_data = pds.read_sql(initial_access_query, self.session.bind)
 
         initial_access_data.loc[
             initial_access_data.qhd20.isna(), "qhd20"
@@ -676,4 +709,253 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         return UnitLevelDialysisStats(
             all=self.extract_satellite_stats(), units=unit_stats
+        )
+
+
+def generate_death_and_discharge_events(extracted_data: pds.DataFrame) -> pds.DataFrame:
+
+    death_events = extracted_data[~extracted_data.deathtime.isna()][
+        ["ukrdcid", "deathtime"]
+    ].drop_duplicates()
+    death_events["Event"] = "Dead"
+    death_events.rename(columns={"deathtime": "Event Time"}, inplace=True)
+
+    discharge_events = extracted_data[~extracted_data.dischargereasoncode.isna()][
+        ["ukrdcid", "totime"]
+    ]
+    discharge_events["Event"] = "Discharged"
+    discharge_events.rename(columns={"totime": "Event Time"}, inplace=True)
+
+    return pds.concat([death_events, discharge_events])
+
+
+def generate_modality_start_events(extracted_data: pds.DataFrame) -> pds.DataFrame:
+
+    # distinguish between HD types
+    extracted_data.loc[
+        (extracted_data.registry_code_type == "HD") & (extracted_data.qbl05 == "HOME"),
+        "registry_code_type",
+    ] = "HHD"
+
+    extracted_data.loc[
+        (extracted_data.registry_code_type == "HD")
+        & ((extracted_data.qbl05 == "HOSP") | (extracted_data.qbl05 == "SATL")),
+        "registry_code_type",
+    ] = "ICHD"
+
+    extracted_data.loc[
+        (extracted_data.registry_code_type == "HD") & extracted_data.qbl05.isnull(),
+        "registry_code_type",
+    ] = "HD Unknown"
+
+    # generate set of events based on the first instance of each event type
+    treatment_events = extracted_data[extracted_data["rank"] == 1][
+        ["ukrdcid", "registry_code_type", "fromtime"]
+    ].drop_duplicates()
+    treatment_events.rename(columns={"fromtime": "Event Time"}, inplace=True)
+    treatment_events.rename(columns={"registry_code_type": "Event"}, inplace=True)
+
+    return treatment_events
+
+
+class TimeSeriesTreatment(AbstractFacilityStatsCalculator):
+    """This calculator is a wrapper for dialysis calculator to return time series treatment data"""
+
+    def __init__(
+        self,
+        session: Session,
+        facility: str,
+        time_delta: dt.timedelta,
+        number: int,
+        to_time: dt.datetime,
+    ):
+        super().__init__(session, facility)
+
+        # Create a precisely 2 element time window tuple
+        self.date = to_time or dt.datetime.today()
+        self.time_delta = time_delta
+        self.time_window: Tuple[dt.datetime, dt.datetime] = (
+            to_time - number * time_delta + dt.timedelta(days=1),
+            to_time,
+        )
+        self.no_of_windows = number
+
+    def _extract_base_patient_cohort(
+        self, limit_to_ukrdc: Optional[bool] = True
+    ) -> pds.DataFrame:
+
+        from_time = self.time_window[0]
+        to_time = self.time_window[0] + self.time_delta
+        data = []
+        for _ in range(self.no_of_windows):
+            # get treatment data and parse into dictionary to easily convert to dataframe
+            calculator = DialysisStatsCalculator(
+                self.session, self.facility, from_time=from_time, to_time=to_time
+            )
+
+            treatment = calculator.extract_stats(limit_to_ukrdc=limit_to_ukrdc).all
+            prevalent: Dict[str, Any] = dict(
+                zip(
+                    treatment.prevalent_home_therapies.data.x,
+                    treatment.prevalent_home_therapies.data.y,
+                )
+            )
+            prevalent["to_time"] = treatment.metadata.to_time
+            prevalent["incident_prevalent"] = "prevalent"
+            data.append(prevalent)
+
+            incident: Dict[str, Any] = dict(
+                zip(
+                    treatment.incident_home_therapies.data.x,
+                    treatment.incident_home_therapies.data.y,
+                )
+            )
+            incident["to_time"] = treatment.metadata.to_time
+            incident["incident_prevalent"] = "incident"
+            data.append(incident)
+
+            from_time = from_time + self.time_delta
+            to_time = to_time + self.time_delta
+
+        # Convert to treatment dataframe
+        self.treatments = pds.DataFrame(data).fillna(0)
+
+        # return most recent patient cohort and apply window function to rank treatments
+        patient_cohort = calculator._patient_cohort  # pylint: disable=W0212
+        patient_cohort["rank"] = patient_cohort.groupby(
+            ["ukrdcid", "registry_code_type", "qbl05"], dropna=False
+        )["fromtime"].rank(ascending=True)
+
+        return patient_cohort
+
+    def extract_patient_cohort(self, limit_to_ukrdc: Optional[bool] = True) -> None:
+        self._patient_cohort = self._extract_base_patient_cohort(
+            limit_to_ukrdc=limit_to_ukrdc
+        )
+
+    def _calculate_events(self) -> Tuple[Nodes, Connections]:
+
+        raw_events = pds.concat(
+            [
+                generate_death_and_discharge_events(self._patient_cohort),  # type: ignore
+                generate_modality_start_events(self._patient_cohort),  # type: ignore
+            ]
+        )
+
+        # rank events
+        raw_events["Event Rank"] = raw_events.groupby(["ukrdcid"]).rank(method="dense")[
+            "Event Time"
+        ]
+
+        # generate next event for patients
+        joined_events = raw_events[raw_events["Event Rank"] == 1].merge(
+            raw_events[raw_events["Event Rank"] == 2], on="ukrdcid", how="left"
+        )
+
+        # replace na in case of no new event
+        joined_events["Event_y"].fillna(joined_events["Event_x"], inplace=True)
+
+        events_aggregated = (
+            joined_events.groupby(["Event_x", "Event_y"]).count().reset_index()
+        )
+
+        # make sankey plot
+        source_labels = list(events_aggregated["Event_x"].unique())
+        target_labels = list(events_aggregated["Event_y"].unique())
+        source = [
+            source_labels.index(row["Event_x"])
+            for _, row in events_aggregated.iterrows()
+        ]
+        target = [
+            len(source_labels) + target_labels.index(row["Event_y"])
+            for _, row in events_aggregated.iterrows()
+        ]
+        value = [row["ukrdcid"] for _, row in events_aggregated.iterrows()]
+
+        nodes = Nodes(node_labels=[*source_labels, *target_labels])
+
+        connections = Connections(source=source, target=target, value=value)
+
+        return nodes, connections
+
+    def next_treatment(self):
+        # calculate next treatment
+        # TODO: incident prevalent filters etc
+
+        nodes, connections = self._calculate_events()
+
+        return LabelledNetwork(
+            metadata=NetworkMetaData(
+                title="Treatment Changes",
+                summary="First Treatment modality change over the last three months",
+                description=" ",
+            ),
+            node=nodes,
+            link=connections,
+        )
+
+    def treatment_history(self):
+
+        incident_history = TimeSeriesTreatmentStats(
+            dates=self.treatments[
+                self.treatments.incident_prevalent == "incident"
+            ].to_time.tolist(),
+            ichd=self.treatments[self.treatments.incident_prevalent == "incident"][
+                "HD In-centre"
+            ].tolist(),
+            hhd=self.treatments[self.treatments.incident_prevalent == "incident"][
+                "HD Home"
+            ]
+            .astype(int)
+            .tolist(),
+            xxhd=self.treatments[self.treatments.incident_prevalent == "incident"][
+                "HD Unknown/Incomplete"
+            ].tolist(),
+            pd=self.treatments[self.treatments.incident_prevalent == "incident"][
+                "PD"
+            ].tolist(),
+            tx=self.treatments[self.treatments.incident_prevalent == "incident"][
+                "TX"
+            ].tolist(),
+        )
+
+        prevalent_history = TimeSeriesTreatmentStats(
+            dates=self.treatments[
+                self.treatments.incident_prevalent == "prevalent"
+            ].to_time.tolist(),
+            ichd=self.treatments[self.treatments.incident_prevalent == "prevalent"][
+                "HD In-centre"
+            ].tolist(),
+            hhd=self.treatments[self.treatments.incident_prevalent == "prevalent"][
+                "HD Home"
+            ]
+            .astype(int)
+            .tolist(),
+            xxhd=self.treatments[self.treatments.incident_prevalent == "prevalent"][
+                "HD Unknown/Incomplete"
+            ].tolist(),
+            pd=self.treatments[self.treatments.incident_prevalent == "prevalent"][
+                "PD"
+            ].tolist(),
+            tx=self.treatments[self.treatments.incident_prevalent == "prevalent"][
+                "TX"
+            ].tolist(),
+        )
+
+        return incident_history, prevalent_history
+
+    def extract_stats(self):
+
+        if self._patient_cohort is None:
+            self.extract_patient_cohort()
+
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        incident_treatments, prevalent_treatments = self.treatment_history()
+
+        return HistoricalTreatment(
+            treatment_changes=self.next_treatment(),
+            incident_treatment_historical=incident_treatments,
+            prevalent_treatment_historical=prevalent_treatments,
         )

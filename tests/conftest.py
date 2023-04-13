@@ -10,9 +10,9 @@ from ukrdc_sqla.ukrdc import Base as UKRDC3Base
 
 
 # Using the factory to create a postgresql instance
-socket_dir = tempfile.TemporaryDirectory()
-postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir=socket_dir.name)
-postgresql_my = factories.postgresql("postgresql_my_proc")
+#socket_dir = tempfile.TemporaryDirectory()
+#postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir=socket_dir.name)
+#postgresql_my = factories.postgresql("postgresql_my_proc")
 
 # if you have postgres runnin you can uncomment this line
 postgresql_my = factories.postgresql('postgresql_noproc')
