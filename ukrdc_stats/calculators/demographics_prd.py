@@ -24,6 +24,8 @@ from ukrdc_stats.models.maps import (
     DoubleLabelled3dData,
 )
 
+from ukrdc_stats.descriptions import prd_demographics_descriptions
+
 # NHS digital gender map
 GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
 
@@ -235,7 +237,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Basic3dMetadata(
                 title="PRD by Gender",
                 summary="Breakdown of patient primary renal diagnosis separated by gender",
-                description="",
+                description=prd_demographics_descriptions["GENDER_DESCRIPTION"],
                 axis_titles=AxisLabel3d(
                     x="Gender", y="Primary Renal Diagnosis", z="No. of Patients"
                 ),
@@ -262,7 +264,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Basic3dMetadata(
                 title="PRD by Ethnicity",
                 summary="Breakdown of patient ethnic group codes",
-                description="",
+                description=prd_demographics_descriptions["ETHNIC_DESCRIPTION"],
                 axis_titles=AxisLabel3d(
                     x="Ethnicity", y="Primary Renal Diagnosis", z="No. of Patients"
                 ),
@@ -288,7 +290,7 @@ class RenalDiagnosisStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Basic3dMetadata(
                 title="PRD by Age",
                 summary="Distribution of patient ages",
-                description="",
+                description=prd_demographics_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabel3d(
                     x="Age", y="Primary Renal Diagnosis", z="No. of Patients"
                 ),

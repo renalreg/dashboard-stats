@@ -16,9 +16,9 @@ from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import age_from_dob, map_codes
 
-from ..descriptions import demographic_descriptions
-from ..models.base import JSONModel
-from ..models.generic_2d import (
+from ukrdc_stats.descriptions import demographic_descriptions
+from ukrdc_stats.models.base import JSONModel
+from ukrdc_stats.models.generic_2d import (
     AxisLabels2d,
     Labelled2d,
     Labelled2dData,

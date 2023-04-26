@@ -32,12 +32,18 @@ from ukrdc_stats.models.networks import (
     Nodes,
     Connections,
 )
+
+from ukrdc_stats.models.maps import Basic3dMetadata
+
 from ukrdc_stats.models.base import JSONModel
 
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
-from ukrdc_stats.descriptions import dialysis_descriptions
+from ukrdc_stats.descriptions import (
+    dialysis_descriptions,
+    treatment_history_descriptions,
+)
 
 
 class DialysisMetadata(JSONModel):
@@ -105,10 +111,20 @@ class TimeSeriesTreatmentStats(JSONModel):
     tx: List[int] = Field(..., description="number of people with transplant modality")
 
 
+class IncidentTimeseriesTreatment(JSONModel):
+    data: TimeSeriesTreatmentStats
+    metadata: Basic3dMetadata
+
+
+class PrevalentTimeseriesTreatment(JSONModel):
+    data: TimeSeriesTreatmentStats
+    metadata: Basic3dMetadata
+
+
 class HistoricalTreatment(JSONModel):
     treatment_changes: LabelledNetwork
-    incident_treatment_historical: TimeSeriesTreatmentStats
-    prevalent_treatment_historical: TimeSeriesTreatmentStats
+    incident_treatment_historical: IncidentTimeseriesTreatment
+    prevalent_treatment_historical: PrevalentTimeseriesTreatment
 
 
 def _calculate_frequency(
@@ -888,7 +904,9 @@ class TimeSeriesTreatment(AbstractFacilityStatsCalculator):
             metadata=NetworkMetaData(
                 title="Treatment Changes",
                 summary="First Treatment modality change over the last three months",
-                description=" ",
+                description=treatment_history_descriptions[
+                    "NEXT_TREATMENT_DESCRIPTION"
+                ],
             ),
             node=nodes,
             link=connections,
@@ -942,7 +960,25 @@ class TimeSeriesTreatment(AbstractFacilityStatsCalculator):
             ].tolist(),
         )
 
-        return incident_history, prevalent_history
+        return IncidentTimeseriesTreatment(
+            metadata=Basic3dMetadata(
+                title="Next Treatment (Incident)",
+                summary="",
+                description=treatment_history_descriptions[
+                    "INCIDENT_HISTORY_DESCRIPTION"
+                ],
+            ),
+            data=incident_history,
+        ), PrevalentTimeseriesTreatment(
+            metadata=Basic3dMetadata(
+                title="Next Treatment (Prevalent)",
+                summary="",
+                description=treatment_history_descriptions[
+                    "PREVALENT_HISTORY_DESCRIPTION"
+                ],
+            ),
+            data=prevalent_history,
+        )
 
     def extract_stats(self):
 

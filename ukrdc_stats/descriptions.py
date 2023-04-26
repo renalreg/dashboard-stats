@@ -130,13 +130,61 @@ dialysis_descriptions = {
         """
     ),
 }
+
+treatment_history_descriptions = {
+    "NEXT_TREATMENT_DESCRIPTION": dedent(
+
+        """
+        # Next Treatment of Prevalent Patients
+        ## Overview
+        This sankey plot displays the next treatment modality for aggregated patients at a specified unit, as recorded by the UKRDC.
+
+        ## Methodology
+        - This calculator has a dependancy on the one used for patients undergoing kidney replacement therapy. The cohort is constructed in the same way, but patients are aggregated without deduplication.
+        - The cohort of treatment modalities is time-windowed in the same way.
+        - A set of events is calculated and ranked chronologically. An event can be the beginning of a treatment, a death, or a discharge.
+        - Patients with only one event, i.e., no discharge, new treatment, or death, are assumed to remain on the same treatment.
+        - The number of patients on each combination of events is aggregated.   
+
+        ## UKRDC Entities Used 
+        The same entities the dialysis calculator dependancy these are:
+        - [PatientRecord](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2006450149/PatientRecord): ukrdcid, sendingextract
+        - [Patient](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2006450145/Patient): deathtime
+        - [Treatment](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2006450155/Treatment+Encounter): qbl05, hdp04, fromtime, totime, dischargereasoncode, healthcarefacilitycode
+        - [ModalityCodes](https://renalregistry.atlassian.net/l/cp/Ac1YeFfH): registry_code_type
+        """
+    ),
+    "INCIDENT_HISTORY_DESCRIPTION": dedent(
+        """
+        # Treatment History
+        ## Overview 
+        
+
+        ## Methodology
+
+        ## UKRDC Entities Used 
+        """
+    ),
+    "PREVALENT_HISTORY_DESCRIPTION": dedent(
+        """
+        # Next Prevalent Patients
+        ## Overview 
+
+        ## Methodology
+
+        ## UKRDC Entities Used 
+        """
+    ),
+}
+
 demographic_descriptions = {
     "GENDER_DESCRIPTION": dedent(
         """
-        # Patient Gender
+        # Gender
+        ## Overview
         Gender identity recorded for each living patient registered with the renal unit.
         
-        # Methodology
+        ## Methodology
         - Patient records are matched to NHS stated gender using patient demographic information 
         - Patients are optionally checked against NHS tracing to check for date of death
         - All living patients with patient records sent by a particular sending facility are aggregated based on gender
@@ -170,9 +218,10 @@ demographic_descriptions = {
     "AGE_DESCRIPTION": dedent(
         """
         # Patient Age
+        ## Overview
         The age, calculated from date of birth, recorded for each living patient registered with the renal unit.
         
-        # Methodology
+        ## Methodology
         - Patient records are matched to date of birth using patient demographic information 
         - Age is calculated from date of birth 
         - Patients are optionally checked against NHS tracing to check for date of death
@@ -182,5 +231,74 @@ demographic_descriptions = {
         - [PatientRecord](https://renalregistry.atlassian.net/l/cp/KCZ6A2bX)
         - [Patient](https://renalregistry.atlassian.net/l/cp/0MXHtpTU)
         """
+    ),
+}
+
+
+prd_demographics_descriptions = {
+    "GENDER_DESCRIPTION": dedent(
+    """
+    # Primary Renal Diagnosis by Sex
+
+    ## Overview
+    Number of living patients registered with the renal unit, categorized by sex and primary renal diagnosis.
+
+    ## Methodology
+    - The UKRDC's primary renal diagnosis and patient demographic information are matched to the PatientRecord.
+    - Patients with a recorded deathtime are excluded from the analysis.
+    - Optionally, patients are further excluded by matching to the date of death in NHS tracing records.
+    - Patients were aggregated by sex and primary renal diagnosis. Patients not matched to a renal diagnosis were assigned to the group "No PRD".
+    - No deduplication is carried out: a one-to-one relationship between primary renal diagnosis and age is assumed.
+
+    ## UKRDC Entities Used
+    - [PatientRecord](https://renalregistry.atlassian.net/l/cp/KCZ6A2bX)
+    - [Patient](https://renalregistry.atlassian.net/l/cp/0MXHtpTU)
+    - [RenalDiagnosis](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2009071645/RenalDiagnosis+Diagnosis)
+
+    """
+    ),
+    "AGE_DESCRIPTION": dedent(
+        """
+    # Primary Renal Diagnosis by Age
+
+    ## Overview
+    Number of living patients registered with the renal unit, categorized by chronological age and primary renal diagnosis.
+
+    ## Methodology
+    - The UKRDC's primary renal diagnosis and patient demographic data are matched to the PatientRecord.
+    - Patients with a recorded deathtime are excluded from the analysis.
+    - Optionally, patients are further excluded by matching to the date of death in NHS tracing records.
+    - Patient's chronological age is calculated from the date of birth on the patient record
+    - Patients are aggregated by age and primary renal diagnosis. Patients not matched to a renal diagnosis are assigned to the group "No PRD".
+    - No deduplication is carried out: a one-to-one relationship between primary renal diagnosis and age is assumed.
+
+    ## UKRDC Entities Used
+    - [PatientRecord](https://renalregistry.atlassian.net/l/cp/KCZ6A2bX)
+    - [Patient](https://renalregistry.atlassian.net/l/cp/0MXHtpTU)
+    - [RenalDiagnosis](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2009071645/RenalDiagnosis+Diagnosis)
+    """
+    ),
+    "ETHNIC_DESCRIPTION": dedent(
+        """
+    # Primary Renal Diagnosis by Ethnicity
+    
+    ## Overview
+    Number of living patients registered with the renal unit, categorized by ethnicity and primary renal diagnosis.
+
+    ## Methodology
+    - The UKRDC's primary renal diagnosis and patient demographic information are matched to the PatientRecord.
+    - Patients with a recorded deathtime are excluded from the analysis.
+    - Optionally, patients are further excluded by matching to the date of death in NHS tracing records.
+    - Patients are aggregated by ethnicity and primary renal diagnosis. Patients not matched to a renal diagnosis are assigned to the group "No PRD".
+    - No deduplication is carried out: a one-to-one relationship between primary renal diagnosis and age is assumed.
+
+    ## UKRDC Entities Used
+
+    The following UKRDC entities were used in this report:
+
+    - [PatientRecord](https://renalregistry.atlassian.net/l/cp/KCZ6A2bX)
+    - [Patient](https://renalregistry.atlassian.net/l/cp/0MXHtpTU)
+    - [RenalDiagnosis](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2009071645/RenalDiagnosis+Diagnosis)
+    """
     ),
 }
