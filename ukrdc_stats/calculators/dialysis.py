@@ -191,7 +191,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 Treatment.discharge_reason_code,
             )  # type:ignore
             .join(Treatment, Treatment.pid == Patient.pid)  # type:ignore
-            .join(PatientRecord, PatientRecord.pid == Patient.pid)  # type:ignore
+            .join(PatientRecord, PatientRFcord.pid == Patient.pid)  # type:ignore
             .join(
                 ModalityCodes,
                 ModalityCodes.registry_code == Treatment.admit_reason_code,
@@ -200,7 +200,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     # filter for facility,
                     PatientRecord.sendingfacility == self.facility,
-                    PatientRecord.sendingextract == "UKRDC",
                     # ensure patient is alive at beginning of time window
                     or_(
                         Patient.death_time.is_(None),

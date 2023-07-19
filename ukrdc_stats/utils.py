@@ -5,10 +5,44 @@ Common utility functions useful in multiple statistics
 import datetime as dt
 import pandas as pd
 import fileinput
+import redis
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from ukrdc_sqla.ukrdc import CodeMap
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+def cache_connection_from_env():
+    # returns redis connection 
+    redis_host = os.getenv('REDIS_CACHE_HOST')
+    redis_port = os.getenv('REDIS_CACHE_PORT')
+    redis_db = os.getenv('REDIS_CACHE_DB')
+
+    return redis.Redis(host=redis_host, port = redis_port, db = redis_db)
+    
+def ukrdc_connection_from_env():
+    
+    # Get required variables for the connection string
+    db_host = os.getenv('UKRDC_HOST')
+    db_port = os.getenv('UKRDC_PORT')
+    db_name = os.getenv('UKRDC_NAME')
+    db_user = os.getenv('UKRDC_USER')
+    db_password = os.getenv('UKRDC_PASSWORD')
+
+    # Create the connection string
+    ukrdc_connection_string = f"postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
+    ukrdc3_sessionmaker = sessionmaker(
+        autocommit=False, autoflush=False, bind=create_engine(ukrdc_connection_string)
+    )
+
+    return ukrdc3_sessionmaker()
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
@@ -79,6 +113,7 @@ def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
     return dict(zip(codes.source_code, codes.destination_code))
 
 
+
 def strip_whitespace(filepath: str):
     """Run to stop pylint complaining about trailing whitespace"""
 
@@ -86,3 +121,4 @@ def strip_whitespace(filepath: str):
         line = line.rstrip()
         if line:
             print(line)
+
