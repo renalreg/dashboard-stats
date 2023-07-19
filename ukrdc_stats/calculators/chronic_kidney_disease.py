@@ -49,28 +49,12 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
         # Set the date to calculate at, defaulting to today
         self.date: dt.datetime = date or dt.datetime.today()
 
-        # Set the cache_key if date is first of the month any process using 
-        # data caching should only call the calcualator on(for) the first of the month
-        # this is to avoid caching too much data 
-        if self.date.day == 1:
-            self.cache_key = f"{self.facility}:{self.date.month}:{self.date.year}"
 
     def extract_stats(self) -> JSONModel:
         
-        # if we have no patient cohort we check the cache
-        if self._patient_cohort is None and self.date.day == 1:
-            self.check_cache(self.cache_key)
-
-        
         # if that doesn't work try extracting one
         if self._patient_cohort is None:
-            self.extract_patient_cohort()
-            print("patient cohort extracted from ukrdc")
-        else:
-            # serialisation process converts datetimes to Unix times...this needs reverting
-            self._patient_cohort["birthtime"] = pd.to_datetime(self._patient_cohort["birthtime"], unit='ms')
-            self._patient_cohort["deathtime"] = pd.to_datetime(self._patient_cohort["deathtime"], unit='ms')
-            self._patient_cohort["enteredon"] = pd.to_datetime(self._patient_cohort["enteredon"], unit='ms')
+            self.extract_patient_cohort(self.facility, self.date)
 
         # if we still have no cohort raise an error 
         if self._patient_cohort is None:
@@ -78,11 +62,11 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
 
     
     def _extract_base_patient_cohort(self, facility) -> pd.DataFrame:
-
+        
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
-                PatientRecord.sending
+                PatientRecord.sendingfacility,
                 Patient.birth_time,
                 Patient.death_time, 
                 Treatment.admit_reason_code,
@@ -117,10 +101,22 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
 
         return pd.read_sql(patient_query, self.session.bind).drop_duplicates()
     
-    def extract_patient_cohort(self) -> None:
+    def extract_patient_cohort(self, facility, date) -> None:
+        cache_key = f"{facility}:{date.month}:{date.year}"
+        # restore patient cohort from cache
+        if date.day == 1:
+            self.check_cache(key = cache_key)
+
         # extract and cache dataset for calculation of stats the patient cohort should 
-        self._patient_cohort = self._extract_base_patient_cohort(self.facility)
-        self.cache_cohort(self.cache_key)
+        if self._patient_cohort is None:
+            self._patient_cohort = self._extract_base_patient_cohort(self.facility)
+            self.cache_cohort(key = cache_key)
+        else:
+            # serialisation process converts datetimes to Unix times...this needs reverting for data restored from the cache
+            self._patient_cohort["birthtime"] = pd.to_datetime(self._patient_cohort["birthtime"], unit='ms')
+            self._patient_cohort["deathtime"] = pd.to_datetime(self._patient_cohort["deathtime"], unit='ms')
+            self._patient_cohort["enteredon"] = pd.to_datetime(self._patient_cohort["enteredon"], unit='ms')
+
 
 
     def recent_egfr_result(self):
@@ -149,6 +145,8 @@ class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
         self.date = dt.datetime(date.year, date.month,1)
         super().__init__(session, redis_cache, facility)
         
+        self.comparison_facilities = comparison_facilities
+
         # Set up the database session
         self.session: Session = session
         
@@ -162,7 +160,10 @@ class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
 
         # Create key for cache 
         self.cache_key: Optional[str] = None
-        
+
+    #def extract_patient_cohort(self):
+    #    for facility in self.comparison_facilities:
+                  
 
 #class ChronicKidneyDiseaseLongditudinal()  
 
