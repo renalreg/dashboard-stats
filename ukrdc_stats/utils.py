@@ -25,7 +25,9 @@ def cache_connection_from_env():
     redis_db = os.getenv('REDIS_CACHE_DB')
 
     return redis.Redis(host=redis_host, port = redis_port, db = redis_db)
+
     
+
 def ukrdc_connection_from_env():
     
     # Get required variables for the connection string
@@ -84,6 +86,20 @@ def age_from_dob_exact(date: dt.date, dob: dt.date) -> float:
 
     return (date - dob).days / 365.25
 
+def subtract_months(date: dt.datetime, months: int) -> dt.datetime:
+    """Function takes a date and returns the same day a specified number of months before
+
+    Args:
+        date (datetime): date to subtract from
+        months (int): number of months prior to date
+    Returns:
+        datetime: the resulting date with the specified number of months subtracted
+    """
+    year_diff, month_diff = divmod(date.month - months-1, 12)
+    year = date.year + year_diff
+    month = month_diff + 1
+
+    return dt.datetime(year=year, month=month, day=date.day) #date.replace(year=year, month=month)
 
 def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
     """returns a date a fixed number of years before give date

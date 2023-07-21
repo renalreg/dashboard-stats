@@ -21,7 +21,7 @@ from ukrdc_sqla.ukrdc import (
 )
 
 from ukrdc_stats.models.base import JSONModel
-from ukrdc_stats.utils import dob_cutoff_from_age
+from ukrdc_stats.utils import dob_cutoff_from_age, subtract_months
 
 
 class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
@@ -54,14 +54,17 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
         
         # if that doesn't work try extracting one
         if self._patient_cohort is None:
-            self.extract_patient_cohort(self.facility, self.date)
+            self._patient_cohort  = self.extract_patient_cohort(self.facility, self.date)
 
         # if we still have no cohort raise an error 
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
+        
+
+        print(self.recent_egfr_result(sending_filter=[self.facility]))
 
     
-    def _extract_base_patient_cohort(self, facility) -> pd.DataFrame:
+    def _extract_base_patient_cohort(self, facility, date) -> pd.DataFrame:
         
         patient_query = (
             select(
@@ -85,7 +88,7 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
                     PatientRecord.sendingfacility == facility,
                     PatientRecord.sendingextract == "UKRDC",
                     or_(
-                        Patient.death_time.is_(None), Patient.death_time > self.date
+                        Patient.death_time.is_(None), Patient.death_time > date
                     ),
                     # TODO: Think this should be an or condition with a CKD codelist  
                     Treatment.admit_reason_code.is_(None),
@@ -94,41 +97,51 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
                         ResultItem.serviceidcode == "QBLAR",
                         ResultItem.serviceidcode == "QBLA1"
                     ),
-                    ResultItem.enteredon < self.date
+                    ResultItem.enteredon < date
                 )
             )
         )
 
-        return pd.read_sql(patient_query, self.session.bind).drop_duplicates()
-    
+        patient_cohort = pd.read_sql(patient_query, self.session.bind).drop_duplicates()
+        return patient_cohort
+
     def extract_patient_cohort(self, facility, date) -> None:
         cache_key = f"{facility}:{date.month}:{date.year}"
         # restore patient cohort from cache
         if date.day == 1:
-            self.check_cache(key = cache_key)
+            patient_cohort = self.check_cache(key = cache_key)
+            if patient_cohort is not None:
+                patient_cohort["birthtime"] = pd.to_datetime(patient_cohort["birthtime"], unit='ms')
+                patient_cohort["deathtime"] = pd.to_datetime(patient_cohort["deathtime"], unit='ms')
+                patient_cohort["enteredon"] = pd.to_datetime(patient_cohort["enteredon"], unit='ms')
+            else: 
+                patient_cohort = self._extract_base_patient_cohort(facility=facility, date=date)
+                self.cache_cohort(patient_cohort=patient_cohort, key=cache_key)
 
         # extract and cache dataset for calculation of stats the patient cohort should 
-        if self._patient_cohort is None:
-            self._patient_cohort = self._extract_base_patient_cohort(self.facility)
-            self.cache_cohort(key = cache_key)
         else:
-            # serialisation process converts datetimes to Unix times...this needs reverting for data restored from the cache
-            self._patient_cohort["birthtime"] = pd.to_datetime(self._patient_cohort["birthtime"], unit='ms')
-            self._patient_cohort["deathtime"] = pd.to_datetime(self._patient_cohort["deathtime"], unit='ms')
-            self._patient_cohort["enteredon"] = pd.to_datetime(self._patient_cohort["enteredon"], unit='ms')
+            patient_cohort = self._extract_base_patient_cohort(facility, date)
+            self.cache_cohort(patient_cohort=patient_cohort, key=cache_key)
+        
+
+        return patient_cohort
 
 
-
-    def recent_egfr_result(self):
+    def recent_egfr_result(self, sending_filter:List[str]):
         # count total number of patients in cohort 
-        numerator = len(self._patient_cohort.ukrdcid.drop_duplicates())
+        denominator = len(self._patient_cohort.ukrdcid.drop_duplicates())
         
         # count total number of patients with a recent test
-        denominator = len(
+        numerator = len(
             self._patient_cohort[
-                self._patient_cohort.enteredon > dob_cutoff_from_age(self.date, 1)].ukrdcid.drop_duplicates())
+                (self._patient_cohort.sendingfacility.isin(sending_filter))
+                & (self._patient_cohort.enteredon > dob_cutoff_from_age(self.date, 1))
+            ].ukrdcid.drop_duplicates())
         
         return numerator / denominator
+
+
+
 
 class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
     def __init__(
@@ -161,9 +174,58 @@ class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
         # Create key for cache 
         self.cache_key: Optional[str] = None
 
-    #def extract_patient_cohort(self):
-    #    for facility in self.comparison_facilities:
-                  
+    def extract_full_patient_cohort(self):
+        """This function uses the extract_patient_cohort method to produce a set of patient unit level 
+        cohorts and concatenates them into one thing. 
+        """
 
-#class ChronicKidneyDiseaseLongditudinal()  
+        patient_cohorts = []
+        for facility in self.comparison_facilities:
+            cohort = self.extract_patient_cohort(facility=facility, date=self.date)     
+            if cohort is not None:
+                patient_cohorts.append(cohort)
+
+        
+        self._patient_cohort = pd.concat(patient_cohorts)
+
+        print(self._patient_cohort.sendingfacility.drop_duplicates())
+            
+
+
+    def extract_stats(self):
+        self.extract_full_patient_cohort()
+        print(self.recent_egfr_result(self.comparison_facilities))          
+
+
+class ChronicKidneyDiseaseLongditudinal():
+    def __init__(self, session: Session, redis_cache: redis.Redis, facility: str, periods:int, date):
+        self.session = session
+        self.periods = periods
+        self.facility = facility 
+        self.redis_cache = redis_cache
+        self.date = date
+
+        # data structure to store base calculator
+        self.time_series_stats = List[ChronicKidneyDiseaseBase]
+
+    def generate_longditudinal_data(self, facility:str, date: dt.datetime, periods:int):
+        """Runs the base ckd calculator for a specified number of periods prior to date 
+
+        Args:
+            facility (str): facility to calculate stats for 
+            date (dt.datetime): date 
+            periods (int): number of periods to calculate for 
+        """
+
+
+        dates = [subtract_months(date, i) for i in reversed(range(periods))]
+        for date in dates: 
+            print(date)
+            ckd_calculator = ChronicKidneyDiseaseBase(session=self.session, redis_cache=self.redis_cache, facility=facility, date=date)
+            ckd_calculator.extract_stats()
+
+
+    def extract_stats(self):
+        self.generate_longditudinal_data(self.facility, self.date, self.periods)
+
 

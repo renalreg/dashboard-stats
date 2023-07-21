@@ -42,10 +42,12 @@ class AbstractFacilityStatsCalculator(ABC):
         if self.redis_cache.exists(key):
             # Retrieve serialized DataFrame from Redis cache
             serialized_data = self.redis_cache.get(key)
-            self._patient_cohort = pd.read_json(serialized_data.decode())
             print("patient cohort restored from cache")
+            return pd.read_json(serialized_data.decode())
+        else:
+            return None            
 
-    def cache_cohort(self, key: str):
+    def cache_cohort(self, patient_cohort:pd.DataFrame, key: str):
         """The philosophy here is the key should be a unique combination of information 
             which represents the parameters the dashboard stats has been run with in this case date 
             and unit. This may cause problems down the line if the data was to change. For example
@@ -56,8 +58,8 @@ class AbstractFacilityStatsCalculator(ABC):
             In theory pandas has a to_dict method but pyarrow should be a) more efficent and memory frendly
             pyarrow.feather might be an option worth looking into b) it's not encrypted but the data isn't human readable     
         """
-        if self._patient_cohort is not None:
-            self.redis_cache.set(key, self._patient_cohort.to_json())
+        if patient_cohort is not None:
+            self.redis_cache.set(key, patient_cohort.to_json())
 
     @abstractmethod
     def extract_patient_cohort(self) -> None:
