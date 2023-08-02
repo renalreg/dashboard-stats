@@ -3,6 +3,7 @@ This module contains the calculators associated with chronic kidney disease.
 That is patients which are identified as having kidney disease but are not in recipt KRT.
 """
 import redis
+import statistics
 
 import datetime as dt
 import pandas as pd
@@ -17,7 +18,9 @@ from ukrdc_sqla.ukrdc import (
     Patient,
     Treatment,
     LabOrder,
-    ResultItem
+    ResultItem, 
+    RenalDiagnosis, 
+    CodeMap
 )
 
 from ukrdc_stats.models.base import JSONModel
@@ -61,7 +64,7 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
         
 
-        print(self.recent_egfr_result(sending_filter=[self.facility]))
+        print(self.recent_test_result(sending_filter=[self.facility]))
 
     
     def _extract_base_patient_cohort(self, facility, date) -> pd.DataFrame:
@@ -69,6 +72,7 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
         patient_query = (
             select(
                 PatientRecord.ukrdcid,
+                PatientRecord.pid,
                 PatientRecord.sendingfacility,
                 Patient.birth_time,
                 Patient.death_time, 
@@ -127,9 +131,9 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
         return patient_cohort
 
 
-    def recent_egfr_result(self, sending_filter:List[str]):
+    def recent_test_result(self, sending_filter:List[str]):
         # count total number of patients in cohort 
-        denominator = len(self._patient_cohort.ukrdcid.drop_duplicates())
+        denominator = len(self._patient_cohort[self._patient_cohort.sendingfacility.isin(sending_filter)].ukrdcid.drop_duplicates())
         
         # count total number of patients with a recent test
         numerator = len(
@@ -138,10 +142,36 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
                 & (self._patient_cohort.enteredon > dob_cutoff_from_age(self.date, 1))
             ].ukrdcid.drop_duplicates())
         
-        return numerator / denominator
+        return numerator/denominator, denominator
+    
+    def renal_diagnosis(self, sending_filter:List[str]):
+        """_summary_
 
+        Args:
+            sending_filter (List[str]): _description_
+        """
+        
+        primary_renal_diagnosis = (
+            select(
+                RenalDiagnosis.diagnosiscode, 
+                CodeMap.destination_code,
+                RenalDiagnosis.diagnosiscodestd,
+                RenalDiagnosis.creation_date
+            ).join(
+                # join prd grouping 
+                CodeMap, 
+                CodeMap.source_coding_standard == RenalDiagnosis.diagnosiscodestd,
+                CodeMap.source_code == CodeMap.source_code 
+            ).where(
+                RenalDiagnosis.pid.in_(
+                    self._patient_cohort[
+                        self._patient_cohort.sendingfacility.isin(sending_filter)
+                    ].pid.to_list()
+                )
+            )
+        )
 
-
+        return pd.read_sql(primary_renal_diagnosis, self.session.bind).drop_duplicates()
 
 class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
     def __init__(
@@ -166,8 +196,6 @@ class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
         # Connection to redis cache
         self.redis_cache: redis.Redis = redis_cache
         
-        # Set up list 
-
         # Create a pandas dataframe to store the results
         self._patient_cohort: Optional[pd.DataFrame] = None
 
@@ -184,17 +212,51 @@ class ChronicKidneyDiseaseScaleCompare(ChronicKidneyDiseaseBase):
             cohort = self.extract_patient_cohort(facility=facility, date=self.date)     
             if cohort is not None:
                 patient_cohorts.append(cohort)
-
         
         self._patient_cohort = pd.concat(patient_cohorts)
-
-        print(self._patient_cohort.sendingfacility.drop_duplicates())
             
+    def assemble_funnel(self):
+        """This function needs some more careful thought but the first attempt is based on the standard 
+        error in a proportion. This article explains it well: 
+
+        https://www.statology.org/standard-error-of-proportion/
+        
+        I think basically we are calculating the varience under the assumption of a bernolli distribution. 
+        the formula for the side of the funnel is: 
+            y(n) = p  +/-  z*sqrt(p(1-p) / n) 
+        for the purpose of plotting this can be written 
+            y(n) = p  +/- A / sqrt(n)
+        We will use the proportion p from the whole population.  
+        Our function will return A, p and a bunch of data points.  
+        """
+
+        # the proportion and population of the datapoints is calculated 
+        populations = []
+        proportions = []
+        for facility in self.comparison_facilities:
+            prop, pop = self.recent_test_result([facility])
+            populations.append(pop)
+            proportions.append(prop)
+
+        # now we calculate the bounding of the funnel using the population prop and pop 
+        prop, pop = self.recent_test_result(self.comparison_facilities)
+        standard_error = (prop*(1-prop))**0.5
+
+        return {
+            "populations" : populations,
+            "proportions" : proportions,
+            "facilities" : self.comparison_facilities,
+            "ensemble population" : pop,
+            "ensemble proportion" : prop, 
+            "0.95 fit" : standard_error * 2.96,
+            "0.99 fit" : standard_error * 2.58
+        }
+
 
 
     def extract_stats(self):
         self.extract_full_patient_cohort()
-        print(self.recent_egfr_result(self.comparison_facilities))          
+        #print(self.recent_egfr_result(self.comparison_facilities))          
 
 
 class ChronicKidneyDiseaseLongditudinal():
@@ -220,7 +282,7 @@ class ChronicKidneyDiseaseLongditudinal():
 
         dates = [subtract_months(date, i) for i in reversed(range(periods))]
         for date in dates: 
-            print(date)
+            #print(date)
             ckd_calculator = ChronicKidneyDiseaseBase(session=self.session, redis_cache=self.redis_cache, facility=facility, date=date)
             ckd_calculator.extract_stats()
 

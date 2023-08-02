@@ -9,6 +9,7 @@ import redis
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from typing import List
 
 from ukrdc_sqla.ukrdc import CodeMap
 from sqlalchemy.orm import Session
@@ -45,6 +46,8 @@ def ukrdc_connection_from_env():
     )
 
     return ukrdc3_sessionmaker()
+
+
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
@@ -137,4 +140,7 @@ def strip_whitespace(filepath: str):
         line = line.rstrip()
         if line:
             print(line)
+
+
+
 
