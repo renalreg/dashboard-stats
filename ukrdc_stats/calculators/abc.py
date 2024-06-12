@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 import redis
-import pyarrow as pa
+#import pyarrow as pa
 import pandas as pd
 from sqlalchemy.orm import Session
 from ukrdc_stats.exceptions import NoCohortError

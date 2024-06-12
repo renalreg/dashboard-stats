@@ -142,6 +142,9 @@ class ChronicKidneyDiseaseBase(AbstractFacilityStatsCalculator):
                 & (self._patient_cohort.enteredon > dob_cutoff_from_age(self.date, 1))
             ].ukrdcid.drop_duplicates())
         
+        if numerator == 0 and denominator == 0:  
+            return 1, denominator
+    
         return numerator/denominator, denominator
     
     def renal_diagnosis(self, sending_filter:List[str]):
