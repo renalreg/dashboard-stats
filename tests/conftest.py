@@ -1,6 +1,13 @@
 import tempfile
 import glob
 import pytest
+import uuid
+
+from sqlalchemy_utils import (
+    database_exists,
+    drop_database,
+    create_database
+)
 
 import pandas as pd
 from pytest_postgresql import factories
@@ -8,36 +15,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from ukrdc_sqla.ukrdc import Base as UKRDC3Base
 
+@pytest.fixture(scope="function")
+def ukrdc3_session():
+    """This fixture creates a new ukrdc database with unique name. It then
+    populates with existing schema, updates with new features that cupid will
+    require, and populates some but not all of the lookup tables.
 
-# Using the factory to create a postgresql instance
-socket_dir = tempfile.TemporaryDirectory()
-postgresql_my_proc = factories.postgresql_proc(port=None, unixsocketdir=socket_dir.name)
-postgresql_my = factories.postgresql("postgresql_my_proc")
+    When control is handed  back to the function it will delete the database.
 
-# if you have postgres runnin you can uncomment this line
-# postgresql_my = factories.postgresql('postgresql_noproc')
-
-# and run pytest with this line
-# pytest --postgresql-user ****** --postgresql-password ******
-
-
-@pytest.fixture()
-def ukrdc3_session(postgresql_my):
-    """
-    Create a new function-scoped in-memory UKRDC3 database and return the session class
+    Yields:
+        Session: session on new ukrdc
     """
 
-    def dbcreator():
-        return postgresql_my.cursor().connection
+    # Generate a random string as part of the URL
+    random_string = str(uuid.uuid4()).replace("-", "")
+    db_name = f"test_ukrdc_{random_string}"
+    url = f"postgresql://postgres:postgres@localhost:5432/{db_name}"
 
-    engine = create_engine("postgresql+psycopg2://", creator=dbcreator)
-    ukrdc_sessionmaker = sessionmaker(
-        autocommit=False,
-        autoflush=False,
-        bind=engine,
-    )
-
-    # Create the database schema, tables etc
+    create_database(url)
+    engine = create_engine(url)
     UKRDC3Base.metadata.create_all(bind=engine)
 
     # load code mappings
@@ -46,6 +42,8 @@ def ukrdc3_session(postgresql_my):
         data = pd.read_csv(path)
         data.to_sql("code_map", engine, if_exists="append", index=False)
 
-    # assert 1 == 2
-    # Returnt the test session
-    return ukrdc_sessionmaker()
+    with sessionmaker(bind=engine)() as session:
+        yield session
+
+    # teardown database
+    drop_database(url)
