@@ -179,7 +179,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
 
         # limit stats to ukrdc
         if limit_to_ukrdc:
-            patient_query.where(PatientRecord.sendingextract == "UKRDC")
+            patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
         # limit number of records returned (for benchmarking)
         if limit_query_length:
