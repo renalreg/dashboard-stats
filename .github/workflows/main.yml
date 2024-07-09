@@ -4,10 +4,6 @@ on:
   push:
   pull_request:
     branches:
-      # Branches from forks have the form 'user:branch-name' so we only run
-      # this job on pull_request events for branches that look like fork
-      # branches. Without this we would end up running this job twice for non
-      # forked PRs, once for the push and then once for opening the PR.
       - "**:**"
   release:
     types: [published]
@@ -15,18 +11,29 @@ on:
 jobs:
   test:
     name: Run tests
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python: [ 3.8, 3.9, "3.10", "3.11"]
+        python: [3.8, 3.9, "3.10", "3.11"]
+
+    services:
+      postgres:
+        image: postgres:13
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
 
     steps:
-      - uses: actions/checkout@v3
-
-      - uses: harmon758/postgresql-action@v1
-        with:
-          postgresql version: "13"
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -39,13 +46,16 @@ jobs:
       - name: Install Dependencies
         run: poetry install
 
+      - name: Wait for PostgreSQL to be ready
+        run: until pg_isready -h localhost -p 5432; do echo "Waiting for PostgreSQL..."; sleep 1; done
+
       - name: Run Tox
         run: poetry run tox
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+          token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.xml
           flags: unittests,${{ matrix.python }}
           name: codecov-umbrella
@@ -75,6 +85,7 @@ jobs:
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.POETRY_PYPI_TOKEN_PYPI }}
         run: |
           poetry config pypi-token.pypi "$POETRY_PYPI_TOKEN_PYPI"
+
       - name: Build with Poetry
         run: poetry build
 
