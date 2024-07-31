@@ -18,4 +18,5 @@ def get_db_url():
     db_user = os.getenv("DB_USER", "ukrdc3")
     db_pass = os.getenv("DB_PASS", "ukrdc3")
     db_port = os.getenv("DB_PORT", "5432")
+
     return f"{db_driver}://{db_user}:{db_pass}@localhost:{db_port}/{db_name}"

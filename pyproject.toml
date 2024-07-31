@@ -12,17 +12,16 @@ version = "1.1.1"
 
 [tool.poetry.dependencies]
 SQLAlchemy = "^1.4.40" 
-pandas = "^1.4.3" 
+pandas = "^2.2.2" 
 psycopg2-binary = "^2.9.3" # Needed for postgres
 pydantic = "^1.10.1" 
-python = "^3.8" 
+python = "^3.9" 
 ukrdc-sqla = "^2.0.0" 
 freezegun = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 black = {version = "^22.1", allow-prereleases = true}
 mypy = "^0.982"
-pandas-stubs = "*"
 pylint = "^2.15.0"
 sqlalchemy2-stubs = "^0.0.2a27"
 
