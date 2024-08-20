@@ -74,8 +74,8 @@ def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
         )
     )
 
-    codes = pd.read_sql(query, session.bind)  # type : ignore
-    # print(codes.head())
+    codes = pd.DataFrame(session.execute(query))
+
     return dict(zip(codes.source_code, codes.destination_code))
 
 

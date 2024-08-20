@@ -6,13 +6,12 @@ from datetime import datetime
 from typing import List, Optional, Union
 from pydantic import Field
 
-from .base import JSONModel
+from ukrdc_stats.models.base import JSONModel
 
 Number = Union[int, float, None]
+RowData = List[Union[Number, str]]
 
 # Generics
-
-
 class AxisLabels2d(JSONModel):
     """
     Generic class for any x/y axis labels
@@ -86,7 +85,6 @@ class TimeSeries2d(JSONModel):
 
 
 # Numeric
-
 
 class Numeric2dData(JSONModel):
     """
@@ -165,3 +163,11 @@ class Labelled2d(JSONModel):
     data: Labelled2dData = Field(
         ..., description="2D data consisting of label datapoint pairs"
     )
+
+class BaseTable(JSONModel):
+    headers : List[str] =  Field(
+        ..., description="Column headers describing the data contained in each row"
+    ) 
+    rows: List[RowData] = Field(
+        ..., description="Rows of the table containing the data"
+    ) 

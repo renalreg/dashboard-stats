@@ -8,15 +8,15 @@ import datetime as dt
 from typing import Optional, Tuple, List, Dict
 
 import pandas as pd
-from sqlalchemy import and_, func, or_, select, distinct
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import and_, func, or_, select, cast
+from sqlalchemy.orm import Session
+from sqlalchemy.types import Float
 from ukrdc_sqla.ukrdc import (
     DialysisSession,
     Patient,
     PatientRecord,
     Treatment,
     ModalityCodes,
-    RenalDiagnosis,
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
@@ -30,6 +30,7 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2d,
     Labelled2dData,
     Labelled2dMetadata,
+    BaseTable,
 )
 from ukrdc_stats.models.base import JSONModel
 
@@ -52,15 +53,15 @@ class DialysisStats(JSONModel):
     Container class for all the dialysis stats
     """
 
-    all_patients_home_therapies: Labelled2d = Field(
+    all_treatments_krt: Labelled2d = Field(
         ...,
         description="statistical breakdown of therapy types for all patients in cohort",
     )
-    incident_home_therapies: Labelled2d = Field(
+    incident_krt: Labelled2d = Field(
         ...,
         description="statistical breakdown of therapy types for incident patients in cohort",
     )
-    prevalent_home_therapies: Labelled2d = Field(
+    prevalent_krt: Labelled2d = Field(
         ...,
         description="statistical breakdown of therapy types for prevalent patients in cohort",
     )
@@ -74,10 +75,14 @@ class DialysisStats(JSONModel):
     )
     metadata: DialysisMetadata
 
-
 class UnitLevelDialysisStats(JSONModel):
     all: DialysisStats
     units: Dict[str, DialysisStats]
+
+class CohortReport(JSONModel):
+    cohort: str
+    population:int
+    table: BaseTable
 
 
 def _calculate_frequency(
@@ -131,7 +136,7 @@ def calculate_therapy_types(
     # Update 'qbl05' based on conditions
     patient_cohort.loc[patient_cohort.registry_code_type.isin(["PD", "TX"]), "qbl05"] = ""
     patient_cohort.loc[(patient_cohort.registry_code_type == "HD") & patient_cohort.qbl05.isna(), "qbl05"] = "Unknown/Incomplete"
-    patient_cohort["qbl05"].replace(mappings, inplace=True)
+    patient_cohort.loc[:, "qbl05"] = patient_cohort["qbl05"].replace(mappings)
 
 
     most_recent_treatments = patient_cohort[patient_cohort["most_recent"] == True][["pid", "registry_code_type", "qbl05"]].drop_duplicates()
@@ -172,6 +177,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         # defines encoding of KRT treatment types
         self.registry_code_types: List[str] = ["HD", "PD", "TX"]
+        self.home_therapy_code_types: List[str] = ["HOSP", "SATL", "INCENTRE"]
 
     def extract_patient_cohort(
         self,
@@ -200,6 +206,8 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             select(
                 PatientRecord.pid,
                 Treatment.healthcarefacilitycode,
+                Treatment.admitreasoncode,
+                Treatment.admitreasoncodestd,
                 Treatment.qbl05,
                 Treatment.hdp04,
                 Treatment.dischargereasoncode,
@@ -236,7 +244,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         
         # pandas by default tries to be helpful and create compound keys
         # we don't want this for now
-        base_cohort.reset_index(drop=True, inplace=True)
+        base_cohort = base_cohort.reset_index(drop=True)
         
         #run function to link each treatment to the one that follows
         base_cohort = self._chain_treatments(base_cohort)
@@ -259,7 +267,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         calculations to be made.
         """
 
-        raw_patients.sort_values(by=["pid", "fromtime"], inplace=True)
+        raw_patients = raw_patients.sort_values(by=["pid", "fromtime"])
 
         # append the start of the next treatment to each record
         raw_patients["next_fromtime"] = raw_patients.groupby("pid")["fromtime"].shift(
@@ -291,7 +299,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
                             if group.at[j, "totime"] < group.at[i, "totime"]:
                                 next_value = group.at[j, "next_fromtime"]
-                                print(next_value)
                                 group.at[i, "next_fromtime"] = next_value
                                 group.at[j, "next_fromtime"] = pd.NaT
                             else:
@@ -344,10 +351,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
 
         base_cohort = base_cohort.drop(index=index_to_remove)
             
-
-        # drop patients coded as acute who die before end of window think here 
-        # we need to assume they cannot be coded as chronic then switch to AKI
-
         return base_cohort
 
 
@@ -393,66 +396,73 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         return base_cohort
-    """
-    def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
 
-        Calculate the per week frequency with which dialysis occurs.
-        Raises:
-            NoCohortError: e.g if extract_patient_cohort has not been run
+
+    def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
+        """_summary_
+
+        Args:
+            subunit (str, optional): _description_. Defaults to "all".
+
         Returns:
-            Labelled2d: returns histogram of dialysis frequency with nbins as the number of bins
-        
+            Labelled2d: _description_
+        """
 
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # filter the patient cohort down to in-centre "HD patients"
-        # Is this necessary? will non in-centre HD patients have dialysis sessions?
+        
         patient_list = self._patient_cohort[
             (self._patient_cohort.registry_code_type == "HD")
-            & (self._patient_cohort.qbl05 == "In-centre")
+            & (self._patient_cohort.qbl05.isin(["HOSP", "SATL", "In-centre"]))
         ]
 
-        # filter on satellite unit
         if subunit != "all":
             patient_list = patient_list[
                 patient_list.healthcarefacilitycode == subunit
-            ].ukrdcid.drop_duplicates()
+            ].pid.drop_duplicates()
         else:
-            patient_list = patient_list.ukrdcid.drop_duplicates()
+            patient_list = patient_list.pid.drop_duplicates()
+        
 
         # get number of dialysis sessions per patient and the date of the first and last one
         query = (
             select(
-                PatientRecord.ukrdcid,
+                PatientRecord.pid,
                 func.min(DialysisSession.procedure_time).label("fromtime"),
                 func.max(DialysisSession.procedure_time).label("totime"),
                 func.count(DialysisSession.procedure_type_code).label("sessioncount"),
+                func.sum(cast(DialysisSession.qhd31, Float))
             )
             .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
             .where(
                 and_(
-                    PatientRecord.ukrdcid.in_(patient_list),
+                    PatientRecord.pid.in_(patient_list),
                     DialysisSession.procedure_type_code == "302497006",  # filter for hd
                     DialysisSession.procedure_time > self.time_window[0],
                     DialysisSession.procedure_time < self.time_window[1],
                 )
             )
-            .group_by(PatientRecord.ukrdcid)
+            .group_by(PatientRecord.pid)
         )
 
-        session_data = pd.read_sql(query, self.session.bind)
+        session_data = pd.DataFrame(self.session.execute(query)).drop_duplicates()
 
         # calculate frequency of dialysis by function to rows
         # this function takes the number of sessions and dividing by a time period
         # the time period is defined by the difference between the first and last session
-        session_data["freq"] = session_data[session_data.sessioncount > 1].apply(
-            lambda row: _calculate_frequency(
-                row["fromtime"], row["totime"], row["sessioncount"]
-            ),
-            axis=1,
-            result_type="reduce",
-        )
+        
+        if len(session_data) > 0:
+            session_data["freq"] = session_data[session_data.sessioncount > 1].apply(
+                lambda row: _calculate_frequency(
+                    row["fromtime"], row["totime"], row["sessioncount"]
+                ),
+                axis=1,
+                result_type="reduce",
+            )
+        else: 
+            # Create an empty freq column if the DataFrame is empty
+            session_data["freq"] = pd.Series(dtype='float64')
 
         # Make a histogram of the dialysis frequency
         bins = [0.5, 1.5, 2.5, 3.5, 7.0]
@@ -462,6 +472,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             sort=False
         )
 
+    
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="In-Centre Dialysis Frequency",
@@ -473,23 +484,6 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
             ),
             data=Labelled2dData(
                 x=list(hist.keys()), y=[int(value) for value in hist.values]
-            ),
-        )
-    """
-    def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
-        
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="In-Centre Dialysis Frequency",
-                summary="Histogram of frequency of dialysis per week.",
-                description=dialysis_descriptions["INCENTRE_DIALYSIS_FREQ"],
-                axis_titles=AxisLabels2d(
-                    x="Frequency (days per week)", y="No. of Patients"
-                ),
-            ),
-            data=Labelled2dData(
-                x=[],
-                y = []
             ),
         )
 
@@ -519,7 +513,46 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
             ].pid.drop_duplicates()
 
-        # print(len(patient_list))
+        window = (
+            select(
+                PatientRecord.pid,
+                DialysisSession.procedure_time,
+                DialysisSession.qhd20,
+                func.rank()
+                .over(
+                    order_by=DialysisSession.procedure_time,
+                    partition_by=PatientRecord.pid,
+                )
+                .label("rnk"),
+            )
+            .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+            .where(
+                PatientRecord.pid.in_(
+                    # pylint: disable=singleton-comparison
+                    patient_list
+                )
+            )
+        ).subquery()
+
+        # query to select the type of access used on the first session
+        initial_access_query = (
+            select(window.c.qhd20, func.count(window.c.pid).label("no"))
+            .group_by(window.c.qhd20)
+            .where(window.c.rnk == 1)
+        )
+
+        initial_access_data = pd.DataFrame(self.session.execute(initial_access_query)).drop_duplicates()
+        
+        if len(initial_access_data)>0:
+            initial_access_data.loc[
+                initial_access_data.qhd20.isna(), "qhd20"
+            ] = "Unknown/Incomplete"
+        
+            x_data = list(initial_access_data.qhd20)
+            y_data = list(initial_access_data.no)
+        else: 
+            x_data = []
+            y_data = []
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -530,7 +563,7 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 population_size=0,
             ),
             data=Labelled2dData(
-                x=[], y=[]
+                x=x_data, y=y_data
             ),
         )
 
@@ -658,19 +691,20 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
         #pop_size = None
         #pop_size = len(self._patient_cohort.ukrdcid.unique())
 
+
         return DialysisStats(
             metadata=DialysisMetadata(
                 population=pop_size,
                 from_time=self.time_window[0],
                 to_time=self.time_window[1],
             ),
-            all_patients_home_therapies=self._calculate_therapies_all_patients(
+            all_treatments_krt=self._calculate_therapies_all_patients(
                 subunit=unit
             ),
-            incident_home_therapies=self._calculate_therapies_incident_patients(
+            incident_krt=self._calculate_therapies_incident_patients(
                 subunit=unit
             ),
-            prevalent_home_therapies=self._calculate_therapies_prevalent_patients(
+            prevalent_krt=self._calculate_therapies_prevalent_patients(
                 subunit=unit
             ),
             incentre_dialysis_frequency=self._calculate_dialysis_frequency(
@@ -708,5 +742,29 @@ class DialysisStatsCalculator(AbstractFacilityStatsCalculator):
                 unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
 
         return UnitLevelDialysisStats(
-            all=self.extract_satellite_stats(), units=unit_stats
+            all=self.extract_satellite_stats(), 
+            units=unit_stats
         )
+    
+    def generate_cohort_report(self, cohort:str)->BaseTable:
+        if cohort == "incident": 
+            table = self.produce_report(
+                ["incident", "most_recent"],
+                ["pid", "admitreasoncode", "admitreasoncodestd", "registry_code_type"]
+            )
+        
+        if cohort == "prevalent":
+            table = self.produce_report(
+                ["incident", "most_recent"],
+                ["pid", "admitreasoncode", "admitreasoncodestd", "registry_code_type"]
+            )
+
+        return CohortReport(
+            cohort=cohort, 
+            population = 0, 
+            table = table
+        )
+        
+
+        #if cohort == "all_treatments":
+        #    self.generate_report()
