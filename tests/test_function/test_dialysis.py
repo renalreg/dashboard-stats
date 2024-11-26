@@ -8,8 +8,6 @@ from ukrdc_stats.calculators.dialysis import (
 )
 
 import pandas as pd
-from pandas import Timestamp
-
 import pytest
 
 
@@ -69,7 +67,6 @@ def test_extract_base_patient_cohort(ukrdc3_session_dialysis: Session):
 
     df_ref = pd.DataFrame(data=DIALYSIS_COHORT_DATA)
 
-    # assert df.pid.equals(df_ref.pid)
     assert len(df) == TEST_COHORT_SIZE
     # assert df.equals(df_ref)
     for item in df.keys():

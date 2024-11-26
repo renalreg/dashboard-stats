@@ -236,7 +236,6 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        print("debug 1")
         ethnic_group_map = map_codes(
             "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
         )
