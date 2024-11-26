@@ -133,3 +133,5 @@ dmypy.json
 # Notebooks for testing
 .notebooks/
 
+# Places to stash bits that shouldn't be on github
+.do_not_commit

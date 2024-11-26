@@ -2,6 +2,10 @@
 Generic 2D data model for UKRDC stats
 """
 
+import csv
+
+import pandas as pd
+
 from datetime import datetime
 from typing import List, Optional, Union
 from pydantic import Field
@@ -86,6 +90,7 @@ class TimeSeries2d(JSONModel):
 
 # Numeric
 
+
 class Numeric2dData(JSONModel):
     """
     x-y data for a numeric plot
@@ -164,10 +169,31 @@ class Labelled2d(JSONModel):
         ..., description="2D data consisting of label datapoint pairs"
     )
 
+
 class BaseTable(JSONModel):
-    headers : List[str] =  Field(
+    headers: List[str] = Field(
         ..., description="Column headers describing the data contained in each row"
-    ) 
+    )
+
     rows: List[RowData] = Field(
         ..., description="Rows of the table containing the data"
-    ) 
+    )
+    #rows: List[str] = Field(
+    #    ..., description="Rows of the table containing the data"
+    #)
+
+
+    def to_csv(self, file_path: str) -> None:
+        """
+        Serializes the BaseTable to a CSV file.
+        
+        :param file_path: The path to the file where the CSV data will be written.
+        """
+        with open(file_path, mode='w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(self.headers)  # Write the headers
+            for row in self.rows:
+                writer.writerow(row.data)
+
+    def to_pandas(self)->None:
+        return pd.DataFrame(self.rows, columns= self.headers).astype("string") 

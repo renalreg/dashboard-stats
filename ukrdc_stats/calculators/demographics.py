@@ -172,11 +172,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     .where(
                         Treatment.fromtime < self.date,
                         or_(
-                            Treatment.totime >= self.date - dt.timedelta(days = 90),
-                            Treatment.totime.is_(None)
-                        )
+                            Treatment.totime >= self.date - dt.timedelta(days=90),
+                            Treatment.totime.is_(None),
+                        ),
                     )
-                )
+                ),
             )
         )
 
@@ -188,7 +188,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         patients = pd.DataFrame(self.session.execute(patient_query)).drop_duplicates()
 
         if include_tracing:
-            # Can we trace deathtime by crosslinking records in the ukrdc? 
+            # Can we trace deathtime by crosslinking records in the ukrdc?
             exclude_patients = (
                 select(PatientRecord.ukrdcid)
                 .join(Patient, Patient.pid == PatientRecord.pid)  # type:ignore
@@ -203,7 +203,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 )
             )
 
-            exclude_patients_list = pd.DataFrame(self.session.execute(exclude_patients)).drop_duplicates()
+            exclude_patients_list = pd.DataFrame(
+                self.session.execute(exclude_patients)
+            ).drop_duplicates()
 
             # filter out patients in the exclusion list
             patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
@@ -288,8 +290,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         for DoD.
         """
         self._patient_cohort = self._extract_base_patient_cohort(
-            include_tracing=include_tracing,
-            limit_to_ukrdc=limit_to_ukrdc
+            include_tracing=include_tracing, limit_to_ukrdc=limit_to_ukrdc
         )
 
     def extract_stats(
