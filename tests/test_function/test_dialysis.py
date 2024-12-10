@@ -2,7 +2,7 @@ from ..utils import check_required_metadata, generate_modality_lookup, FakeDataG
 from ..data import DIALYSIS_COHORT_DATA, DIALYSIS_INCIDENT_PREVALENT
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from ukrdc_stats.calculators.dialysis import (
+from ukrdc_stats.calculators.krt import (
     DialysisStatsCalculator,
     _calculate_frequency,
 )

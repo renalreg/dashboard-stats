@@ -8,7 +8,7 @@ the one produced by the stats team for the annual report.
 import os 
 from dotenv import load_dotenv
 import datetime as dt
-from ukrdc_stats.calculators.dialysis import DialysisStatsCalculator
+from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, select
 import pandas as pd # requires openpyxl
@@ -85,7 +85,7 @@ ukrdc_password = os.getenv('UKRDC_PASSWORD')
 database_url = f"postgresql://{ukrdc_user}:{ukrdc_password}@{ukrdc_host}:{ukrdc_port}/{ukrdc_name}"
 engine = create_engine(database_url)
 with sessionmaker(bind=engine, autocommit=False)() as session: 
-    calculator = DialysisStatsCalculator(
+    calculator = KRTStatsCalculator(
         session, 
         RENAL_CENTRE, 
         from_time=dt.datetime(YEAR-1, 12, 31), 
@@ -94,14 +94,8 @@ with sessionmaker(bind=engine, autocommit=False)() as session:
 
     cohort_report = calculator.generate_cohort_report("incident", include_ni=True).table.to_pandas()
     cohort  = calculator._patient_cohort
-    acute_pids = [
-        "1000594391",
-        "1000755600",
-        "1000860239"
-    ]
-    acute = cohort[cohort.pid.isin(acute_pids)]
-    print(acute[["pid","healthcarefacilitycode","admitreasoncode", "is_chronic", "incident", "prevalent", "registry_code_type", "deathtime", "timeline_length", "life_length"]])
-
+    pids = calculator._patient_cohort.pid.drop_duplicates()
+    
     combined_report = pd.merge(cohort_report, annual_report, on="nhsno", how='outer', indicator=True)
 
 

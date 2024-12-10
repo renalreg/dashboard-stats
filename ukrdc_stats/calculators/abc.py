@@ -15,6 +15,7 @@ from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_sqla.ukrdc import PatientNumber
 
+
 class AbstractFacilityStatsCalculator(ABC):
     """
     Abstract base class for facility stats calculators.
@@ -25,11 +26,9 @@ class AbstractFacilityStatsCalculator(ABC):
     - The class must have a `calculate_stats` method that returns calculated stats as a pydantic model
     """
 
-    def __init__(self,
-            session: Session, 
-            facility: str, 
-            redis_cache_session:Session = None 
-        ):
+    def __init__(
+        self, session: Session, facility: str, redis_cache_session: Session = None
+    ):
         # Set up the database session
         self.session: Session = session
 
@@ -41,10 +40,11 @@ class AbstractFacilityStatsCalculator(ABC):
         # Create a pandas dataframe to store the results
         self._patient_cohort: Optional[pd.DataFrame] = None
 
-
-
     def produce_report(
-        self, input_filters: list[str], output_columns: List[str], include_ni:bool = False
+        self,
+        input_filters: list[str],
+        output_columns: List[str],
+        include_ni: bool = False,
     ) -> BaseTable:
         """
         Produce report containing the patients from a cohort displayed in the
@@ -65,33 +65,26 @@ class AbstractFacilityStatsCalculator(ABC):
             .reset_index(drop=True)
         )
 
-
         if include_ni:
             patient_numbers = pd.DataFrame(
                 self.session.execute(
-                    select(PatientNumber.pid, PatientNumber.patientid)
-                    .where(
-                        PatientNumber.organization == 'NHS',
-                        PatientNumber.pid.in_(report.pid.drop_duplicates())
+                    select(PatientNumber.pid, PatientNumber.patientid).where(
+                        PatientNumber.organization == "NHS",
+                        PatientNumber.pid.in_(report.pid.drop_duplicates()),
                     )
-                ), 
-            ).rename(columns = {"patientid" : "nhsno"})
+                ),
+            ).rename(columns={"patientid": "nhsno"})
 
-            report = pd.merge(report, patient_numbers, on = "pid", how="left")
-            report['nhsno'] = report['nhsno'].fillna('Unknown')
-            
-
-
+            report = pd.merge(report, patient_numbers, on="pid", how="left")
+            report["nhsno"] = report["nhsno"].fillna("Unknown")
 
         population = len(report.pid.drop_duplicates())
-
-
 
         return population, BaseTable(
             headers=report.columns.tolist(),
             rows=[row.tolist() for _, row in report.iterrows()],
         )
-    
+
     def store(self):
         pass
 

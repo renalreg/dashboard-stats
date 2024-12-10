@@ -178,22 +178,21 @@ class BaseTable(JSONModel):
     rows: List[RowData] = Field(
         ..., description="Rows of the table containing the data"
     )
-    #rows: List[str] = Field(
+    # rows: List[str] = Field(
     #    ..., description="Rows of the table containing the data"
-    #)
-
+    # )
 
     def to_csv(self, file_path: str) -> None:
         """
         Serializes the BaseTable to a CSV file.
-        
+
         :param file_path: The path to the file where the CSV data will be written.
         """
-        with open(file_path, mode='w', newline='') as csv_file:
+        with open(file_path, mode="w", newline="") as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(self.headers)  # Write the headers
             for row in self.rows:
                 writer.writerow(row.data)
 
-    def to_pandas(self)->None:
-        return pd.DataFrame(self.rows, columns= self.headers).astype("string") 
+    def to_pandas(self) -> None:
+        return pd.DataFrame(self.rows, columns=self.headers).astype("string")

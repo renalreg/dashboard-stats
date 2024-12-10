@@ -4,7 +4,7 @@ Pydantic classes to return nice plotly friendly output.
 Utility functions to handle bitty things.
 """
 
-from .calculators.demographics import DemographicStatsCalculator
-from .calculators.dialysis import DialysisStatsCalculator
+from ukrdc_stats.calculators.demographics import DemographicStatsCalculator
+from ukrdc_stats.calculators.krt import KRTStatsCalculator
 
-__all__ = ["DemographicStatsCalculator", "DialysisStatsCalculator"]
+__all__ = ["DemographicStatsCalculator", "KRTStatsCalculator"]
