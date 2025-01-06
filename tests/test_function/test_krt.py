@@ -91,12 +91,16 @@ def test_chain_treatments():
         {'pid': 3, 'fromtime': dt.datetime(2020, 2, 15), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_3_4'},
         {'pid': 3, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 15), 'admitreasoncode': 'treatment_3_5'},
 
-        # 4th patient with overlapping treatments and an open-ended treatment with a year-long gap
+        # 4th patient with two separate periods of overlapping treatments
         {'pid': 4, 'fromtime': dt.datetime(2020, 2, 10), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_4_1'},
         {'pid': 4, 'fromtime': dt.datetime(2020, 2, 18), 'totime': dt.datetime(2020, 3, 5), 'admitreasoncode': 'treatment_4_2'},
         {'pid': 4, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 10), 'admitreasoncode': 'treatment_4_3'},
         {'pid': 4, 'fromtime': dt.datetime(2020, 3, 10), 'totime': dt.datetime(2020, 3, 20), 'admitreasoncode': 'treatment_4_4'},
-        {'pid': 4, 'fromtime': dt.datetime(2021, 3, 25), 'totime': pd.NaT, 'admitreasoncode': 'treatment_4_5'},  # Open-ended treatment
+        
+        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 1), 'totime': dt.datetime(2020, 5, 10), 'admitreasoncode': 'treatment_4_5'},
+        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 8), 'totime': dt.datetime(2020, 5, 20), 'admitreasoncode': 'treatment_4_6'},
+        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 15), 'totime': dt.datetime(2020, 5, 25), 'admitreasoncode': 'treatment_4_7'},
+        {'pid': 4, 'fromtime': dt.datetime(2021, 3, 25), 'totime': pd.NaT, 'admitreasoncode': 'treatment_4_8'},  # Open-ended treatment
     ])
 
 
@@ -105,16 +109,38 @@ def test_chain_treatments():
     calculator = KRTStatsCalculator(mock_sesh, "", dt.datetime(1900, 1, 1), dt.datetime(1900, 1, 2))
     result = calculator._chain_treatments(test_patient_cohort)
 
-    expected_admitreasoncode = [
-        'treatment_1_1', 'treatment_1_2', 'treatment_1_3', 'treatment_1_4', 'treatment_1_5',  # Patient 1
-        'treatment_2_1', 'treatment_2_2', 'treatment_2_3', 'treatment_2_4', 'treatment_2_5',  # Patient 2
-        'treatment_3_1', 'treatment_3_2', 'treatment_3_3', 'treatment_3_4', 'treatment_3_5',  # Patient 3
-        'treatment_4_1', 'treatment_4_2', 'treatment_4_3', 'treatment_4_4', 'treatment_4_5',  # Patient 4
+    expected_next_fromtime = [
+        dt.datetime(2020, 2, 1), 
+        dt.datetime(2020, 3, 1), 
+        dt.datetime(2020, 4, 1), 
+        dt.datetime(2020, 5, 1), 
+        None, 
+        None, 
+        None, 
+        None, 
+        dt.datetime(2020, 4, 1), 
+        None, 
+        dt.datetime(2020, 2, 1), 
+        None, 
+        dt.datetime(2020, 2, 15), 
+        dt.datetime(2020, 3, 1), 
+        None, 
+        None, 
+        None, 
+        dt.datetime(2020, 3, 10), 
+        dt.datetime(2020, 5, 1), 
+        None, 
+        None, 
+        dt.datetime(2021, 3, 25), 
+        None
     ]
-    actual_admitreasoncode = result.sort_values(['pid', 'fromtime']).admitreasoncode.tolist()
 
-    
-    assert expected_admitreasoncode == actual_admitreasoncode
+    actual_next_fromtime = [
+        None if pd.isna(value) else value
+        for value in result["next_fromtime"].tolist()
+    ]
+
+    assert expected_next_fromtime == actual_next_fromtime
 
 
 

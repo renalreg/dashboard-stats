@@ -164,11 +164,12 @@ def calculate_therapy_types(
 def adjust_next_fromtime(group: pd.DataFrame):
 
     """
-    Utility function to adjust a the next_fromtime in the cohort dataframe
-    used in the chaining together of treatments. This is made necessary by the
-    possibilty the treatments can overlap so it isn't enough just to order them
-    by the time which they start. Since the important quantity we are
-    interested in is the time periods not covered by any treatment.
+    Utility function to adjust the next_fromtime in the case where there are
+    overlaps in the treatment records.
+
+    This function will blank the next_fromtime of all bar the last record in an
+    overlapping group. Overlapping group ends when there is a gap not covered
+    by treatment. The logic here is slightly fiddly.
 
     Args:
         group (_type_): _description_
@@ -179,30 +180,40 @@ def adjust_next_fromtime(group: pd.DataFrame):
     # skip any single record group
     group = group.reset_index(drop=True)
     if len(group) > 1:
+        overlapping = False
         for i in range(len(group) - 1):
-            if pd.isna(group.loc[i, "next_fromtime"]):
-                continue
 
-            # We have an overlap when next fromtime is less than the
-            # too time
-            if group.at[i, "next_fromtime"] < group.at[i, "totime"]:
-                # loop through following records and adjust based on
-                # relative end of records
-                for j in range(i + 1, len(group)):
-                    # if overlapping record ends transfer and blank its
-                    # next fromtime
-                    # debug
-                    if pd.isna(group.at[j, "next_fromtime"]):
-                        continue
+            if overlapping:
+                ind_final = i
+                to_time = group.at[i, "totime"]
+                if to_time > max_to_time:
+                    max_to_time = group.at[i, "totime"]
 
-                    if group.at[j, "totime"] < group.at[i, "totime"]:
-                        next_value = group.at[j, "next_fromtime"]
-                        group.at[i, "next_fromtime"] = next_value
-                        group.at[j, "next_fromtime"] = pd.NaT
-                    else:
-                        # Otherwise we blank the first records fromtime
-                        group.at[i, "next_fromtime"] = pd.NaT
-                        break
+                # overlap group ends where maximum to time in group is less
+                # than the next from time.
+                next_fromtime = group.at[i, "next_fromtime"]
+                if max_to_time <= next_fromtime:
+                    overlapping = False
+
+                    # step 2: blank all next_fromtime in overlapping group
+                    group.loc[ind_first:ind_final, "next_fromtime"] = pd.NaT
+
+                    # step 3: select record with maximum totime and add
+                    # next_fromtime back in
+                    overlap_slice = group[ind_first : ind_final + 1]
+                    max_totime_idx = overlap_slice["totime"].idxmax()
+                    group.loc[max_totime_idx, "next_fromtime"] = next_fromtime
+
+            else:
+                # step 1: detect any overlapping records in group
+                # locate the first record that satisfies the condition
+                if group.at[i, "next_fromtime"] < group.at[i, "totime"]:
+                    # create indices to track group
+                    overlapping = True
+                    ind_first = i
+                    ind_final = i
+                    max_to_time = group.at[i, "totime"]
+
     return group
 
 
