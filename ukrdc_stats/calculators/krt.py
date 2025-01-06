@@ -143,10 +143,6 @@ def calculate_therapy_types(
     ] = "Unknown/Incomplete"
     patient_cohort.loc[:, "qbl05"] = patient_cohort["qbl05"].replace(mappings)
 
-    # most_recent_treatments = patient_cohort[patient_cohort["most_recent"] == True][
-    #    ["pid", "registry_code_type", "qbl05"]
-    # ].drop_duplicates()
-
     # Group and count patients by 'registry_code_type' and 'qbl05'
     grouped_patients = (
         patient_cohort.groupby(["registry_code_type", "qbl05"], as_index=False)
@@ -165,38 +161,54 @@ def calculate_therapy_types(
     return labels, patients
 
 
-def check_chronic(session: Session, input_pids: List[str], cut_off_date):
+def adjust_next_fromtime(group: pd.DataFrame):
 
-    MIN_TRANSFER_LENGTH = 7  # arbitarily set the minimum length of time for a success
+    """
+    Utility function to adjust a the next_fromtime in the cohort dataframe
+    used in the chaining together of treatments. This is made necessary by the
+    possibilty the treatments can overlap so it isn't enough just to order them
+    by the time which they start. Since the important quantity we are
+    interested in is the time periods not covered by any treatment.
 
-    # Query to check for chronic patients based on CK encoding or transplant duration > 7 days
-    query = (
-        select(Treatment.pid)
-        .distinct()
-        .join(ModalityCodes, Treatment.admit_reason_code == ModalityCodes.registry_code)
-        .where(
-            Treatment.pid.in_(input_pids),  # Patient IDs must be in the input list
-            Treatment.fromtime
-            < cut_off_date,  # Treatment must occur before the cut-off date
-            or_(
-                ModalityCodes.registry_code_type == "CK",  # CKD treatment encoding
-                and_(
-                    ModalityCodes.registry_code_type == "TX",  # Transplant treatment
-                    Treatment.totime - Treatment.fromtime
-                    > dt.timedelta(days=MIN_TRANSFER_LENGTH),  # Duration > 7 days
-                ),
-            ),
-        )
-    )
+    Args:
+        group (_type_): _description_
 
-    # Execute the query
-    result = session.execute(query).scalars().all()
+    Returns:
+        _type_: _description_
+    """
+    # skip any single record group
+    group = group.reset_index(drop=True)
+    if len(group) > 1:
+        for i in range(len(group) - 1):
+            if pd.isna(group.loc[i, "next_fromtime"]):
+                continue
 
-    return result
+            # We have an overlap when next fromtime is less than the
+            # too time
+            if group.at[i, "next_fromtime"] < group.at[i, "totime"]:
+                # loop through following records and adjust based on
+                # relative end of records
+                for j in range(i + 1, len(group)):
+                    # if overlapping record ends transfer and blank its
+                    # next fromtime
+                    # debug
+                    if pd.isna(group.at[j, "next_fromtime"]):
+                        continue
+
+                    if group.at[j, "totime"] < group.at[i, "totime"]:
+                        next_value = group.at[j, "next_fromtime"]
+                        group.at[i, "next_fromtime"] = next_value
+                        group.at[j, "next_fromtime"] = pd.NaT
+                    else:
+                        # Otherwise we blank the first records fromtime
+                        group.at[i, "next_fromtime"] = pd.NaT
+                        break
+    return group
 
 
 class KRTStatsCalculator(AbstractFacilityStatsCalculator):
-    """class to calculate metrics associated with dialysis modalities"""
+    """Class to calculate basic statistics associated with the renal
+    replacement therapies for renal facility in a given time window."""
 
     def __init__(
         self,
@@ -230,7 +242,14 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         self,
         limit_to_ukrdc: Optional[bool] = True,
     ) -> pd.DataFrame:
-        """Extract a base patient cohort dataframe from the database
+        """Core query from which the other stats is derived. All patients at a
+        renal facility with treatments up to and including 90 days post and
+        prior to the time window will be included into the base cohort. Query
+        will also flag any patients which had a historical ckd diagnosis or
+        transplant. This should be rigorously back tested with real data and
+        any changes should be considered breaking changes only to be done in a
+        major release.
+
         Returns:
             pd.DataFrame: Patient cohort dataframe
         """
@@ -317,38 +336,12 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if limit_to_ukrdc:
             query = query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # Create dataframe
+        # Execute query
         base_cohort = pd.DataFrame(self.session.execute(query)).drop_duplicates()
 
         # pandas by default tries to be helpful and create compound keys
-        # we don't want this for now
+        # this is more overly helpful so we drop them
         base_cohort = base_cohort.reset_index(drop=True)
-
-        # run function to link each treatment to the one that follows
-        base_cohort = self._chain_treatments(base_cohort)
-
-        # Exclude "acute" patients and records post or prior to recoveries
-        base_cohort = self._exclude_records(base_cohort)
-
-        # identify the records with the most recent from time for each pid
-        most_recent = base_cohort[
-            base_cohort["fromtime"] < self.time_window[1]
-        ].reset_index(drop=True)
-        most_recent = most_recent.groupby("pid", as_index=False)["fromtime"].max()
-
-        # Merge with the original cohort to identify the most recent treatments
-        base_cohort = base_cohort.merge(
-            most_recent, on=["pid"], how="left", suffixes=("", "_max")
-        )
-        base_cohort["most_recent"] = (
-            base_cohort["fromtime"] == base_cohort["fromtime_max"]
-        )
-
-        # add column which is true if recorded is first from time for a given pid
-        base_cohort["first_treatment"] = (
-            base_cohort.groupby("pid")["fromtime"].transform("min")
-            == base_cohort["fromtime"]
-        )
 
         return base_cohort
 
@@ -363,39 +356,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         raw_patients["next_fromtime"] = raw_patients.groupby("pid")["fromtime"].shift(
             -1
         )
-
-        # The possibility of overlapping records means the nextfromtime needs
-        # some complex adjusting. The aim of this is to ensure that the
-        # next_fromtime is always describing a gap in the treatment timeline
-        def adjust_next_fromtime(group):
-            # skip any single record group
-            group = group.reset_index(drop=True)
-            if len(group) > 1:
-                for i in range(len(group) - 1):
-                    if pd.isna(group.loc[i, "next_fromtime"]):
-                        continue
-
-                    # We have an overlap when next fromtime is less than the
-                    # too time
-                    if group.at[i, "next_fromtime"] < group.at[i, "totime"]:
-                        # loop through following records and adjust based on
-                        # relative end of records
-                        for j in range(i + 1, len(group)):
-                            # if overlapping record ends transfer and blank its
-                            # next fromtime
-                            # debug
-                            if pd.isna(group.at[j, "next_fromtime"]):
-                                continue
-
-                            if group.at[j, "totime"] < group.at[i, "totime"]:
-                                next_value = group.at[j, "next_fromtime"]
-                                group.at[i, "next_fromtime"] = next_value
-                                group.at[j, "next_fromtime"] = pd.NaT
-                            else:
-                                # Otherwise we blank the first records fromtime
-                                group.at[i, "next_fromtime"] = pd.NaT
-                                break
-            return group
 
         raw_patients = raw_patients.groupby("pid", as_index=False).apply(
             adjust_next_fromtime
@@ -447,15 +407,60 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         return base_cohort
 
+    def _add_helper_columns(self, base_cohort: pd.DataFrame):
+        """Function to postprocess data and add column to help with the
+        calculation of incident and prevalent cohorts.
+
+        Args:
+            base_cohort (pd.DataFrame): Raw patient cohort generated by
+            directly querying the database into pandas.
+
+        Returns:
+            _type_: _description_
+        """
+
+        # run function to link each treatment to the one that follows
+        base_cohort = self._chain_treatments(base_cohort)
+
+        # Exclude "acute" patients and records post or prior to recoveries
+        base_cohort = self._exclude_records(base_cohort)
+
+        # identify the records with the most recent from time for each pid
+        most_recent = base_cohort[
+            base_cohort["fromtime"] < self.time_window[1]
+        ].reset_index(drop=True)
+        most_recent = most_recent.groupby("pid", as_index=False)["fromtime"].max()
+
+        # Merge with the original cohort to identify the most recent treatments
+        base_cohort = base_cohort.merge(
+            most_recent, on=["pid"], how="left", suffixes=("", "_max")
+        )
+        base_cohort["most_recent"] = (
+            base_cohort["fromtime"] == base_cohort["fromtime_max"]
+        )
+
+        # add column which is true if recorded is first from time for a given pid
+        base_cohort["first_treatment"] = (
+            base_cohort.groupby("pid")["fromtime"].transform("min")
+            == base_cohort["fromtime"]
+        )
+
+        return base_cohort
+
     def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
         """
         Takes a base cohort from _extract_base_patient_cohort and extracts the incident and prevalent patients.
         This is currently a draft version and probably needs careful reviewing.
+
         Args:
             base_cohort (pd.DataFrame): Base cohort from output of _extract_base_patient_cohort
         Returns:
             pd.DataFrame: Patient cohort dataframe
         """
+
+        # Generate some helper columns to make it easier to calculate incidence
+        # and prevalence
+        base_cohort = self._add_helper_columns(base_cohort)
 
         # patients might change from acute to chronic so we need to ensure 1-1
         # relationship between patient and acute/chronic status. If a patient
@@ -490,11 +495,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 | base_cohort["timeline_stop"].isna()
             )
             & base_cohort["is_chronic"]
-            # exclude acute patients
-            # & ~(
-            #    (base_cohort["is_chronic"] == False)
-            #    & (base_cohort["timeline_length"] < dt.timedelta(days=90))
-            # )
         )
 
         # decide which acute patients to include
