@@ -10,29 +10,29 @@ import datetime as dt
 import pytest
 
 BASIC_PATIENT_COHORT = pd.DataFrame({
-        'pid': [1, 1, 2, 2, 3],
-        'healthcarefacilitycode': ['A', 'A', 'B', 'B', 'C'],
-        'admitreasoncode' : ['A', 'A', 'B', 'B', 'C'],
-        'admitreasoncodestd' : ['A', 'A', 'B', 'B', 'C'],
-        'admissionsourcecode' : ['A', 'A', 'B', 'B', 'C'],  
-        'admissionsourcecodestd' : ['A', 'A', 'B', 'B', 'C'],
-        'qbl05' : ['A', 'A', 'B', 'B', 'C'],
-        'hdp04' : ['A', 'A', 'B', 'B', 'C'],
-        'dischargereasoncode' : ['A', 'A', 'B', 'B', 'C'],
-        'dischargelocationcodestd' : ['A', 'A', 'B', 'B', 'C'],
-        'registry_code_type' : ['A', 'A', 'B', 'B', 'C'],
-        'deathtime': [dt.datetime(2020, 1, 31), dt.datetime(2020, 3, 30), dt.datetime(2020, 2, 10), dt.datetime(2020, 3, 25), dt.datetime(2020, 2, 28)],
-        'fromtime': [
-            dt.datetime(2020, 1, 1), dt.datetime(2020, 3, 1),
-            dt.datetime(2020, 1, 10), dt.datetime(2020, 3, 5),
-            dt.datetime(2020, 2, 1)
-        ],
-        'totime': [
-            dt.datetime(2020, 1, 31), dt.datetime(2020, 3, 30),
-            dt.datetime(2020, 2, 10), dt.datetime(2020, 3, 25),
-            dt.datetime(2020, 2, 28)
-        ],
-    })
+    'pid': [1, 1, 2, 2, 3],
+    'healthcarefacilitycode': ['A', 'A', 'B', 'B', 'C'],
+    'admitreasoncode' : ['A', 'A', 'B', 'B', 'C'],
+    'admitreasoncodestd' : ['A', 'A', 'B', 'B', 'C'],
+    'admissionsourcecode' : ['A', 'A', 'B', 'B', 'C'],  
+    'admissionsourcecodestd' : ['A', 'A', 'B', 'B', 'C'],
+    'qbl05' : ['A', 'A', 'B', 'B', 'C'],
+    'hdp04' : ['A', 'A', 'B', 'B', 'C'],
+    'dischargereasoncode' : ['A', 'A', 'B', 'B', 'C'],
+    'dischargelocationcodestd' : ['A', 'A', 'B', 'B', 'C'],
+    'registry_code_type' : ['A', 'A', 'B', 'B', 'C'],
+    'deathtime': [dt.datetime(2020, 1, 31), dt.datetime(2020, 3, 30), dt.datetime(2020, 2, 10), dt.datetime(2020, 3, 25), dt.datetime(2020, 2, 28)],
+    'fromtime': [
+        dt.datetime(2020, 1, 1), dt.datetime(2020, 3, 1),
+        dt.datetime(2020, 1, 10), dt.datetime(2020, 3, 5),
+        dt.datetime(2020, 2, 1)
+    ],
+    'totime': [
+        dt.datetime(2020, 1, 31), dt.datetime(2020, 3, 30),
+        dt.datetime(2020, 2, 10), dt.datetime(2020, 3, 25),
+        dt.datetime(2020, 2, 28)
+    ],
+})
 
 TEST_FACILITY = "RFDOG"
 TEST_START = dt.datetime(2020, 1, 1)
@@ -186,3 +186,23 @@ def test_add_helper_columns(mock_extract_base_patient_cohort):
     assert result.loc[(result['pid'] == 1) & (result['fromtime'] == dt.datetime(2020, 1, 1)), 'first_treatment'].iloc[0] == True
     assert result.loc[(result['pid'] == 1) & (result['fromtime'] == dt.datetime(2020, 3, 1)), 'first_treatment'].iloc[0] == False
 
+def test_exclude_recoveries(): 
+    assert True
+
+def test_incidence():
+    assert True
+
+def test_prevalence():
+    assert True
+
+def test_calculate_dialysis_frequency():
+    assert True
+
+def test_calculate_access_incident():
+    assert True
+
+def test_calculate_therapies_incident_patients():
+    assert True 
+
+def test_calculate_therapies_prevalent_patients():
+    assert True

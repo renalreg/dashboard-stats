@@ -130,13 +130,20 @@ dialysis_descriptions = {
         """
     ),
 }
+
+demographic_generic = """
+        - The initial cohort is selected by filtering the patientrecords sent via the ukrdc.  
+        - The cohort is filtered to only include patients with a treatment record which overlaps 90 days prior to the calculation time. 
+"""
+
 demographic_descriptions = {
     "GENDER_DESCRIPTION": dedent(
-        """
+        f"""
         # Patient Gender
-        Gender identity recorded for each living patient registered with the renal unit.
+        Gender identity recorded for each living patient registered with the renal unit. Specifically it is defined as the person stated gender code in the nhs data dictionary
         
         # Methodology
+        {demographic_generic}
         - Patient records are matched to NHS stated gender using patient demographic information 
         - Patients are optionally checked against NHS tracing to check for date of death
         - All living patients with patient records sent by a particular sending facility are aggregated based on gender
@@ -149,7 +156,7 @@ demographic_descriptions = {
         """
     ),
     "ETHNIC_GROUP_DESCRIPTION": dedent(
-        """
+        f"""
         # Patient Ethnicity
 
         ## Overview 
@@ -157,6 +164,7 @@ demographic_descriptions = {
         The five ethnicity groupings used to map ethnicity codes onto the displayed ethnicity values are the same as those used in the Renal Registry Annual Report.
         
         ## Methodology
+        {demographic_generic}
         - Patient records are matched to ethnicity using patient demographic information 
         - Patients are optionally checked against NHS tracing to check for date of death
         - All living patients with patient records sent by a particular sending facility are aggregated based on ethnicity
@@ -168,11 +176,12 @@ demographic_descriptions = {
         """
     ),
     "AGE_DESCRIPTION": dedent(
-        """
+        f"""
         # Patient Age
         The age, calculated from date of birth, recorded for each living patient registered with the renal unit.
         
         # Methodology
+        {demographic_generic}
         - Patient records are matched to date of birth using patient demographic information 
         - Age is calculated from date of birth 
         - Patients are optionally checked against NHS tracing to check for date of death
