@@ -216,12 +216,150 @@ def test_exclude_records():
     assert pids_out == [2, 3]
     assert from_time_out == [dt.datetime(2019, 2, 1, 0, 0), dt.datetime(2019, 5, 10, 0, 0)]
 
-def test_incidence():
-    
-    assert True
+def test_extract_incident_prevalent():
+    """
+    Test the _extract_incident_prevalent method with a variety of patient scenarios
+    These scenarios need to be carefully expanded to cover the full range of possible
+    branches in the method.
+    """
 
-def test_prevalence():
-    assert True
+    mock_data = pd.DataFrame([
+        # Patient 1: Chronic, long timeline => prevalent
+        {
+            'pid': 1,
+            'fromtime': dt.datetime(2020, 1, 1),
+            'totime': dt.datetime(2020, 7, 1),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        {
+            'pid': 1,
+            'fromtime': dt.datetime(2020, 7, 2),
+            'totime': dt.datetime(2020, 8, 15),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 2: Dies early => not incident/prevalent
+        {
+            'pid': 2,
+            'fromtime': dt.datetime(2020, 2, 1),
+            'totime': dt.datetime(2020, 3, 1),
+            'deathtime': dt.datetime(2020, 3, 10),
+            'is_chronic': False,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 3: Historic transplant => incident
+        {
+            'pid': 3,
+            'fromtime': dt.datetime(2020, 3, 1),
+            'totime': dt.datetime(2020, 9, 1),
+            'deathtime': None,
+            'is_chronic': False,
+            'historic_tx': True,
+            'dischargereasoncode': None,
+        },
+        # Patient 4: Crash landing => incident (>90 days)
+        {
+            'pid': 4,
+            'fromtime': dt.datetime(2020, 2, 15),
+            'totime': dt.datetime(2020, 6, 1),
+            'deathtime': None,
+            'is_chronic': False,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 5: Short chronic => neither
+        {
+            'pid': 5,
+            'fromtime': dt.datetime(2020, 2, 10),
+            'totime': dt.datetime(2020, 2, 20),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 6: Transferred out (code 38) => incident
+        {
+            'pid': 6,
+            'fromtime': dt.datetime(2020, 1, 1),
+            'totime': dt.datetime(2020, 3, 1),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': True,
+            'dischargereasoncode': '38',
+        },
+        # Patient 7: Multiple treatments, chronic => prevalent
+        {
+            'pid': 7,
+            'fromtime': dt.datetime(2020, 1, 1),
+            'totime': dt.datetime(2020, 2, 15),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        {
+            'pid': 7,
+            'fromtime': dt.datetime(2020, 2, 16),
+            'totime': dt.datetime(2020, 8, 1),
+            'deathtime': None,
+            'is_chronic': True,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 8: Short initial then long treatment => incident
+        {
+            'pid': 8,
+            'fromtime': dt.datetime(2020, 3, 1),
+            'totime': dt.datetime(2020, 3, 2),
+            'deathtime': None,
+            'is_chronic': False,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        {
+            'pid': 8,
+            'fromtime': dt.datetime(2020, 3, 3),
+            'totime': dt.datetime(2020, 7, 5),
+            'deathtime': None,
+            'is_chronic': False,
+            'historic_tx': False,
+            'dischargereasoncode': None,
+        },
+        # Patient 9: Dies but chronic => prevalent 
+        {
+            'pid': 9,
+            'fromtime': dt.datetime(2020, 2, 10),
+            'totime': dt.datetime(2020, 6, 20),
+            'deathtime': dt.datetime(2020, 7, 1),
+            'is_chronic': True,
+            'historic_tx': True,
+            'dischargereasoncode': None,
+        },
+    ])
+    session = MagicMock()
+    calculator = KRTStatsCalculator(session, "TEST", dt.datetime(2020,1,1), dt.datetime(2020,6,30))
+    result = calculator._extract_incident_prevalent(mock_data)
+    
+    expected = pd.DataFrame({
+        "pid": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "incident": [False, True, True, True, False, False, False, True, True],
+        "prevalent": [True, False, True, False, False, False, True, True, False]
+    })
+    
+    # Get one row per patient by taking first occurrence
+    actual = (
+        result[["pid", "incident", "prevalent"]]
+        .drop_duplicates(subset="pid")
+        .sort_values("pid")
+        .reset_index(drop=True)
+    )
+    pd.testing.assert_frame_equal(actual, expected)
 
 def test_calculate_dialysis_frequency():
     assert True

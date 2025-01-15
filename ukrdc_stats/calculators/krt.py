@@ -474,9 +474,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         base_cohort = self._add_helper_columns(base_cohort)
 
         # we calculate the beginning and end of each continuous/uninterrupted treatment period
-        # At this point each patient should only have one of them. 
-        
-        # replace totime= na with today 
+        # At this point each patient should only have one of them.
+
+        # replace totime= na with today
         base_cohort["totime"] = base_cohort["totime"].fillna(dt.datetime.now())
         base_cohort["timeline_start"] = base_cohort.groupby("pid", as_index=False)[
             "fromtime"
@@ -505,16 +505,19 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         # Without full coverage we can do anything super accurate with transfer
-        # out. However we will treat certain dischargereason codes as idicating 
-        # continued treatment. 
+        # out. However we will treat certain dischargereason codes as idicating
+        # continued treatment.
         discharge_reasons = ["38"]
-        tranfered_pids = base_cohort[base_cohort["dischargereasoncode"].isin(discharge_reasons) & base_cohort.most_recent].pid.drop_duplicates()
+        tranfered_pids = base_cohort[
+            base_cohort["dischargereasoncode"].isin(discharge_reasons)
+            & base_cohort.most_recent
+        ].pid.drop_duplicates()
         transfered_out = base_cohort.pid.isin(tranfered_pids)
 
         # Crash landed patients are defined:
         # - no chronic treatment records or tx
         # - remains on KRT for more than 90 days
-        # - survives for more than 90 days  
+        # - survives for more than 90 days
         is_crash_landing = (
             (~base_cohort["is_chronic"] & ~base_cohort["historic_tx"])
             & (
@@ -524,25 +527,21 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
             & (
                 (base_cohort["life_length"] > dt.timedelta(days=90))
-                | base_cohort["life_length"].isna()                
+                | base_cohort["life_length"].isna()
             )
         )
 
         # Patients with a previous record of transplant or ckd are considered
         # planned for KRT. These patients must stay on KRT for more than 90
         # days or die to be counted as incident.
-        planned_ckd = (
-            (base_cohort["is_chronic"] | base_cohort["historic_tx"])
-            & ( 
-                (base_cohort["timeline_length"] > dt.timedelta(days=90))
-                | base_cohort["timeline_length"].isna()
-                | transfered_out
-            )
-            | (base_cohort["life_length"] < dt.timedelta(days=90))
-        )
+        planned_ckd = (base_cohort["is_chronic"] | base_cohort["historic_tx"]) & (
+            (base_cohort["timeline_length"] > dt.timedelta(days=90))
+            | base_cohort["timeline_length"].isna()
+            | transfered_out
+        ) | (base_cohort["life_length"] < dt.timedelta(days=90))
 
         base_cohort["incident"] = (
-            (planned_ckd | is_crash_landing) 
+            (planned_ckd | is_crash_landing)
             & (base_cohort["timeline_start"] > self.time_window[0])
             & (base_cohort["timeline_start"] <= self.time_window[1])
         )
@@ -555,10 +554,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             & (base_cohort["timeline_stop"] > self.time_window[1])
             & (base_cohort["timeline_length"] > dt.timedelta(days=90))
         )
-
-        # debug
-        debug_crash_landing = base_cohort[is_crash_landing]
-        debug_planned_ckd = base_cohort[planned_ckd]
 
         return base_cohort
 

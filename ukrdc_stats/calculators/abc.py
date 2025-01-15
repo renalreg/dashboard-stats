@@ -3,14 +3,14 @@ Abstract base classes for the ukrdc_stats package
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ukrdc_stats.models.base import JSONModel
-from ukrdc_stats.models.generic_2d import BaseTable, RowData
+from ukrdc_stats.models.generic_2d import BaseTable
 from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_sqla.ukrdc import PatientNumber
