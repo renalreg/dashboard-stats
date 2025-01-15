@@ -185,11 +185,39 @@ def test_add_helper_columns(mock_extract_base_patient_cohort):
     # Validate `first_treatment` logic
     assert result.loc[(result['pid'] == 1) & (result['fromtime'] == dt.datetime(2020, 1, 1)), 'first_treatment'].iloc[0] == True
     assert result.loc[(result['pid'] == 1) & (result['fromtime'] == dt.datetime(2020, 3, 1)), 'first_treatment'].iloc[0] == False
+    
 
-def test_exclude_recoveries(): 
-    assert True
+def test_exclude_records():
+    """Test the _exclude_records method with different 90+ day gaps relative to the time window."""
+    test_patient_cohort = pd.DataFrame([
+        # Patient 1: Recovery gap extends beyond end of the window (exclude entirely)
+        {'pid': 1, 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2020,2,2)},
+        {'pid': 1, 'fromtime': dt.datetime(2020,2,2), 'totime': dt.datetime(2022,1,2), 'next_fromtime': None},
+        # Patient 2: Recovery gap ends within the time window (partially included)
+        {'pid': 2, 'fromtime': dt.datetime(2006,1,5), 'totime': dt.datetime(2019,1,20), 'next_fromtime': dt.datetime(2019,5,10)},
+        {'pid': 2, 'fromtime': dt.datetime(2019,5,10), 'totime': dt.datetime(2019,4,15), 'next_fromtime': None},
+        # Patient 3: Recovery gap ends after the time window (remain included)
+        {'pid': 3, 'fromtime': dt.datetime(2019,2,1), 'totime': dt.datetime(2020,1,2), 'next_fromtime': dt.datetime(2020,5,2)},
+        {'pid': 3, 'fromtime': dt.datetime(2020,5,2), 'totime': dt.datetime(2019,7,25), 'next_fromtime': None},
+    ])
+
+    session = MagicMock()
+    # Calculator time window ends on 2019-03-31
+    calculator = KRTStatsCalculator(session, "", dt.datetime(2019,1,1), dt.datetime(2020,1,1))
+
+    result_df = calculator._exclude_records(test_patient_cohort)
+
+    # Patient 1 should be fully excluded, so no rows with pid = 1
+    # Patients 2 and 3 should remain partially or fully included
+    pids_out = result_df.sort_values('pid').pid.tolist()
+    from_time_out = [
+        d.to_pydatetime() for d in result_df.sort_values('fromtime')['fromtime']
+    ]
+    assert pids_out == [2, 3]
+    assert from_time_out == [dt.datetime(2019, 2, 1, 0, 0), dt.datetime(2019, 5, 10, 0, 0)]
 
 def test_incidence():
+    
     assert True
 
 def test_prevalence():

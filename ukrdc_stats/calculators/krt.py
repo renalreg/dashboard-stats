@@ -473,21 +473,18 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # and prevalence
         base_cohort = self._add_helper_columns(base_cohort)
 
-        # patients might change from acute to chronic so we need to ensure 1-1
-        # relationship between patient and acute/chronic status. If a patient
-        # starts as acute and is recoded as chronic they should be treated as
-        # chronic from the point they come under the care of the renal unit
-
-        # ckd_pids = base_cohort["pid"][base_cohort["acute"] == "0"].drop_duplicates()
-        # base_cohort["is_ckd"] = base_cohort["pid"].isin(ckd_pids)
-
         # we calculate the beginning and end of each continuous/uninterrupted treatment period
+        # At this point each patient should only have one of them. 
+        
+        # replace totime= na with today 
+        base_cohort["totime"] = base_cohort["totime"].fillna(dt.datetime.now())
         base_cohort["timeline_start"] = base_cohort.groupby("pid", as_index=False)[
             "fromtime"
         ].transform("min")
         base_cohort["timeline_stop"] = base_cohort.groupby("pid", as_index=False)[
             "totime"
         ].transform("max")
+
         base_cohort["timeline_length"] = (
             base_cohort["timeline_stop"] - base_cohort["timeline_start"]
         )
@@ -498,7 +495,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # prevalent cohort includes everyone who's treatment block spans the end of the time window
         # who is not acute. Acute patients must meet the same criterion with the addition of being
         # on KRT for more than 90 days.
-        # is_crash_landing
         base_cohort["prevalent"] = (
             (base_cohort["timeline_start"] < self.time_window[1])
             & (
@@ -508,24 +504,61 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             & base_cohort["is_chronic"]
         )
 
-        # decide which acute patients to include
-        is_crash_landing = ~base_cohort["is_chronic"] & (
-            base_cohort["timeline_length"] > dt.timedelta(days=90)
+        # Without full coverage we can do anything super accurate with transfer
+        # out. However we will treat certain dischargereason codes as idicating 
+        # continued treatment. 
+        discharge_reasons = ["38"]
+        tranfered_pids = base_cohort[base_cohort["dischargereasoncode"].isin(discharge_reasons) & base_cohort.most_recent].pid.drop_duplicates()
+        transfered_out = base_cohort.pid.isin(tranfered_pids)
+
+        # Crash landed patients are defined:
+        # - no chronic treatment records or tx
+        # - remains on KRT for more than 90 days
+        # - survives for more than 90 days  
+        is_crash_landing = (
+            (~base_cohort["is_chronic"] & ~base_cohort["historic_tx"])
+            & (
+                (base_cohort["timeline_length"] > dt.timedelta(days=90))
+                | base_cohort["timeline_length"].isna()
+                | transfered_out
+            )
+            & (
+                (base_cohort["life_length"] > dt.timedelta(days=90))
+                | base_cohort["life_length"].isna()                
+            )
         )
 
-        # patients not coded as acute
-        base_cohort["incident"] = (
-            # patients must have started in window and cannot have historic transplant
-            (base_cohort["timeline_start"] > self.time_window[0])
-            & (base_cohort["timeline_start"] < self.time_window[1])
-            # historic patients and transfer ins are excluded
-            & ~base_cohort["historic_tx"]
-            # & base_cohort["admissionsourcecode"].isna()
-        ) & (
-            # patients with previous CK modality included automatically
-            base_cohort["is_chronic"]
-            | is_crash_landing
+        # Patients with a previous record of transplant or ckd are considered
+        # planned for KRT. These patients must stay on KRT for more than 90
+        # days or die to be counted as incident.
+        planned_ckd = (
+            (base_cohort["is_chronic"] | base_cohort["historic_tx"])
+            & ( 
+                (base_cohort["timeline_length"] > dt.timedelta(days=90))
+                | base_cohort["timeline_length"].isna()
+                | transfered_out
+            )
+            | (base_cohort["life_length"] < dt.timedelta(days=90))
         )
+
+        base_cohort["incident"] = (
+            (planned_ckd | is_crash_landing) 
+            & (base_cohort["timeline_start"] > self.time_window[0])
+            & (base_cohort["timeline_start"] <= self.time_window[1])
+        )
+
+        # Prevalence point defined at the end of the window patients are
+        # counted as prevalent if their treatment timeline spans the end of the
+        # window and is greater than 90 days.
+        base_cohort["prevalent"] = (
+            (base_cohort["timeline_start"] <= self.time_window[1])
+            & (base_cohort["timeline_stop"] > self.time_window[1])
+            & (base_cohort["timeline_length"] > dt.timedelta(days=90))
+        )
+
+        # debug
+        debug_crash_landing = base_cohort[is_crash_landing]
+        debug_planned_ckd = base_cohort[planned_ckd]
 
         return base_cohort
 

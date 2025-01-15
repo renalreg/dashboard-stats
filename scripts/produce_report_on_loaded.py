@@ -52,7 +52,7 @@ def write_treatments(nhs_nos,session):
 
 
 ENV_FILE:str = ".env"
-RENAL_CENTRE:str = "RJZ"
+RENAL_CENTRE:str = "RJZ" 
 COHORT:str = "incident"
 YEAR:int = 2022 # report year 
 OUTPUT_FILE_NAME:str = f"{COHORT}_{YEAR}_{RENAL_CENTRE}_report.xlsx"
