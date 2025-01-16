@@ -460,8 +460,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
     def _extract_incident_prevalent(self, base_cohort: pd.DataFrame) -> pd.DataFrame:
         """
-        Takes a base cohort from _extract_base_patient_cohort and extracts the incident and prevalent patients.
-        This is currently a draft version and probably needs careful reviewing.
+        The function calculates the incident and prevalent cohorts as precisely
+        as possible to the definition used in the annual report. However lack
+        of full coverage means that transfer in patients will appear as
+        incident patients. These will like lead to the incident cohorts to be
+        an over estimate and prevalent cohorts to be an underestimate.
 
         Args:
             base_cohort (pd.DataFrame): Base cohort from output of _extract_base_patient_cohort
@@ -540,6 +543,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             | transfered_out
         ) | (base_cohort["life_length"] < dt.timedelta(days=90))
 
+        # Do we exclude patients which have had a historical transplant?
+        # Also check treatments which turn up from different units.
         base_cohort["incident"] = (
             (planned_ckd | is_crash_landing)
             & (base_cohort["timeline_start"] > self.time_window[0])
@@ -556,6 +561,32 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
         return base_cohort
+
+    def _query_dialysis_sessions(
+        self, patient_list: List[str], start: dt.datetime, stop: dt.datetime
+    ) -> pd.DataFrame:
+        query = (
+            select(
+                PatientRecord.pid,
+                func.min(DialysisSession.procedure_time).label("fromtime"),
+                func.max(DialysisSession.procedure_time).label("totime"),
+                func.count(DialysisSession.procedure_type_code).label("sessioncount"),
+                func.sum(cast(DialysisSession.qhd31, Float)),
+            )
+            .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+            .where(
+                and_(
+                    PatientRecord.pid.in_(patient_list),
+                    DialysisSession.procedure_type_code == "302497006",  # filter for hd
+                    DialysisSession.procedure_time > start,
+                    DialysisSession.procedure_time < stop,
+                )
+            )
+            .group_by(PatientRecord.pid)
+        )
+
+        session_data = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+        return session_data
 
     def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
         """_summary_
@@ -583,34 +614,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             patient_list = patient_list.pid.drop_duplicates()
 
         # get number of dialysis sessions per patient and the date of the first and last one
-        query = (
-            select(
-                PatientRecord.pid,
-                func.min(DialysisSession.procedure_time).label("fromtime"),
-                func.max(DialysisSession.procedure_time).label("totime"),
-                func.count(DialysisSession.procedure_type_code).label("sessioncount"),
-                func.sum(cast(DialysisSession.qhd31, Float)),
-            )
-            .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
-            .where(
-                and_(
-                    PatientRecord.pid.in_(patient_list),
-                    DialysisSession.procedure_type_code == "302497006",  # filter for hd
-                    DialysisSession.procedure_time > self.time_window[0],
-                    DialysisSession.procedure_time < self.time_window[1],
-                )
-            )
-            .group_by(PatientRecord.pid)
+        session_data = self._query_dialysis_sessions(
+            patient_list, self.time_window[0], self.time_window[1]
         )
-
-        session_data = pd.DataFrame(self.session.execute(query)).drop_duplicates()
 
         # calculate frequency of dialysis by function to rows
         # this function takes the number of sessions and dividing by a time period
         # the time period is defined by the difference between the first and last session
 
-        if len(session_data) > 0:
-            session_data["freq"] = session_data[session_data.sessioncount > 1].apply(
+        if not session_data.empty:
+            session_data["freq"] = session_data[session_data.sessioncount >= 1].apply(
                 lambda row: _calculate_frequency(
                     row["fromtime"], row["totime"], row["sessioncount"]
                 ),
@@ -622,12 +635,12 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             session_data["freq"] = pd.Series(dtype="float64")
 
         # Make a histogram of the dialysis frequency
-        bins = [0.5, 1.5, 2.5, 3.5, 7.0]
-        labels = ["1", "2", "3", ">3"]
+        bins = [0.0, 0.5, 1.5, 2.5, 3.5, 7.0]
+        labels = ["<1", "1", "2", "3", ">3"]
 
-        hist = pd.cut(session_data.freq, bins=bins, labels=labels).value_counts(
-            sort=False
-        )
+        hist = pd.cut(
+            session_data.freq, bins=bins, labels=labels, right=True
+        ).value_counts(sort=False)
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -643,30 +656,17 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
-    def _calculate_access_incident(self, subunit: str = "all") -> Labelled2d:
-        """Displays the vascular access of incident patients on their first dialysis session
+    def _query_vacular_access(self, patient_list: pd.Series) -> pd.DataFrame:
+        """Function to query the vascular access table to return the type of
+        access used on the first dialysis session for a cohort defined by the
+        patient list.
+
         Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-        Raises:
-            NoCohortError: e.g. if extract_patient_cohort has not been run
+            patient_list (pd.Series): List of pids defining a cohort.
+
         Returns:
-            Labelled2d: Number of incident patients with each type of access
+            pd.DataFrame: _description_
         """
-
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        # filter by subunit
-        if subunit != "all":
-            patient_list = self._patient_cohort[
-                self._patient_cohort.incident
-                & (self._patient_cohort.healthcarefacilitycode == subunit)
-                # & self._patient_cohort.firsttreatment
-            ].pid.drop_duplicates()
-        else:
-            patient_list = self._patient_cohort[
-                self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
-            ].pid.drop_duplicates()
 
         window = (
             select(
@@ -699,6 +699,36 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         initial_access_data = pd.DataFrame(
             self.session.execute(initial_access_query)
         ).drop_duplicates()
+
+        return initial_access_data
+
+    def _calculate_access_incident(self, subunit: str = "all") -> Labelled2d:
+        """Displays the vascular access of incident patients on their first dialysis session
+        Args:
+            subunit (str, optional): Satellite unit. Defaults to "all".
+        Raises:
+            NoCohortError: e.g. if extract_patient_cohort has not been run
+        Returns:
+            Labelled2d: Number of incident patients with each type of access
+        """
+
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        # filter by subunit
+        if subunit != "all":
+            patient_list = self._patient_cohort[
+                self._patient_cohort.incident
+                & (self._patient_cohort.healthcarefacilitycode == subunit)
+                # & self._patient_cohort.firsttreatment
+            ].pid.drop_duplicates()
+        else:
+            patient_list = self._patient_cohort[
+                self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
+            ].pid.drop_duplicates()
+
+        # function runs queries against the vascular access table
+        initial_access_data = self._query_vacular_access(patient_list)
 
         if len(initial_access_data) > 0:
             initial_access_data.loc[

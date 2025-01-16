@@ -371,4 +371,96 @@ def test_calculate_therapies_incident_patients():
     assert True 
 
 def test_calculate_therapies_prevalent_patients():
-    assert True
+    assert True 
+
+@patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_vacular_access')
+def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
+    # Mock return value for _query_vascular_access
+    mock_query_vascular_access.return_value = pd.DataFrame({
+        'qhd20': ['NLN', 'AVF', 'TLN', pd.NA],
+        'no': [10, 5, 15, 2],
+    })
+
+    # Mock patient cohort
+    krt_calculator._patient_cohort = pd.DataFrame({
+        'pid': [1, 2, 3, 4],
+        'incident': [True, True, True, True],
+        'healthcarefacilitycode': ['A', 'A', 'B', 'B']
+    })
+
+
+    # Call the method under test for all subunits
+    result_all = krt_calculator._calculate_access_incident(subunit='all')
+
+    # Validate the result for all subunits
+    assert result_all.metadata.title == "Vascular Access on First HD Session"
+    assert result_all.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
+    assert result_all.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
+    assert result_all.data.y == [10, 5, 15, 2]
+
+    # Call the method under test for subunit 'A'
+    result_subunit_a = krt_calculator._calculate_access_incident(subunit='A')
+
+    # Validate the result for subunit 'A'
+    assert result_subunit_a.metadata.title == "Vascular Access on First HD Session"
+    assert result_subunit_a.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
+    assert result_subunit_a.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
+    assert result_subunit_a.data.y == [10, 5, 15, 2]
+
+    # Call the method under test for subunit 'B'
+    result_subunit_b = krt_calculator._calculate_access_incident(subunit='B')
+
+    # Validate the result for subunit 'B'
+    assert result_subunit_b.metadata.title == "Vascular Access on First HD Session"
+    assert result_subunit_b.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
+    assert result_subunit_b.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
+    assert result_subunit_b.data.y == [10, 5, 15, 2]
+
+@patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_dialysis_sessions')
+def test_calculate_dialysis_frequency(mock_query_dialysis_sessions, krt_calculator):
+    # Mock return value for _query_dialysis_sessions
+    mock_query_dialysis_sessions.return_value = pd.DataFrame({
+        'pid': [1, 2, 3, 4, 5],
+        'fromtime': [
+            dt.datetime(2020, 1, 1), 
+            dt.datetime(2020, 1, 1),
+            dt.datetime(2020, 1, 1), 
+            dt.datetime(2020, 1, 1),
+            dt.datetime(2020, 1, 1)
+        ],
+        'totime': [
+            dt.datetime(2020, 1, 21), 
+            dt.datetime(2020, 1, 21),
+            dt.datetime(2020, 1, 21), 
+            dt.datetime(2020, 1, 21),
+            dt.datetime(2020, 1, 21), 
+        ],
+        'sessioncount': [1,3,6,9,16]
+    })
+
+    # Mock patient cohort
+    krt_calculator._patient_cohort = pd.DataFrame({
+        'pid': [1, 2, 3, 4],
+        'registry_code_type': ['HD', 'HD', 'HD', 'HD'],
+        'qbl05': ['HOSP', 'SATL', 'In-centre', 'In-centre'],
+        'healthcarefacilitycode': ['A', 'A', 'B', 'B']
+    })
+
+    # Call the method under test for all subunits
+    result_all = krt_calculator._calculate_dialysis_frequency(subunit='all')
+
+    # Validate the result for all subunits
+    assert result_all.metadata.title == "In-Centre Dialysis Frequency"
+    assert result_all.metadata.summary == "Histogram of frequency of dialysis per week."
+    assert result_all.data.x == ['<1','1', '2', '3', '>3']
+    assert result_all.data.y == [1, 1, 1, 1, 1]
+
+    # Call the method under test for subunit 'A'
+    result_subunit_a = krt_calculator._calculate_dialysis_frequency(subunit='A')
+
+    # Validate the result for subunit 'A'
+    assert result_subunit_a.metadata.title == "In-Centre Dialysis Frequency"
+    assert result_subunit_a.metadata.summary == "Histogram of frequency of dialysis per week."
+    assert result_subunit_a.data.x == ['<1','1', '2', '3', '>3']
+    assert result_subunit_a.data.y == [1, 1, 1, 1, 1]
+
