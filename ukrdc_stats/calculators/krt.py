@@ -229,12 +229,24 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         to_time: dt.datetime,
     ):
         if to_time > dt.datetime.now() - dt.timedelta(days=90):
-            raise Exception("cannot calculate stats within 90 of today")
+            Warning(
+                "Stats calculated for times within the last 90 days may have their accuracy reduced"
+            )
 
         super().__init__(session, facility)
 
+        recovery_window = 90  # days around the window to look at treatments
+
         # Create a precisely 2 element time window tuple
         self.time_window: Tuple[dt.datetime, dt.datetime] = (from_time, to_time)
+
+        # Create a future cutoff time
+        # this means we can aproximate the
+        time_since_end = dt.datetime.now() - to_time
+        if time_since_end < dt.timedelta(days=recovery_window):
+            self.future_cutoff = time_since_end
+        else:
+            self.future_cutoff = dt.timedelta(days=90)
 
         # defines encoding of KRT treatment types
         self.registry_code_types: List[str] = ["HD", "PD", "TX"]
@@ -332,7 +344,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
             .where(
                 ModalityCodes.registry_code_type.in_(self.registry_code_types),
-                Treatment.fromtime < self.time_window[1] + dt.timedelta(days=90),
+                Treatment.fromtime < self.time_window[1] + self.future_cutoff,
                 or_(
                     Treatment.totime > self.time_window[0] - dt.timedelta(days=90),
                     Treatment.totime.is_(None),
@@ -908,6 +920,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
+
+        if self._patient_cohort.empty:
+            raise NoCohortError(
+                f"No patients found the cohort. Did you mean to try and extract facility {self.facility}?"
+            )
 
         # calculate stats for all units
         unit_stats: Dict[str, DialysisStats] = {}

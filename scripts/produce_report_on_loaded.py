@@ -92,6 +92,9 @@ with sessionmaker(bind=engine, autocommit=False)() as session:
         to_time=dt.datetime(YEAR, 12, 31)
     )
 
+    # debug 
+    stats = calculator.extract_stats()
+
     cohort_report = calculator.generate_cohort_report("incident", include_ni=True).table.to_pandas()
     cohort  = calculator._patient_cohort
     pids = calculator._patient_cohort.pid.drop_duplicates()
