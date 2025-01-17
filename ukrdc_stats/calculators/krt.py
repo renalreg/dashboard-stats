@@ -792,7 +792,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Labelled2dMetadata(
                 title="All KRT Modalities",
                 summary="Breakdown of all patients on both PD and HD, and by home therapies and in-centre therapies.",
-                description=dialysis_descriptions["ALL_PATIENTS_HOME_THERAPIES"],
+                description=dialysis_descriptions["ALL_PATIENTS_KRT_COHORT"],
                 population_size=sum(all_patients_no),
             ),
             data=Labelled2dData(x=all_patients_labels, y=all_patients_no),
@@ -830,7 +830,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Labelled2dMetadata(
                 title="Incident KRT Modalities",
                 summary="Breakdown of incident patients on PD and HD, and by home therapies and in-centre therapies.",
-                description=dialysis_descriptions["INCIDENT_HOME_THERAPIES"],
+                description=dialysis_descriptions["INCIDENT_KRT_COHORT"],
                 population_size=sum(incident_no),
             ),
             data=Labelled2dData(x=incident_labels, y=incident_no),
@@ -868,7 +868,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             metadata=Labelled2dMetadata(
                 title="Prevalent KRT Modalities",
                 summary="Breakdown of prevalent patients by PD and HD, and by home therapies and in-centre therapies.",
-                description=dialysis_descriptions["PREVALENT_HOME_THERAPIES"],
+                description=dialysis_descriptions["PREVALENT_KRT_COHORT"],
                 population_size=sum(prevalent_no),
             ),
             data=Labelled2dData(x=prevalent_labels, y=prevalent_no),
