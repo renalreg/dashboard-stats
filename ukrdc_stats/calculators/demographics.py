@@ -8,7 +8,7 @@ import warnings
 from pydantic import Field
 
 import pandas as pd
-from sqlalchemy import and_, or_, select, exists
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
     Patient,
@@ -196,14 +196,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                             ),
                         ),
                         and_(
-                            ResultItem.observation_time
-                            < self.date,  # pylint: disable=C0121
+                            ResultItem.observation_time < self.date,  # pylint: disable=C0121
                             ResultItem.observation_time
                             >= self.date - dt.timedelta(days=90),
                         ),
                         and_(
-                            Observation.observation_time
-                            < self.date,  # pylint: disable=C0121
+                            Observation.observation_time < self.date,  # pylint: disable=C0121
                             Observation.observation_time
                             >= self.date - dt.timedelta(days=90),
                         ),

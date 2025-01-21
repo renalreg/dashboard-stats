@@ -1,8 +1,8 @@
 """
 Module to contain the long descriptions for the pydantic output
 """
-from textwrap import dedent
 
+from textwrap import dedent
 
 
 dialysis_general = """
@@ -40,7 +40,6 @@ dialysis_descriptions = {
         - [ModalityCodes](https://renalregistry.atlassian.net/l/cp/Ac1YeFfH): registry_code_type
         """
     ),
-
     "INCIDENT_KRT_COHORT": dedent(
         """
         # Incident Kidney Replacement Patients
@@ -58,8 +57,9 @@ dialysis_descriptions = {
            - Has planned start and dies within 90 days
            - Transfers to another unit
 
+        ## Timeline Example
         ```
-        Example Cases:
+        Key:
         X = Treatment
         - = No Treatment
         * = Death
@@ -117,6 +117,7 @@ dialysis_descriptions = {
             - Active treatment at window end
             - Recent transfer to another unit (discharge code 38)
 
+        ## Timeline Example 
         ```
         Example Cases:
         X = Treatment
@@ -125,16 +126,16 @@ dialysis_descriptions = {
         T = Transfer
         
                                                         Prevalence Point                                        
-        |<--------------------->|<-------------------------->|
-                                [Analysis Window]         [Must be on treatment]
-                
+        |<-------------------->|<--------------------------->|
+                                       [Analysis Window]      
+                                                      
         Prevalent        XXXXXX|XXXXXXXXXXXXXXXXXXXXXXXXXXXXX|X----  (Active at end)
         Prevalent        XXXXXX|XXXXXXXXXXXXXXXXXXXXXXXXT--->|>----  (Transfer out)
         Prevalent        --XXXX|XXXXXXXX------------XXXXXXXXX|X----  (>90 days at end)
         Prevalent        ------|----------------------------X|XXXXX  (>90 days at end)
         
         Not Prevalent    XXXXXX|XXXXXXXXXXXXXXX*-------------|-----  (Died in window)
-        Not Prevalent    ------|----------------------XXXX---|X----  (<90 days total)
+        Not Prevalent    ------|----------------------XXXX---|-X---  (<90 days total)
         ```    
 
         ## UKRDC Entities Used

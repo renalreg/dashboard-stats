@@ -2,6 +2,8 @@
 Patient cohort dialysis stats calculator
 """
 
+import warnings
+
 import datetime as dt
 
 
@@ -35,7 +37,7 @@ from ukrdc_stats.models.generic_2d import (
 from ukrdc_stats.models.base import JSONModel
 
 
-class DialysisMetadata(JSONModel):
+class KRTMetadata(JSONModel):
     population: Optional[int] = Field(
         None,
         description="Number of patients in the cohort for dialysis stats calculation",
@@ -48,7 +50,7 @@ class DialysisMetadata(JSONModel):
     )
 
 
-class DialysisStats(JSONModel):
+class KRTStats(JSONModel):
     """
     Container class for all the dialysis stats
     """
@@ -73,12 +75,12 @@ class DialysisStats(JSONModel):
         ...,
         description="vascular access of incident dialysis patients on their first session",
     )
-    metadata: DialysisMetadata
+    metadata: KRTMetadata
 
 
-class UnitLevelDialysisStats(JSONModel):
-    all: DialysisStats
-    units: Dict[str, DialysisStats]
+class UnitLevelKRTStats(JSONModel):
+    all: KRTStats
+    units: Dict[str, KRTStats]
 
 
 class CohortReport(JSONModel):
@@ -162,7 +164,6 @@ def calculate_therapy_types(
 
 
 def adjust_next_fromtime(group: pd.DataFrame):
-
     """
     Utility function to adjust the next_fromtime in the case where there are
     overlaps in the treatment records.
@@ -182,11 +183,10 @@ def adjust_next_fromtime(group: pd.DataFrame):
     if len(group) > 1:
         overlapping = False
         for i in range(len(group) - 1):
-
             if overlapping:
                 ind_final = i
                 to_time = group.at[i, "totime"]
-                if to_time > max_to_time:
+                if to_time > max_to_time:  # noqa f841
                     max_to_time = group.at[i, "totime"]
 
                 # overlap group ends where maximum to time in group is less
@@ -196,11 +196,11 @@ def adjust_next_fromtime(group: pd.DataFrame):
                     overlapping = False
 
                     # step 2: blank all next_fromtime in overlapping group
-                    group.loc[ind_first:ind_final, "next_fromtime"] = pd.NaT
+                    group.loc[ind_first:ind_final, "next_fromtime"] = pd.NaT  # noqa f821
 
                     # step 3: select record with maximum totime and add
                     # next_fromtime back in
-                    overlap_slice = group[ind_first : ind_final + 1]
+                    overlap_slice = group[ind_first : ind_final + 1]  # noqa f821
                     max_totime_idx = overlap_slice["totime"].idxmax()
                     group.loc[max_totime_idx, "next_fromtime"] = next_fromtime
 
@@ -210,7 +210,7 @@ def adjust_next_fromtime(group: pd.DataFrame):
                 if group.at[i, "next_fromtime"] < group.at[i, "totime"]:
                     # create indices to track group
                     overlapping = True
-                    ind_first = i
+                    ind_first = i  # noqa f841
                     ind_final = i
                     max_to_time = group.at[i, "totime"]
 
@@ -229,8 +229,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         to_time: dt.datetime,
     ):
         if to_time > dt.datetime.now() - dt.timedelta(days=90):
-            Warning(
-                "Stats calculated for times within the last 90 days may have their accuracy reduced"
+            warnings.warn(
+                "Stats calculated for times within the last 90 days may have their accuracy reduced",
             )
 
         super().__init__(session, facility)
@@ -277,12 +277,12 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: Patient cohort dataframe
         """
 
-        MINIMUM_TRANSPLANT_LENGTH = 7
+        minimum_transplant_length = 7
 
-        ChronicTreatment = aliased(Treatment)
-        ChronicModality = aliased(ModalityCodes)
-        HistoricTransplantTreatment = aliased(Treatment)
-        TransplantModality = aliased(ModalityCodes)
+        ChronicTreatment = aliased(Treatment)  # pylint: disable=C0103
+        ChronicModality = aliased(ModalityCodes)  # pylint: disable=C0103
+        HistoricTransplantTreatment = aliased(Treatment)  # pylint: disable=C0103
+        TransplantModality = aliased(ModalityCodes)  # pylint: disable=C0103
 
         query = (
             select(
@@ -325,7 +325,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                             HistoricTransplantTreatment.totime
                             - HistoricTransplantTreatment.fromtime
                             > dt.timedelta(
-                                days=MINIMUM_TRANSPLANT_LENGTH
+                                days=minimum_transplant_length
                             ),  # Successful transplant
                             HistoricTransplantTreatment.admitreasoncode
                             == TransplantModality.registry_code,
@@ -668,6 +668,75 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             ),
         )
 
+    def _calculate_median_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
+        """Calculates the median frequency of dialysis sessions per week for all in-centre dialysis patients.
+        Args:
+            subunit (str, optional): Satellite unit. Defaults to "all".
+        Returns:
+            Labelled2d: Median frequency of dialysis sessions per week.
+        """
+
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        patient_list = self._patient_cohort[
+            (self._patient_cohort.registry_code_type == "HD")
+            & (self._patient_cohort.qbl05.isin(["HOSP", "SATL", "In-centre"]))
+        ]
+
+        if subunit != "all":
+            patient_list = patient_list[
+                patient_list.healthcarefacilitycode == subunit
+            ].pid.drop_duplicates()
+        else:
+            patient_list = patient_list.pid.drop_duplicates()
+
+        # get number of dialysis sessions per patient and the date of the first and last one
+        session_data = self._query_dialysis_sessions(
+            patient_list, self.time_window[0], self.time_window[1]
+        )
+
+        # calculate frequency of dialysis by function to rows
+        # this function takes the number of sessions and dividing by a time period
+        # the time period is defined by the difference between the first and last session
+
+        if not session_data.empty:
+            session_data["freq"] = session_data[session_data.sessioncount >= 1].apply(
+                lambda row: _calculate_frequency(
+                    row["fromtime"], row["totime"], row["sessioncount"]
+                ),
+                axis=1,
+                result_type="reduce",
+            )
+        else:
+            # Create an empty freq column if the DataFrame is empty
+            session_data["freq"] = pd.Series(dtype="float64")
+
+        # Calculate the median frequency
+        median_freq = session_data["freq"].median()
+
+        # Make a histogram of the median dialysis frequency
+        bins = [0.0, 0.5, 1.5, 2.5, 3.5, 7.0]
+        labels = ["<1", "1", "2", "3", ">3"]
+
+        hist = pd.cut([median_freq], bins=bins, labels=labels, right=True).value_counts(
+            sort=False
+        )
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Median In-Centre Dialysis Frequency",
+                summary="Histogram of median frequency of dialysis per week.",
+                description="This histogram represents the median number of dialysis sessions per week for all dialysis patients in a three month period at a sending facility or one of its satellites. Optionally the chart can be filtered by satellite unit.",
+                axis_titles=AxisLabels2d(
+                    x="Frequency (days per week)", y="No. of Patients"
+                ),
+            ),
+            data=Labelled2dData(
+                x=list(hist.keys()), y=[int(value) for value in hist.values]
+            ),
+        )
+
     def _query_vacular_access(self, patient_list: pd.Series) -> pd.DataFrame:
         """Function to query the vascular access table to return the type of
         access used on the first dialysis session for a cohort defined by the
@@ -743,9 +812,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         initial_access_data = self._query_vacular_access(patient_list)
 
         if len(initial_access_data) > 0:
-            initial_access_data.loc[
-                initial_access_data.qhd20.isna(), "qhd20"
-            ] = "Unknown/Incomplete"
+            initial_access_data.loc[initial_access_data.qhd20.isna(), "qhd20"] = (
+                "Unknown/Incomplete"
+            )
 
             x_data = list(initial_access_data.qhd20)
             y_data = list(initial_access_data.no)
@@ -874,10 +943,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             data=Labelled2dData(x=prevalent_labels, y=prevalent_no),
         )
 
-    def extract_satellite_stats(self, unit: str = "all") -> DialysisStats:
+    def extract_satellite_stats(self, unit: str = "all") -> KRTStats:
         """
         Returns:
-            DialysisStats:
+            KRTStats:
         """
 
         if self._patient_cohort is None:
@@ -888,8 +957,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # pop_size = None
         # pop_size = len(self._patient_cohort.ukrdcid.unique())
 
-        return DialysisStats(
-            metadata=DialysisMetadata(
+        return KRTStats(
+            metadata=KRTMetadata(
                 population=pop_size,
                 from_time=self.time_window[0],
                 to_time=self.time_window[1],
@@ -906,10 +975,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
     def extract_stats(
         self,
         limit_to_ukrdc: Optional[bool] = True,
-    ) -> UnitLevelDialysisStats:
+    ) -> UnitLevelKRTStats:
         """Extract all stats for the dialysis module
         Returns:
-            DialysisStats: Dialysis statistics object
+            KRTStats: Dialysis statistics object
         """
         # If we don't already have a patient cohort, extract one
 
@@ -927,7 +996,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
 
         # calculate stats for all units
-        unit_stats: Dict[str, DialysisStats] = {}
+        unit_stats: Dict[str, KRTStats] = {}
 
         # loop over each unit and calculate stats
         for unit in self._patient_cohort.healthcarefacilitycode.unique():
@@ -936,9 +1005,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             else:
                 unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
 
-        return UnitLevelDialysisStats(
-            all=self.extract_satellite_stats(), units=unit_stats
-        )
+        return UnitLevelKRTStats(all=self.extract_satellite_stats(), units=unit_stats)
 
     def generate_cohort_report(
         self, cohort: str, include_ni: bool = False

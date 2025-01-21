@@ -15,6 +15,7 @@ from ukrdc_stats.models.base import JSONModel
 Number = Union[int, float, None]
 RowData = List[Union[Number, str]]
 
+
 # Generics
 class AxisLabels2d(JSONModel):
     """

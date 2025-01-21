@@ -66,7 +66,6 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
 
 
 def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
-
     query = select(CodeMap.source_code, CodeMap.destination_code).where(
         and_(
             CodeMap.source_coding_standard == source_std,
