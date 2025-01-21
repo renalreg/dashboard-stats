@@ -669,73 +669,12 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         )
 
     def _calculate_median_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
-        """Calculates the median frequency of dialysis sessions per week for all in-centre dialysis patients.
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-        Returns:
-            Labelled2d: Median frequency of dialysis sessions per week.
+        """Placeholder incase we revisit the idea of calculating the median
+        dialysis frequency which would be more in line with what is calculated
+        for the annual report.
         """
-
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        patient_list = self._patient_cohort[
-            (self._patient_cohort.registry_code_type == "HD")
-            & (self._patient_cohort.qbl05.isin(["HOSP", "SATL", "In-centre"]))
-        ]
-
-        if subunit != "all":
-            patient_list = patient_list[
-                patient_list.healthcarefacilitycode == subunit
-            ].pid.drop_duplicates()
-        else:
-            patient_list = patient_list.pid.drop_duplicates()
-
-        # get number of dialysis sessions per patient and the date of the first and last one
-        session_data = self._query_dialysis_sessions(
-            patient_list, self.time_window[0], self.time_window[1]
-        )
-
-        # calculate frequency of dialysis by function to rows
-        # this function takes the number of sessions and dividing by a time period
-        # the time period is defined by the difference between the first and last session
-
-        if not session_data.empty:
-            session_data["freq"] = session_data[session_data.sessioncount >= 1].apply(
-                lambda row: _calculate_frequency(
-                    row["fromtime"], row["totime"], row["sessioncount"]
-                ),
-                axis=1,
-                result_type="reduce",
-            )
-        else:
-            # Create an empty freq column if the DataFrame is empty
-            session_data["freq"] = pd.Series(dtype="float64")
-
-        # Calculate the median frequency
-        median_freq = session_data["freq"].median()
-
-        # Make a histogram of the median dialysis frequency
-        bins = [0.0, 0.5, 1.5, 2.5, 3.5, 7.0]
-        labels = ["<1", "1", "2", "3", ">3"]
-
-        hist = pd.cut([median_freq], bins=bins, labels=labels, right=True).value_counts(
-            sort=False
-        )
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="Median In-Centre Dialysis Frequency",
-                summary="Histogram of median frequency of dialysis per week.",
-                description="This histogram represents the median number of dialysis sessions per week for all dialysis patients in a three month period at a sending facility or one of its satellites. Optionally the chart can be filtered by satellite unit.",
-                axis_titles=AxisLabels2d(
-                    x="Frequency (days per week)", y="No. of Patients"
-                ),
-            ),
-            data=Labelled2dData(
-                x=list(hist.keys()), y=[int(value) for value in hist.values]
-            ),
-        )
+        del subunit
+        return
 
     def _query_vacular_access(self, patient_list: pd.Series) -> pd.DataFrame:
         """Function to query the vascular access table to return the type of

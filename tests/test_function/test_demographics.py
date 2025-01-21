@@ -13,8 +13,7 @@ from ukrdc_stats.calculators.demographics import (
     _calculate_base_patient_histogram,
 )
 from unittest.mock import MagicMock, patch
-from ukrdc_stats.utils import age_from_dob
-from ukrdc_stats.exceptions import NoCohortError
+
 
 
 @pytest.fixture

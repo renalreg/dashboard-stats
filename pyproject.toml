@@ -18,23 +18,21 @@ python = "^3.9"
 ukrdc-sqla = "^2.0.0" 
 freezegun = "^1.2.2"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
-
-[tool.poetry.group.dev.dependencies]
-mypy = "^0.982"
-ruff = "^0.9.2"
+setuptools = "^75.8.0"
 
 [tool.poetry.group.test.dependencies]
 # All tests will require the dev dependencies as well
 bandit = "^1.7.4"
 coverage = {extras = ["toml"], version = "^6.4"}
-freezegun = "^1.2.2"
 mimesis = "^6.1.1"
 pytest = "^7.1.2"
 pytest-cov = "^4.0.0"
-pytest-postgresql = "^3.1.1"
 tox = "^3.24.5"
 sqlalchemy-utils = "^0.41.2"
 numpy = "^1.14.5"
+mypy = "^0.982"
+ruff = "^0.9.2"
+
 
 [tool.poetry.group.demo]
 # Dependency group for running the demo notebooks
