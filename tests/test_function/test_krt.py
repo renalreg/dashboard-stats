@@ -9,8 +9,9 @@ import pandas as pd
 import datetime as dt
 import pytest
 
+
 BASIC_PATIENT_COHORT = pd.DataFrame({
-    'pid': [1, 1, 2, 2, 3],
+    'ukrdcid': [1, 1, 2, 2, 3],
     'healthcarefacilitycode': ['A', 'A', 'B', 'B', 'C'],
     'admitreasoncode' : ['A', 'A', 'B', 'B', 'C'],
     'admitreasoncodestd' : ['A', 'A', 'B', 'B', 'C'],
@@ -49,61 +50,70 @@ def krt_calculator():
     return calculator
 
 
+
 def test_unitary_methods(krt_calculator:KRTStatsCalculator):
     """Many of the methods which transform the core patient cohort should not 
     change the extracted data. This test runs through a list of methods and
     checks them against the generic patient cohort.
     """
 
-    method_list = [ 
-        krt_calculator._add_helper_columns,
-    ]
+    # removed methods as it seems superflous now
+    method_list = []
+    for method in method_list:
+        result = method(BASIC_PATIENT_COHORT)
+        for col in BASIC_PATIENT_COHORT.columns:
+            A = result[col].tolist().sort()
+            B = BASIC_PATIENT_COHORT[col].tolist().sort()
 
     for method in method_list:
         result = method(BASIC_PATIENT_COHORT)
         for col in BASIC_PATIENT_COHORT.columns:
             A = result[col].tolist().sort()
             B = BASIC_PATIENT_COHORT[col].tolist().sort()
-            assert A == B
+            
+            if A!=B:
+                print(A)
+                print(B)
+                assert A==B
 
 def test_chain_treatments():   
     
     # Patient cohort with a bunch of treament overlap scenarios
     test_patient_cohort = pd.DataFrame([
         # 1st patient has sequential treatments
-        {'pid': 1, 'fromtime': dt.datetime(2020, 1, 1), 'totime': dt.datetime(2020, 1, 31), 'admitreasoncode': 'treatment_1_1'},
-        {'pid': 1, 'fromtime': dt.datetime(2020, 2, 1), 'totime': dt.datetime(2020, 2, 28), 'admitreasoncode': 'treatment_1_2'},
-        {'pid': 1, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 31), 'admitreasoncode': 'treatment_1_3'},
-        {'pid': 1, 'fromtime': dt.datetime(2020, 4, 1), 'totime': dt.datetime(2020, 4, 30), 'admitreasoncode': 'treatment_1_4'},
-        {'pid': 1, 'fromtime': dt.datetime(2020, 5, 1), 'totime': dt.datetime(2020, 5, 31), 'admitreasoncode': 'treatment_1_5'},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020, 1, 1), 'totime': dt.datetime(2020, 1, 31), 'admitreasoncode': 'treatment_1_1'},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020, 2, 1), 'totime': dt.datetime(2020, 2, 28), 'admitreasoncode': 'treatment_1_2'},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 31), 'admitreasoncode': 'treatment_1_3'},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020, 4, 1), 'totime': dt.datetime(2020, 4, 30), 'admitreasoncode': 'treatment_1_4'},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020, 5, 1), 'totime': dt.datetime(2020, 5, 31), 'admitreasoncode': 'treatment_1_5'},
 
         # 2nd patient has overlapping treatments
-        {'pid': 2, 'fromtime': dt.datetime(2020, 1, 10), 'totime': dt.datetime(2020, 2, 10), 'admitreasoncode': 'treatment_2_1'},
-        {'pid': 2, 'fromtime': dt.datetime(2020, 2, 5), 'totime': dt.datetime(2020, 3, 5), 'admitreasoncode': 'treatment_2_2'},
-        {'pid': 2, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 15), 'admitreasoncode': 'treatment_2_3'},
-        {'pid': 2, 'fromtime': dt.datetime(2020, 3, 10), 'totime': dt.datetime(2020, 3, 25), 'admitreasoncode': 'treatment_2_4'},
-        {'pid': 2, 'fromtime': dt.datetime(2020, 4, 1), 'totime': dt.datetime(2020, 4, 30), 'admitreasoncode': 'treatment_2_5'},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2020, 1, 10), 'totime': dt.datetime(2020, 2, 10), 'admitreasoncode': 'treatment_2_1'},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2020, 2, 5), 'totime': dt.datetime(2020, 3, 5), 'admitreasoncode': 'treatment_2_2'},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 15), 'admitreasoncode': 'treatment_2_3'},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2020, 3, 10), 'totime': dt.datetime(2020, 3, 25), 'admitreasoncode': 'treatment_2_4'},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2020, 4, 1), 'totime': dt.datetime(2020, 4, 30), 'admitreasoncode': 'treatment_2_5'},
 
         # 3rd patient has short treatments during other treatments
-        {'pid': 3, 'fromtime': dt.datetime(2020, 1, 15), 'totime': dt.datetime(2020, 1, 20), 'admitreasoncode': 'treatment_3_1'},
-        {'pid': 3, 'fromtime': dt.datetime(2020, 1, 18), 'totime': dt.datetime(2020, 1, 19), 'admitreasoncode': 'treatment_3_2'},
-        {'pid': 3, 'fromtime': dt.datetime(2020, 2, 1), 'totime': dt.datetime(2020, 2, 5), 'admitreasoncode': 'treatment_3_3'},
-        {'pid': 3, 'fromtime': dt.datetime(2020, 2, 15), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_3_4'},
-        {'pid': 3, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 15), 'admitreasoncode': 'treatment_3_5'},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2020, 1, 15), 'totime': dt.datetime(2020, 1, 20), 'admitreasoncode': 'treatment_3_1'},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2020, 1, 18), 'totime': dt.datetime(2020, 1, 19), 'admitreasoncode': 'treatment_3_2'},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2020, 2, 1), 'totime': dt.datetime(2020, 2, 5), 'admitreasoncode': 'treatment_3_3'},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2020, 2, 15), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_3_4'},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 15), 'admitreasoncode': 'treatment_3_5'},
 
         # 4th patient with two separate periods of overlapping treatments
-        {'pid': 4, 'fromtime': dt.datetime(2020, 2, 10), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_4_1'},
-        {'pid': 4, 'fromtime': dt.datetime(2020, 2, 18), 'totime': dt.datetime(2020, 3, 5), 'admitreasoncode': 'treatment_4_2'},
-        {'pid': 4, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 10), 'admitreasoncode': 'treatment_4_3'},
-        {'pid': 4, 'fromtime': dt.datetime(2020, 3, 10), 'totime': dt.datetime(2020, 3, 20), 'admitreasoncode': 'treatment_4_4'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 2, 10), 'totime': dt.datetime(2020, 2, 20), 'admitreasoncode': 'treatment_4_1'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 2, 18), 'totime': dt.datetime(2020, 3, 5), 'admitreasoncode': 'treatment_4_2'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 3, 1), 'totime': dt.datetime(2020, 3, 10), 'admitreasoncode': 'treatment_4_3'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 3, 10), 'totime': dt.datetime(2020, 3, 20), 'admitreasoncode': 'treatment_4_4'},
         
-        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 1), 'totime': dt.datetime(2020, 5, 10), 'admitreasoncode': 'treatment_4_5'},
-        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 8), 'totime': dt.datetime(2020, 5, 20), 'admitreasoncode': 'treatment_4_6'},
-        {'pid': 4, 'fromtime': dt.datetime(2020, 5, 15), 'totime': dt.datetime(2020, 5, 25), 'admitreasoncode': 'treatment_4_7'},
-        {'pid': 4, 'fromtime': dt.datetime(2021, 3, 25), 'totime': pd.NaT, 'admitreasoncode': 'treatment_4_8'},  # Open-ended treatment
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 5, 1), 'totime': dt.datetime(2020, 5, 10), 'admitreasoncode': 'treatment_4_5'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 5, 8), 'totime': dt.datetime(2020, 5, 20), 'admitreasoncode': 'treatment_4_6'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2020, 5, 15), 'totime': dt.datetime(2020, 5, 25), 'admitreasoncode': 'treatment_4_7'},
+        {'ukrdcid': 4, 'fromtime': dt.datetime(2021, 3, 25), 'totime': pd.NaT, 'admitreasoncode': 'treatment_4_8'},  # Open-ended treatment
     ])
 
-
+    test_patient_cohort["sendingfacility"] = "RFDOG"
 
     mock_sesh = MagicMock()
     calculator = KRTStatsCalculator(mock_sesh, "", dt.datetime(1900, 1, 1), dt.datetime(1900, 1, 2))
@@ -148,7 +158,7 @@ def test_chain_treatments():
 def test_add_helper_columns(mock_extract_base_patient_cohort):
     # Mock return value for _extract_base_patient_cohort
     mock_base_cohort = pd.DataFrame({
-        'pid': [1, 1, 2, 2, 3],
+        'ukrdcid': [1, 1, 2, 2, 3],
         'fromtime': [
             dt.datetime(2020, 1, 1), dt.datetime(2020, 3, 1),
             dt.datetime(2020, 1, 10), dt.datetime(2020, 3, 5),
@@ -161,6 +171,8 @@ def test_add_helper_columns(mock_extract_base_patient_cohort):
         ],
         'healthcarefacilitycode': ['A', 'A', 'B', 'B', 'C']
     })
+    mock_base_cohort["sendingfacility"] = "RFDOG"
+    mock_base_cohort["pid"] = mock_base_cohort["ukrdcid"] 
     mock_extract_base_patient_cohort.return_value = mock_base_cohort
 
     # Initialize the calculator
@@ -191,14 +203,14 @@ def test_exclude_records():
     """Test the _exclude_records method with different 90+ day gaps relative to the time window."""
     test_patient_cohort = pd.DataFrame([
         # Patient 1: Recovery gap extends beyond end of the window (exclude entirely)
-        {'pid': 1, 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2020,2,2)},
-        {'pid': 1, 'fromtime': dt.datetime(2020,2,2), 'totime': dt.datetime(2022,1,2), 'next_fromtime': None},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2020,2,2)},
+        {'ukrdcid': 1, 'fromtime': dt.datetime(2020,2,2), 'totime': dt.datetime(2022,1,2), 'next_fromtime': None},
         # Patient 2: Recovery gap ends within the time window (partially included)
-        {'pid': 2, 'fromtime': dt.datetime(2006,1,5), 'totime': dt.datetime(2019,1,20), 'next_fromtime': dt.datetime(2019,5,10)},
-        {'pid': 2, 'fromtime': dt.datetime(2019,5,10), 'totime': dt.datetime(2019,4,15), 'next_fromtime': None},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2006,1,5), 'totime': dt.datetime(2019,1,20), 'next_fromtime': dt.datetime(2019,5,10)},
+        {'ukrdcid': 2, 'fromtime': dt.datetime(2019,5,10), 'totime': dt.datetime(2019,4,15), 'next_fromtime': None},
         # Patient 3: Recovery gap ends after the time window (remain included)
-        {'pid': 3, 'fromtime': dt.datetime(2019,2,1), 'totime': dt.datetime(2020,1,2), 'next_fromtime': dt.datetime(2020,5,2)},
-        {'pid': 3, 'fromtime': dt.datetime(2020,5,2), 'totime': dt.datetime(2019,7,25), 'next_fromtime': None},
+        {'ukrdcid': 3, 'fromtime': dt.datetime(2019,2,1), 'totime': dt.datetime(2020,1,2), 'next_fromtime': dt.datetime(2020,5,2)},
+        {'': 3, 'fromtime': dt.datetime(2020,5,2), 'totime': dt.datetime(2019,7,25), 'next_fromtime': None},
     ])
 
     session = MagicMock()
@@ -207,13 +219,13 @@ def test_exclude_records():
 
     result_df = calculator._exclude_records(test_patient_cohort)
 
-    # Patient 1 should be fully excluded, so no rows with pid = 1
+    # Patient 1 should be fully excluded, so no rows with ukrdcid = 1
     # Patients 2 and 3 should remain partially or fully included
-    pids_out = result_df.sort_values('pid').pid.tolist()
+    ukrdcids_out = result_df.sort_values('ukrdcid').ukrdcid.tolist()
     from_time_out = [
         d.to_pydatetime() for d in result_df.sort_values('fromtime')['fromtime']
     ]
-    assert pids_out == [2, 3]
+    assert ukrdcids_out == [2, 3]
     assert from_time_out == [dt.datetime(2019, 2, 1, 0, 0), dt.datetime(2019, 5, 10, 0, 0)]
 
 def test_extract_incident_prevalent():
@@ -226,7 +238,7 @@ def test_extract_incident_prevalent():
     mock_data = pd.DataFrame([
         # Patient 1: Chronic, long timeline => prevalent
         {
-            'pid': 1,
+            'ukrdcid': 1,
             'fromtime': dt.datetime(2020, 1, 1),
             'totime': dt.datetime(2020, 7, 1),
             'deathtime': None,
@@ -235,7 +247,7 @@ def test_extract_incident_prevalent():
             'dischargereasoncode': None,
         },
         {
-            'pid': 1,
+            'ukrdcid': 1,
             'fromtime': dt.datetime(2020, 7, 2),
             'totime': dt.datetime(2020, 8, 15),
             'deathtime': None,
@@ -245,7 +257,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 2: Dies early => not incident/prevalent
         {
-            'pid': 2,
+            'ukrdcid': 2,
             'fromtime': dt.datetime(2020, 2, 1),
             'totime': dt.datetime(2020, 3, 1),
             'deathtime': dt.datetime(2020, 3, 10),
@@ -255,7 +267,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 3: Historic transplant => incident
         {
-            'pid': 3,
+            'ukrdcid': 3,
             'fromtime': dt.datetime(2020, 3, 1),
             'totime': dt.datetime(2020, 9, 1),
             'deathtime': None,
@@ -265,7 +277,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 4: Crash landing => incident (>90 days)
         {
-            'pid': 4,
+            'ukrdcid': 4,
             'fromtime': dt.datetime(2020, 2, 15),
             'totime': dt.datetime(2020, 6, 1),
             'deathtime': None,
@@ -275,7 +287,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 5: Short chronic => neither
         {
-            'pid': 5,
+            'ukrdcid': 5,
             'fromtime': dt.datetime(2020, 2, 10),
             'totime': dt.datetime(2020, 2, 20),
             'deathtime': None,
@@ -285,7 +297,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 6: Transferred out (code 38) => incident
         {
-            'pid': 6,
+            'ukrdcid': 6,
             'fromtime': dt.datetime(2020, 1, 1),
             'totime': dt.datetime(2020, 3, 1),
             'deathtime': None,
@@ -295,7 +307,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 7: Multiple treatments, chronic => prevalent
         {
-            'pid': 7,
+            'ukrdcid': 7,
             'fromtime': dt.datetime(2020, 1, 1),
             'totime': dt.datetime(2020, 2, 15),
             'deathtime': None,
@@ -304,7 +316,7 @@ def test_extract_incident_prevalent():
             'dischargereasoncode': None,
         },
         {
-            'pid': 7,
+            'ukrdcid': 7,
             'fromtime': dt.datetime(2020, 2, 16),
             'totime': dt.datetime(2020, 8, 1),
             'deathtime': None,
@@ -314,7 +326,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 8: Short initial then long treatment => incident
         {
-            'pid': 8,
+            'ukrdcid': 8,
             'fromtime': dt.datetime(2020, 3, 1),
             'totime': dt.datetime(2020, 3, 2),
             'deathtime': None,
@@ -323,7 +335,7 @@ def test_extract_incident_prevalent():
             'dischargereasoncode': None,
         },
         {
-            'pid': 8,
+            'ukrdcid': 8,
             'fromtime': dt.datetime(2020, 3, 3),
             'totime': dt.datetime(2020, 7, 5),
             'deathtime': None,
@@ -333,7 +345,7 @@ def test_extract_incident_prevalent():
         },
         # Patient 9: Dies but chronic => prevalent 
         {
-            'pid': 9,
+            'ukrdcid': 9,
             'fromtime': dt.datetime(2020, 2, 10),
             'totime': dt.datetime(2020, 6, 20),
             'deathtime': dt.datetime(2020, 7, 1),
@@ -342,8 +354,10 @@ def test_extract_incident_prevalent():
             'dischargereasoncode': None,
         },
     ])
+    mock_data["sendingfacility"] = "RFDOG"
     session = MagicMock()
-    calculator = KRTStatsCalculator(session, "TEST", dt.datetime(2020,1,1), dt.datetime(2020,6,30))
+    calculator = KRTStatsCalculator(session, "RFDOG", dt.datetime(2020,1,1), dt.datetime(2020,6,30))
+    
     result = calculator._extract_incident_prevalent(mock_data)
     
     expected = pd.DataFrame({
