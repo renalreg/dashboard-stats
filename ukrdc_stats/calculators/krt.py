@@ -22,6 +22,7 @@ from ukrdc_sqla.ukrdc import (
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
+from ukrdc_stats.utils import _calculate_base_patient_histogram
 from ukrdc_stats.exceptions import NoCohortError
 from pydantic import Field
 
@@ -55,10 +56,6 @@ class KRTStats(JSONModel):
     Container class for all the dialysis stats
     """
 
-    all_treatments_krt: Labelled2d = Field(
-        ...,
-        description="statistical breakdown of therapy types for all patients in cohort",
-    )
     incident_krt: Labelled2d = Field(
         ...,
         description="statistical breakdown of therapy types for incident patients in cohort",
@@ -88,30 +85,6 @@ class CohortReport(JSONModel):
     cohort: str
     population: int
     table: BaseTable
-
-
-def _calculate_frequency(
-    from_time: dt.datetime,
-    to_time: dt.datetime,
-    no_of_events: int,
-):
-    """calculates the frequency in per week units of events in a given timewindow
-    Args:
-        from_time (dt.datetime): start of window
-        to_time (dt.datetime): end of window
-        no_of_proceedures (int): no of things/events/proceedures which have occured
-    Returns:
-        _type_: frequency of events
-    """
-    delta_t = (to_time - from_time).days
-
-    if delta_t > 0.0:
-        return 7.0 * no_of_events / delta_t
-    # else:
-    # TODO: add proper error handling to this
-    #    print("Time window is not positive and non-zero")
-
-    return None
 
 
 def calculate_therapy_types(
@@ -283,10 +256,45 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         ChronicModality = aliased(ModalityCodes)  # pylint: disable=C0103
         HistoricTransplantTreatment = aliased(Treatment)  # pylint: disable=C0103
         TransplantModality = aliased(ModalityCodes)  # pylint: disable=C0103
+        SubPatientRecord = aliased(PatientRecord)
+
+        # Select ukrdcids of patients treated at facility
+        ukrdc_sub = select(PatientRecord.ukrdcid).where(
+            PatientRecord.sendingfacility == self.facility
+        )
+
+        chronic_check = exists().where(
+            ChronicTreatment.pid == SubPatientRecord.pid,
+            SubPatientRecord.ukrdcid == PatientRecord.ukrdcid,
+            ChronicTreatment.fromtime
+            < self.time_window[1],  # Check if within time window
+            ChronicTreatment.admitreasoncode
+            == ChronicModality.registry_code,  # Match chronic modality code
+            ChronicModality.registry_code_type == "CK",
+        )
+
+        tx_check = exists().where(
+            HistoricTransplantTreatment.pid == SubPatientRecord.pid,
+            SubPatientRecord.ukrdcid == PatientRecord.ukrdcid,
+            HistoricTransplantTreatment.fromtime
+            < self.time_window[0],  # Before start of time window
+            HistoricTransplantTreatment.totime - HistoricTransplantTreatment.fromtime
+            > dt.timedelta(days=minimum_transplant_length),  # Successful transplant
+            HistoricTransplantTreatment.admitreasoncode
+            == TransplantModality.registry_code,
+            TransplantModality.registry_code_type == "TX",
+        )
+
+        if limit_to_ukrdc:
+            ukrdc_sub.where(PatientRecord.sendingextract == "UKRDC")
+            chronic_check.where(SubPatientRecord.sendingextract == "UKRDC")
+            tx_check.where(SubPatientRecord.sendingextract == "UKRDC")
 
         query = (
             select(
                 PatientRecord.pid,
+                PatientRecord.ukrdcid,
+                PatientRecord.sendingfacility,
                 Treatment.healthcarefacilitycode,
                 Treatment.admitreasoncode,
                 Treatment.admitreasoncodestd,
@@ -295,6 +303,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 Treatment.qbl05,
                 Treatment.hdp04,
                 Treatment.dischargereasoncode,
+                Treatment.dischargereasoncodestd,
+                Treatment.dischargelocationcode,
                 Treatment.dischargelocationcodestd,
                 ModalityCodes.registry_code_type,
                 Patient.deathtime,
@@ -303,14 +313,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 # Correlated subquery for chronic treatment check
                 case(
                     (
-                        exists().where(
-                            ChronicTreatment.pid == PatientRecord.pid,
-                            ChronicTreatment.fromtime
-                            < self.time_window[1],  # Check if within time window
-                            ChronicTreatment.admitreasoncode
-                            == ChronicModality.registry_code,  # Match chronic modality code
-                            ChronicModality.registry_code_type == "CK",
-                        ),
+                        chronic_check,
                         True,
                     ),
                     else_=False,
@@ -318,19 +321,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 # Correlated subquery for historical transplant check
                 case(
                     (
-                        exists().where(
-                            HistoricTransplantTreatment.pid == PatientRecord.pid,
-                            HistoricTransplantTreatment.fromtime
-                            < self.time_window[0],  # Before start of time window
-                            HistoricTransplantTreatment.totime
-                            - HistoricTransplantTreatment.fromtime
-                            > dt.timedelta(
-                                days=minimum_transplant_length
-                            ),  # Successful transplant
-                            HistoricTransplantTreatment.admitreasoncode
-                            == TransplantModality.registry_code,
-                            TransplantModality.registry_code_type == "TX",
-                        ),
+                        tx_check,
                         True,
                     ),
                     else_=False,
@@ -352,7 +343,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 or_(
                     Patient.deathtime > self.time_window[0], Patient.deathtime.is_(None)
                 ),
-                PatientRecord.sendingfacility == self.facility,
+                PatientRecord.ukrdcid.in_(ukrdc_sub),
             )
         )
 
@@ -373,14 +364,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         calculations to be made.
         """
 
-        raw_patients = raw_patients.sort_values(by=["pid", "fromtime"])
-
-        # append the start of the next treatment to each record
-        raw_patients["next_fromtime"] = raw_patients.groupby("pid")["fromtime"].shift(
-            -1
+        raw_patients = raw_patients.sort_values(
+            by=["ukrdcid", "fromtime", "sendingfacility"]
         )
 
-        raw_patients = raw_patients.groupby("pid", as_index=False).apply(
+        # append the start of the next treatment to each record
+        raw_patients["next_fromtime"] = raw_patients.groupby("ukrdcid")[
+            "fromtime"
+        ].shift(-1)
+
+        raw_patients = raw_patients.groupby("ukrdcid", as_index=False).apply(
             adjust_next_fromtime
         )
 
@@ -398,7 +391,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         recoveries = (
             base_cohort["next_fromtime"] - base_cohort["totime"]
         ) > dt.timedelta(days=90)
-        patient_recoveries = base_cohort[recoveries][["pid", "next_fromtime", "totime"]]
+        patient_recoveries = base_cohort[recoveries][
+            ["ukrdcid", "next_fromtime", "totime"]
+        ]
 
         index_to_remove = []
         for _, row in patient_recoveries.iterrows():
@@ -406,7 +401,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 # patient has made a recovery remove future records
                 index_to_remove.extend(
                     base_cohort[
-                        (base_cohort["pid"] == row["pid"])
+                        (base_cohort["ukrdcid"] == row["ukrdcid"])
                         & (base_cohort["fromtime"] > row["totime"])
                     ].index
                 )
@@ -414,14 +409,14 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 if row["next_fromtime"] > self.time_window[1]:
                     # patient was recovered at end of window remove completely
                     index_to_remove.extend(
-                        base_cohort[base_cohort["pid"] == row["pid"]].index
+                        base_cohort[base_cohort["ukrdcid"] == row["ukrdcid"]].index
                     )
 
                 else:
                     # patient coming out of recovery, remove record and all prior
                     index_to_remove.extend(
                         base_cohort[
-                            (base_cohort["pid"] == row["pid"])
+                            (base_cohort["ukrdcid"] == row["ukrdcid"])
                             & (base_cohort["totime"] <= row["totime"])
                         ].index
                     )
@@ -448,23 +443,23 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # Exclude "acute" patients and records post or prior to recoveries
         base_cohort = self._exclude_records(base_cohort)
 
-        # identify the records with the most recent from time for each pid
+        # identify the records with the most recent from time for each ukrdcid
         most_recent = base_cohort[
             base_cohort["fromtime"] < self.time_window[1]
         ].reset_index(drop=True)
-        most_recent = most_recent.groupby("pid", as_index=False)["fromtime"].max()
+        most_recent = most_recent.groupby("ukrdcid", as_index=False)["fromtime"].max()
 
         # Merge with the original cohort to identify the most recent treatments
         base_cohort = base_cohort.merge(
-            most_recent, on=["pid"], how="left", suffixes=("", "_max")
+            most_recent, on=["ukrdcid"], how="left", suffixes=("", "_max")
         )
         base_cohort["most_recent"] = (
             base_cohort["fromtime"] == base_cohort["fromtime_max"]
         )
 
-        # add column which is true if recorded is first from time for a given pid
+        # add column which is true if recorded is first from time for a given ukrdcid
         base_cohort["first_treatment"] = (
-            base_cohort.groupby("pid")["fromtime"].transform("min")
+            base_cohort.groupby("ukrdcid")["fromtime"].transform("min")
             == base_cohort["fromtime"]
         )
 
@@ -493,10 +488,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # replace totime= na with today
         base_cohort["totime"] = base_cohort["totime"].fillna(dt.datetime.now())
-        base_cohort["timeline_start"] = base_cohort.groupby("pid", as_index=False)[
+        base_cohort["timeline_start"] = base_cohort.groupby("ukrdcid", as_index=False)[
             "fromtime"
         ].transform("min")
-        base_cohort["timeline_stop"] = base_cohort.groupby("pid", as_index=False)[
+        base_cohort["timeline_stop"] = base_cohort.groupby("ukrdcid", as_index=False)[
             "totime"
         ].transform("max")
 
@@ -522,12 +517,20 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # Without full coverage we can do anything super accurate with transfer
         # out. However we will treat certain dischargereason codes as idicating
         # continued treatment.
+        """
         discharge_reasons = ["38"]
-        tranfered_pids = base_cohort[
+        transfered_patients = base_cohort[
             base_cohort["dischargereasoncode"].isin(discharge_reasons)
             & base_cohort.most_recent
-        ].pid.drop_duplicates()
-        transfered_out = base_cohort.pid.isin(tranfered_pids)
+        ].ukrdcid.drop_duplicates()
+        transfered_out = base_cohort.ukrdcid.isin(transfered_patients)
+        """
+        transfered_patients = base_cohort[
+            base_cohort["dischargelocationcode"].isin(["ABROAD"])
+            # & base_cohort["dischargelocationcodestd"] == "RR1+"
+            & base_cohort.most_recent
+        ].ukrdcid.drop_duplicates()
+        transfered_out = base_cohort.ukrdcid.isin(transfered_patients)
 
         # Crash landed patients are defined:
         # - no chronic treatment records or tx
@@ -577,13 +580,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
     def _query_dialysis_sessions(
         self, patient_list: List[str], start: dt.datetime, stop: dt.datetime
     ) -> pd.DataFrame:
+        # Calculate start of each week interval
+        week_start = func.date_trunc("week", DialysisSession.procedure_time)
+
         query = (
             select(
                 PatientRecord.pid,
-                func.min(DialysisSession.procedure_time).label("fromtime"),
-                func.max(DialysisSession.procedure_time).label("totime"),
-                func.count(DialysisSession.procedure_type_code).label("sessioncount"),
-                func.sum(cast(DialysisSession.qhd31, Float)),
+                PatientRecord.ukrdcid,
+                week_start.label("weekstart"),
+                func.count(DialysisSession.procedure_type_code).label("hdsessionno"),
+                func.sum(cast(DialysisSession.qhd31, Float)).label("totaltimedialised"),
             )
             .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
             .where(
@@ -594,10 +600,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     DialysisSession.procedure_time < stop,
                 )
             )
-            .group_by(PatientRecord.pid)
+            .group_by(PatientRecord.pid, week_start)
         )
 
         session_data = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+
         return session_data
 
     def _calculate_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
@@ -625,48 +632,71 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         else:
             patient_list = patient_list.pid.drop_duplicates()
 
-        # get number of dialysis sessions per patient and the date of the first and last one
-        session_data = self._query_dialysis_sessions(
-            patient_list, self.time_window[0], self.time_window[1]
+        dialysis_frequency_meta = Labelled2dMetadata(
+            title="Median Haemodialysis Frequency",
+            summary="Median frequency of incentre haemodialysis per week.",
+            description=dialysis_descriptions["INCENTRE_DIALYSIS_FREQ"],
+            axis_titles=AxisLabels2d(
+                x="Frequency (days per week)", y="No. of Patients"
+            ),
         )
 
-        # calculate frequency of dialysis by function to rows
-        # this function takes the number of sessions and dividing by a time period
-        # the time period is defined by the difference between the first and last session
+        dialysis_time_meta = Labelled2dMetadata(
+            title="Median Haemodialysis Time",
+            summary="Median time of incentre haemodialysis per week.",
+            description=dialysis_descriptions["INCENTRE_DIALYSIS_TIME"],
+            axis_titles=AxisLabels2d(x="Time (hours per week)", y="No. of Patients"),
+        )
 
-        if not session_data.empty:
-            session_data["freq"] = session_data[session_data.sessioncount >= 1].apply(
-                lambda row: _calculate_frequency(
-                    row["fromtime"], row["totime"], row["sessioncount"]
-                ),
-                axis=1,
-                result_type="reduce",
+        data_frequency = Labelled2dData(x=[], y=[])
+        data_timedialised = Labelled2dData(x=[], y=[])
+        if not patient_list.empty:
+            # get number of dialysis sessions per patient and the date of the first and last one
+            session_data = self._query_dialysis_sessions(
+                patient_list, self.time_window[0], self.time_window[1]
             )
-        else:
-            # Create an empty freq column if the DataFrame is empty
-            session_data["freq"] = pd.Series(dtype="float64")
+            if not session_data.empty:
+                # drop any rows where hdsessionno is 0
+                session_data = session_data[session_data["hdsessionno"] > 0]
 
-        # Make a histogram of the dialysis frequency
-        bins = [0.0, 0.5, 1.5, 2.5, 3.5, 7.0]
-        labels = ["<1", "1", "2", "3", ">3"]
+                # Calculate the median of hdsessionno and timedialysed per ukrdcid
+                median_data = (
+                    session_data.groupby("ukrdcid")
+                    .agg(
+                        median_hdsessionno=pd.NamedAgg(
+                            column="hdsessionno", aggfunc="median"
+                        ),
+                        median_timedialysed=pd.NamedAgg(
+                            column="totaltimedialised", aggfunc="median"
+                        ),
+                    )
+                    .reset_index()
+                )
 
-        hist = pd.cut(
-            session_data.freq, bins=bins, labels=labels, right=True
-        ).value_counts(sort=False)
+                # Create histogram of dialysis frequency
+                histogram = _calculate_base_patient_histogram(
+                    cohort=median_data, group="median_hdsessionno"
+                )
 
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="In-Centre Dialysis Frequency",
-                summary="Histogram of frequency of dialysis per week.",
-                description=dialysis_descriptions["INCENTRE_DIALYSIS_FREQ"],
-                axis_titles=AxisLabels2d(
-                    x="Frequency (days per week)", y="No. of Patients"
-                ),
-            ),
-            data=Labelled2dData(
-                x=list(hist.keys()), y=[int(value) for value in hist.values]
-            ),
+                # Update data_frequency with histogram data
+                data_frequency.x = histogram["median_hdsessionno"].tolist()
+                data_frequency.y = histogram["Count"].tolist()
+
+                # Create histogram of dialysis time
+                histogram = _calculate_base_patient_histogram(
+                    cohort=median_data, group="median_timedialysed"
+                )
+
+                # Update data_timedialised with histogram data
+                data_timedialised.x = histogram["median_timedialysed"].tolist()
+                data_timedialised.y = histogram["Count"].tolist()
+
+        time_dialysis = Labelled2d(data=data_timedialised, metadata=dialysis_time_meta)
+        frequency_dialysis = Labelled2d(
+            data=data_frequency, metadata=dialysis_frequency_meta
         )
+
+        return frequency_dialysis, time_dialysis
 
     def _calculate_median_dialysis_frequency(self, subunit: str = "all") -> Labelled2d:
         """Placeholder incase we revisit the idea of calculating the median
@@ -772,40 +802,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             data=Labelled2dData(x=x_data, y=y_data),
         )
 
-    def _calculate_therapies_all_patients(self, subunit: str = "all") -> Labelled2d:
-        """Calculate breakdown of therapy types for all
-        Args:
-            subunit (str, optional): Satellite unit. Defaults to "all".
-        Raises:
-            NoCohortError: _description_
-        Returns:
-            Labelled2d: Breakdown of all patients
-        """
-
-        if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
-
-        if subunit == "all":
-            all_patients_labels, all_patients_no = calculate_therapy_types(
-                self._patient_cohort
-            )
-        else:
-            all_patients_labels, all_patients_no = calculate_therapy_types(
-                self._patient_cohort[
-                    self._patient_cohort.healthcarefacilitycode == subunit
-                ]
-            )
-
-        return Labelled2d(
-            metadata=Labelled2dMetadata(
-                title="All KRT Modalities",
-                summary="Breakdown of all patients on both PD and HD, and by home therapies and in-centre therapies.",
-                description=dialysis_descriptions["ALL_PATIENTS_KRT_COHORT"],
-                population_size=sum(all_patients_no),
-            ),
-            data=Labelled2dData(x=all_patients_labels, y=all_patients_no),
-        )
-
     def _calculate_therapies_incident_patients(
         self, subunit: str = "all"
     ) -> Labelled2d:
@@ -821,6 +817,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
+        # TODO: add in something to assign patients to where they were first seen
         if subunit == "all":
             incident_cohort = self._patient_cohort[
                 self._patient_cohort.incident & self._patient_cohort.first_treatment
@@ -891,10 +888,20 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # what should we use as the
-        pop_size = 0
-        # pop_size = None
-        # pop_size = len(self._patient_cohort.ukrdcid.unique())
+        # population size calculated from the sum of the incident and prevalant patients
+        pop_size = len(
+            self._patient_cohort[
+                (self._patient_cohort.healthcarefacilitycode == unit)
+                & (self._patient_cohort.incident | self._patient_cohort.prevalent)
+            ].ukrdcid.unique()
+        )
+
+        incident_krt = self._calculate_therapies_incident_patients(subunit=unit)
+        prevalent_krt = self._calculate_therapies_prevalent_patients(subunit=unit)
+        incentre_dialysis_frequency, _ = self._calculate_dialysis_frequency(
+            subunit=unit
+        )
+        incident_initial_access = self._calculate_access_incident(subunit=unit)
 
         return KRTStats(
             metadata=KRTMetadata(
@@ -902,13 +909,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 from_time=self.time_window[0],
                 to_time=self.time_window[1],
             ),
-            all_treatments_krt=self._calculate_therapies_all_patients(subunit=unit),
-            incident_krt=self._calculate_therapies_incident_patients(subunit=unit),
-            prevalent_krt=self._calculate_therapies_prevalent_patients(subunit=unit),
-            incentre_dialysis_frequency=self._calculate_dialysis_frequency(
-                subunit=unit
-            ),
-            incident_initial_access=self._calculate_access_incident(subunit=unit),
+            incident_krt=incident_krt,
+            prevalent_krt=prevalent_krt,
+            incentre_dialysis_frequency=incentre_dialysis_frequency,
+            incident_initial_access=incident_initial_access,
         )
 
     def extract_stats(

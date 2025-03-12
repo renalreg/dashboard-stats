@@ -6,20 +6,20 @@ the one produced by the stats team for the annual report.
 
 
 import os 
-from dotenv import load_dotenv
 import datetime as dt
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 import pandas as pd # requires openpyxl
 from pathlib import Path
 from ukrdc_sqla.ukrdc import PatientNumber, Treatment, ModalityCodes, Patient, PatientRecord
+from rr_connection_manager import PostgresConnection
 
 def write_treatments(nhs_nos,session):
 
     query = (
         select(
             PatientRecord.pid,
+            PatientRecord.ukrdcid,
             PatientNumber.patientid,
             PatientRecord.sendingfacility, 
             PatientRecord.sendingextract,
@@ -31,6 +31,8 @@ def write_treatments(nhs_nos,session):
             Treatment.qbl05,
             Treatment.hdp04,
             Treatment.dischargereasoncode,
+            Treatment.dischargereasoncodestd,
+            Treatment.dischargelocationcode,
             Treatment.dischargelocationcodestd,
             ModalityCodes.acute,
             ModalityCodes.registry_code_type,
@@ -44,6 +46,7 @@ def write_treatments(nhs_nos,session):
         .join(Patient, Patient.pid == Treatment.pid)
         .join(PatientNumber, PatientNumber.pid == Treatment.pid)
         .where(PatientNumber.patientid.in_(nhs_nos))
+        .order_by(PatientRecord.ukrdcid)
     )
 
     return pd.DataFrame(session.execute(query).all()).drop_duplicates()
@@ -72,19 +75,11 @@ if not os.path.isfile(ENV_FILE):
     raise Exception("env file doesn't exist")
     
 
-# Load the .env file fire up session etc
-load_dotenv(ENV_FILE)
+conn = PostgresConnection(app = "ukrdc_staging", tunnel = True, via_app = True)
+conn.connection_check()
+sessionmaker = conn.session_maker()
 
-    
-ukrdc_host = os.getenv('UKRDC_HOST')
-ukrdc_port = os.getenv('UKRDC_PORT')
-ukrdc_user = os.getenv('UKRDC_USER')
-ukrdc_name = os.getenv('UKRDC_NAME')
-ukrdc_password = os.getenv('UKRDC_PASSWORD')
-
-database_url = f"postgresql://{ukrdc_user}:{ukrdc_password}@{ukrdc_host}:{ukrdc_port}/{ukrdc_name}"
-engine = create_engine(database_url)
-with sessionmaker(bind=engine, autocommit=False)() as session: 
+with sessionmaker() as session: 
     calculator = KRTStatsCalculator(
         session, 
         RENAL_CENTRE, 
@@ -93,7 +88,7 @@ with sessionmaker(bind=engine, autocommit=False)() as session:
     )
 
     # debug 
-    stats = calculator.extract_stats()
+    stats = calculator.extract_stats(limit_to_ukrdc=False)
 
     cohort_report = calculator.generate_cohort_report("incident", include_ni=True).table.to_pandas()
     cohort  = calculator._patient_cohort

@@ -56,6 +56,7 @@ dialysis_descriptions = {
         3. Treatment continues for at least 90 days OR patient:
            - Has planned start and dies within 90 days
            - Transfers to another unit
+        4. Patient is modality is assigned to the first 
 
         ## Timeline Example
         ```
@@ -128,7 +129,7 @@ dialysis_descriptions = {
                                                         Prevalence Point                                        
         |<-------------------->|<--------------------------->|
                                        [Analysis Window]      
-                                                      
+
         Prevalent        XXXXXX|XXXXXXXXXXXXXXXXXXXXXXXXXXXXX|X----  (Active at end)
         Prevalent        XXXXXX|XXXXXXXXXXXXXXXXXXXXXXXXT--->|>----  (Transfer out)
         Prevalent        --XXXX|XXXXXXXX------------XXXXXXXXX|X----  (>90 days at end)
@@ -172,6 +173,13 @@ dialysis_descriptions = {
         ## UKRDC Entities Used
         The dialysis sessions table is queried by grouping by ukrdcid with the following aggregate functions used:
         - https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2005565449/Dialysis+Session+Procedure: MIN(fromtime), MAX(totime), COUNT(sessiontype).
+        """
+    ),
+    "INCENTRE_DIALYSIS_TIME": dedent(
+        """
+        # In-Centre Dialysis Time
+
+        ## Overview
         """
     ),
     "INCIDENT_INITIAL_ACCESS": dedent(
