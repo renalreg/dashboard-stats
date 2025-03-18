@@ -22,7 +22,7 @@ from ukrdc_sqla.ukrdc import (
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
-from ukrdc_stats.utils import _calculate_base_patient_histogram
+from ukrdc_stats.utils import _get_satellite_list
 from ukrdc_stats.exceptions import NoCohortError
 from pydantic import Field
 
@@ -67,6 +67,10 @@ class KRTStats(JSONModel):
     incentre_dialysis_frequency: Labelled2d = Field(
         ...,
         description="per week frequency of dialysis for all in-centre dialysis patients",
+    )
+    incentre_time_dialysed: Labelled2d = Field(
+        ...,
+        description="per week time dialysed for all in-centre dialysis patients",
     )
     incident_initial_access: Labelled2d = Field(
         ...,
@@ -583,6 +587,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # Calculate start of each week interval
         week_start = func.date_trunc("week", DialysisSession.procedure_time)
 
+        dialysis_snomed = ["302497006", "233581009", "233586004"]
+
         query = (
             select(
                 PatientRecord.pid,
@@ -595,7 +601,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             .where(
                 and_(
                     PatientRecord.pid.in_(patient_list),
-                    DialysisSession.procedure_type_code == "302497006",  # filter for hd
+                    DialysisSession.procedure_type_code.in_(
+                        dialysis_snomed
+                    ),  # filter for hd
                     DialysisSession.procedure_time > start,
                     DialysisSession.procedure_time < stop,
                 )
@@ -673,23 +681,35 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     .reset_index()
                 )
 
-                # Create histogram of dialysis frequency
-                histogram = _calculate_base_patient_histogram(
-                    cohort=median_data, group="median_hdsessionno"
-                )
+                freq_bins = [0.0, 1.0, 2.0, 3.0, 7.0]
+                freq_labels = ["1", "2", "3", ">3"]
+
+                frequency_hist = pd.cut(
+                    median_data.median_hdsessionno, bins=freq_bins, labels=freq_labels
+                ).value_counts(sort=False)
+
+                time_bins = [0, 200, 400, 600, 800, 1000, 1000000]
+                time_labels = [
+                    "<200",
+                    "201-400",
+                    "401-600",
+                    "601-800",
+                    "801-1000",
+                    ">1001",
+                ]
+
+                # create custom bins
+                time_hist = pd.cut(
+                    median_data.median_timedialysed, bins=time_bins, labels=time_labels
+                ).value_counts(sort=False)
 
                 # Update data_frequency with histogram data
-                data_frequency.x = histogram["median_hdsessionno"].tolist()
-                data_frequency.y = histogram["Count"].tolist()
-
-                # Create histogram of dialysis time
-                histogram = _calculate_base_patient_histogram(
-                    cohort=median_data, group="median_timedialysed"
-                )
+                data_frequency.x = frequency_hist.index.tolist()
+                data_frequency.y = frequency_hist.tolist()
 
                 # Update data_timedialised with histogram data
-                data_timedialised.x = histogram["median_timedialysed"].tolist()
-                data_timedialised.y = histogram["Count"].tolist()
+                data_timedialised.x = time_hist.index.tolist()
+                data_timedialised.y = time_hist.tolist()
 
         time_dialysis = Labelled2d(data=data_timedialised, metadata=dialysis_time_meta)
         frequency_dialysis = Labelled2d(
@@ -898,8 +918,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         incident_krt = self._calculate_therapies_incident_patients(subunit=unit)
         prevalent_krt = self._calculate_therapies_prevalent_patients(subunit=unit)
-        incentre_dialysis_frequency, _ = self._calculate_dialysis_frequency(
-            subunit=unit
+        incentre_dialysis_frequency, incentre_time_dialysed = (
+            self._calculate_dialysis_frequency(subunit=unit)
         )
         incident_initial_access = self._calculate_access_incident(subunit=unit)
 
@@ -912,6 +932,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             incident_krt=incident_krt,
             prevalent_krt=prevalent_krt,
             incentre_dialysis_frequency=incentre_dialysis_frequency,
+            incentre_time_dialysed=incentre_time_dialysed,
             incident_initial_access=incident_initial_access,
         )
 
@@ -942,11 +963,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         unit_stats: Dict[str, KRTStats] = {}
 
         # loop over each unit and calculate stats
-        for unit in self._patient_cohort.healthcarefacilitycode.unique():
-            if unit:
-                unit_stats[unit] = self.extract_satellite_stats(unit)
-            else:
-                unit_stats["Unknown/Incomplete"] = self.extract_satellite_stats(unit)
+        for unit in _get_satellite_list(self.facility, self.session):
+            unit_stats[unit] = self.extract_satellite_stats(unit)
 
         return UnitLevelKRTStats(all=self.extract_satellite_stats(), units=unit_stats)
 

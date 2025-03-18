@@ -193,7 +193,7 @@ class BaseTable(JSONModel):
             writer = csv.writer(csv_file)
             writer.writerow(self.headers)  # Write the headers
             for row in self.rows:
-                writer.writerow(row.data)
+                writer.writerow(row)
 
     def to_pandas(self) -> None:
         return pd.DataFrame(self.rows, columns=self.headers).astype("string")
