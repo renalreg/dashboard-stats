@@ -5,7 +5,7 @@ Pydantic classes for statistics which generate network graphs.
 from typing import List, Optional
 from pydantic import Field
 
-from ..models.base import JSONModel
+from ukrdc_stats.models.base import JSONModel
 
 
 class NetworkMetaData(JSONModel):

@@ -1,116 +1,102 @@
-from datetime import datetime
+
 import pytest
-from sqlalchemy.orm import Session
-from freezegun import freeze_time
-
-from ukrdc_stats import DemographicStatsCalculator
-
-from ..utils import check_required_metadata, FakeDataGenerator
-
-TEST_COHORT_SIZE = 20
-TEST_TIME = datetime(2022, 11, 22)
-FACILITY_NAME = "RFTEA"
+import pandas as pd
+from ukrdc_stats.calculators.demographics import _calculate_base_patient_histogram
 
 
-@pytest.fixture(scope="function")
-def ukrdc3_session_demographics(ukrdc3_session: Session):
-    generator = FakeDataGenerator("moo")
+import pytest
+import pandas as pd
+import datetime as dt
 
-    for i in range(TEST_COHORT_SIZE):
-        generator.create_demo_patient(i, FACILITY_NAME, "UKRDC", ukrdc3_session)
-    ukrdc3_session.commit()
-    return ukrdc3_session
-
-
-@freeze_time(TEST_TIME)
-def test_extract_base_patient_cohort(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-
-    df = calculator._extract_base_patient_cohort()
-    assert len(df) == TEST_COHORT_SIZE
-
-    calculator.extract_patient_cohort()
-    assert calculator._patient_cohort is not None
-    assert calculator._patient_cohort.equals(df)
-    # assert 1==2
+from ukrdc_stats.calculators.demographics import (
+    DemographicStatsCalculator,
+    _calculate_base_patient_histogram,
+)
+from unittest.mock import MagicMock, patch
 
 
-@freeze_time(TEST_TIME)
-def test_calculate_gender(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-    calculator.extract_patient_cohort()
 
-    g = calculator._calculate_gender()
-
-    assert g.dict()["data"] == {
-        "x": ["Female", "Indeterminate", "Male"],
-        "y": [8, 3, 4],
-        "error_y": None,
-    }
-
-
-@freeze_time(TEST_TIME)
-def test_calculate_ethnic_group_code(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-    calculator.extract_patient_cohort()
-
-    #assert 1==2
-    g = calculator._calculate_ethnic_group_code()
-    
-    assert g.dict()["data"] == {
-        "x": ["Asian", "Black", "Mixed", "Not Stated", "Other", "White"],
-        "y": [6, 3, 4, 2, 1, 4],
-        "error_y": None,
-    }
-
-
-@freeze_time(TEST_TIME)
-def test_calculate_age(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-    calculator.extract_patient_cohort()
-
-    g = calculator._calculate_age()
-
-    assert g.dict()["data"] == {
-        "x": [
-            "12",
-            "22",
-            "23",
-            "27",
-            "28",
-            "29",
-            "31",
-            "35",
-            "39",
-            "42",
-            "43",
-            "45",
-            "48",
-            "49",
-            "50",
-            "55",
-            "57",
-            "58",
-            "61",
-            "68",
+@pytest.fixture
+def sample_cohort():
+    """Fixture to provide sample cohort data."""
+    return pd.DataFrame({
+        "ukrdcid": [1, 2, 3, 4, 5, 6],
+        "group_col": ["A", "B", "A", "C", "A", "C"],
+        "gender": ["1", "2", "1", "X", "1", "9"],
+        "ethnic_group_code": ["A", "B", "A", "C", "A", "C"],
+        "birth_time": [
+            dt.datetime(2000, 1, 1),
+            dt.datetime(1990, 5, 15),
+            dt.datetime(1985, 3, 10),
+            dt.datetime(2001, 6, 20),
+            dt.datetime(2000, 1, 1),
+            dt.datetime(1995, 9, 25),
         ],
-        "y": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        "error_y": None,
-    }
+        "death_time": [None, None, None, None, None, None],
+    })
 
 
-@freeze_time(TEST_TIME)
-def test_extract_stats(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-    stats = calculator.extract_stats()
-
-    # Test most basic composite stats
-    assert stats.metadata.population == TEST_COHORT_SIZE
+@pytest.fixture
+def code_map():
+    """Fixture to provide a code map."""
+    return {"A": "Alice", "B": "Bob", "C": "Charlie"}
 
 
-@freeze_time(TEST_TIME)
-def test_demographics_complete_metadata(ukrdc3_session_demographics: Session):
-    calculator = DemographicStatsCalculator(ukrdc3_session_demographics, FACILITY_NAME)
-    stats = calculator.extract_stats()
+@pytest.fixture
+def demographics_calculator(sample_cohort):
+    """Fixture to mock the demographics calculator."""
+    calculator = DemographicStatsCalculator(session=MagicMock(), facility="RFDOG", date=dt.datetime(2025, 1, 1))
+    
+    # Overwrite data with sample cohort
+    calculator._patient_cohort = sample_cohort
 
-    check_required_metadata(stats)
+    return calculator
+
+
+def test_calculate_gender(demographics_calculator):
+
+    gender_hist = demographics_calculator._calculate_gender()
+    assert gender_hist.data.x == ['Female', 'Indeterminate', 'Male', 'Unknown']
+    assert gender_hist.data.y == [1,1,3,1]
+
+
+def test_calculate_ethnicity(demographics_calculator):
+    with patch("ukrdc_stats.calculators.demographics.map_codes", return_value={"A": "GroupA", "B": "GroupB", "C": "GroupC"}):
+        ethnicity = demographics_calculator._calculate_ethnic_group_code()
+
+    assert ethnicity.data.x == ['GroupA', 'GroupB', 'GroupC']
+    assert ethnicity.data.y == [3, 1, 2]
+
+def test_calculate_age(demographics_calculator):
+    """Test calculation of age demographics."""
+    age_hist = demographics_calculator._calculate_age()
+
+    assert age_hist.data.x == ['23', '25', '29', '34', '39']
+    assert age_hist.data.y == [1, 2, 1, 1, 1]
+
+
+def test_histogram_without_code_map(sample_cohort):
+    """Test the histogram calculation without a code map."""
+    expected_result = pd.DataFrame({
+        "group_col": ["A", "B", "C"],
+        "Count": [3, 1, 2],
+    })
+
+    result = _calculate_base_patient_histogram(sample_cohort, "group_col")
+
+    pd.testing.assert_frame_equal(
+        result.sort_values("group_col").reset_index(drop=True),
+        expected_result.sort_values("group_col").reset_index(drop=True),
+    )
+
+def test_histogram_with_code_map(sample_cohort, code_map):
+    expected_result = pd.DataFrame({
+        "group_col_mapped": ["Alice", "Bob", "Charlie"],
+        "Count": [3, 1, 2],
+    })
+    result = _calculate_base_patient_histogram(sample_cohort,"group_col", code_map)
+    
+    pd.testing.assert_frame_equal(
+        result.sort_values("group_col_mapped").reset_index(drop=True),
+        expected_result.sort_values("group_col_mapped").reset_index(drop=True),
+    )

@@ -3,22 +3,33 @@ Patient cohort demographics stats calculator
 """
 
 import datetime as dt
-from typing import Dict, Optional
-import warnings
+from typing import Optional, List
 from pydantic import Field
 
 import pandas as pd
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
-from ukrdc_sqla.ukrdc import Patient, PatientRecord
+from ukrdc_sqla.ukrdc import (
+    Patient,
+    PatientRecord,
+    Treatment,
+    ResultItem,
+    Observation,
+    SatelliteMap,
+)
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
-from ukrdc_stats.utils import age_from_dob, map_codes
+from ukrdc_stats.utils import (
+    age_from_dob,
+    map_codes,
+    _calculate_base_patient_histogram,
+    _mapped_if_exists,
+)
 
-from ..descriptions import demographic_descriptions
-from ..models.base import JSONModel
-from ..models.generic_2d import (
+from ukrdc_stats.descriptions import demographic_descriptions
+from ukrdc_stats.models.base import JSONModel
+from ukrdc_stats.models.generic_2d import (
     AxisLabels2d,
     Labelled2d,
     Labelled2dData,
@@ -47,80 +58,6 @@ class DemographicsStats(JSONModel):
     )
 
 
-def _mapped_key(key: str) -> str:
-    """Tiny convenience function to return a common mapped column name
-
-    Args:
-        key (str): Column to map
-
-    Returns:
-        str: Mapped column name
-    """
-    return f"{key}_mapped"
-
-
-def _calculate_base_patient_histogram(
-    cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
-) -> pd.DataFrame:
-    """Extract a histogram of the patient cohort, grouped by the given column
-
-    Args:
-        cohort (pd.DataFrame): Patient cohort
-        group (str): Column to group by
-
-    Raises:
-        NoCohortError: If the patient cohort is empty
-
-    Returns:
-        pd.DataFrame: Histogram dataframe of the patient cohort
-    """
-
-    if code_map:
-        mapped_column = _mapped_key(group)
-        cohort[mapped_column] = cohort[group].map(code_map)
-
-        histogram = (
-            cohort[["ukrdcid", mapped_column]]
-            .drop_duplicates()
-            .groupby([mapped_column])
-            .count()
-            .reset_index()
-        )
-
-    else:
-        histogram = (
-            cohort[["ukrdcid", group]]
-            .drop_duplicates()
-            .groupby([group])
-            .count()
-            .reset_index()
-        )
-
-    return histogram.rename(columns={"ukrdcid": "Count"})
-
-
-def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
-    """
-    Convenience function to return the mapped column if it exists,
-    otherwise return the original column
-
-    Args:
-        df (pd.DataFrame): Input dataframe
-        column (str): Column to return
-
-    Returns:
-        pd.Series: Mapped column if it exists, otherwise the original column
-    """
-    mapped_column: str = _mapped_key(column)
-    if mapped_column in df.columns:
-        return df[mapped_column]
-    else:
-        warnings.warn(
-            f"Column {mapped_column} does not exist in dataframe, returning {column} instead"
-        )
-        return df[column]
-
-
 class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal information listed in the patient table"""
 
@@ -139,11 +76,23 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # Set the date to calculate at, defaulting to today
         self.date: dt.datetime = date or dt.datetime.today()
 
+    def _get_satellite_list(self) -> List[str]:
+        """Get the list of satellites for the facility."""
+        return (
+            self.session.execute(
+                select(SatelliteMap.satellite_code).where(
+                    SatelliteMap.main_unit_code == self.facility
+                )
+            )
+            .scalars()
+            .all()
+        )
+
     def _extract_base_patient_cohort(
         self,
-        include_tracing: Optional[bool] = False,
+        include_tracing: Optional[bool] = True,
         limit_to_ukrdc: Optional[bool] = True,
-        limit_query_length: Optional[int] = None,
+        ukrr_expanded: Optional[bool] = False,
     ) -> pd.DataFrame:
         """Main database queries to produce a dataframe containing the patient demographics
         for a specified Unit.
@@ -155,7 +104,53 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: _description_
         """
 
-        # TODO: Add ability to filter on modality
+        sats = self._get_satellite_list()
+
+        # the following reflect criteria which are applied to the ukrr
+        # quarterly extract process (i.e the criteria used to load data into
+        # the renalregistry database). See here for more information:
+        # https://github.com/renalreg/ukrr_quarterly_extract/blob/ec65cc06858cdabaa379e9e18b8f0614fc2c9af2/ukrr_extract/extract_functions.py#L342
+
+        if ukrr_expanded:
+            ukkr_cohort_query = (
+                select(Treatment.pid)
+                .distinct()
+                .where(
+                    or_(
+                        and_(
+                            Treatment.fromtime < self.date,
+                            Treatment.healthcarefacilitycode.in_(sats),
+                            or_(
+                                Treatment.totime >= self.date - dt.timedelta(days=90),
+                                Treatment.totime.is_(None),
+                            ),
+                        ),
+                        and_(
+                            ResultItem.observation_time < self.date,  # pylint: disable=C0121
+                            ResultItem.observation_time
+                            >= self.date - dt.timedelta(days=90),
+                        ),
+                        and_(
+                            Observation.observation_time < self.date,  # pylint: disable=C0121
+                            Observation.observation_time
+                            >= self.date - dt.timedelta(days=90),
+                        ),
+                    )
+                )
+            )
+        else:
+            ukkr_cohort_query = (
+                select(Treatment.pid)
+                .distinct()
+                .where(
+                    Treatment.fromtime < self.date - dt.timedelta(days=90),
+                    Treatment.healthcarefacilitycode.in_(sats),
+                    or_(
+                        Treatment.totime >= self.date,
+                        Treatment.totime.is_(None),
+                    ),
+                )
+            )
 
         # select all patients who have a patientrecord sent from the facility
         patient_query = (
@@ -165,15 +160,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnic_group_code,
                 Patient.birth_time,
                 Patient.death_time,
-            )  # type:ignore
-            .join(PatientRecord, Patient.pid == PatientRecord.pid)  # type:ignore
+            )
+            .join(PatientRecord, Patient.pid == PatientRecord.pid)
             .where(
-                and_(
-                    PatientRecord.sendingfacility == self.facility,
-                    or_(
-                        Patient.death_time.is_(None), Patient.death_time > self.date
-                    ),  # only calculate demographics for living patients
-                )
+                PatientRecord.sendingfacility == self.facility,
+                PatientRecord.pid.in_(ukkr_cohort_query),
             )
         )
 
@@ -182,21 +173,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
         # limit number of records returned (for benchmarking)
-        if limit_query_length:
-            patients = next(
-                pd.read_sql(
-                    patient_query, self.session.bind, chunksize=limit_query_length
-                )
-            )
-
-        else:
-            patients = pd.read_sql(patient_query, self.session.bind)
+        patients = pd.DataFrame(self.session.execute(patient_query)).drop_duplicates()
 
         if include_tracing:
-            # look to see to find data that might exclude patients from statistics
-            # TODO: I still think there is more nuance than this. What if a patient has
-            # been discharged or moved abroad or any other reason that they might appear
-            # but not have their death recorded.
+            # Can we trace deathtime by crosslinking records in the ukrdc?
             exclude_patients = (
                 select(PatientRecord.ukrdcid)
                 .join(Patient, Patient.pid == PatientRecord.pid)  # type:ignore
@@ -211,7 +191,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 )
             )
 
-            exclude_patients_list = pd.read_sql(exclude_patients, self.session.bind)
+            exclude_patients_list = pd.DataFrame(
+                self.session.execute(exclude_patients)
+            ).drop_duplicates()
 
             # filter out patients in the exclusion list
             patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
@@ -242,13 +224,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        #        print(ethnic_groups)
         ethnic_group_map = map_codes(
             "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
         )
 
         ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort, "ethnicgroupcode", ethnic_group_map
+            self._patient_cohort, "ethnic_group_code", ethnic_group_map
         )
 
         return Labelled2d(
@@ -259,7 +240,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(ethnic_group_code, "ethnicgroupcode").tolist(),
+                x=_mapped_if_exists(ethnic_group_code, "ethnic_group_code").tolist(),
                 y=ethnic_group_code.Count.tolist(),
             ),
         )
@@ -269,8 +250,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
-        self._patient_cohort["age"] = self._patient_cohort["birthtime"][
-            pd.isna(self._patient_cohort.deathtime)
+        self._patient_cohort["age"] = self._patient_cohort["birth_time"][
+            pd.isna(self._patient_cohort.death_time)
         ].apply(lambda dob: age_from_dob(self.date, dob))
 
         age = _calculate_base_patient_histogram(self._patient_cohort, "age")
@@ -289,7 +270,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         self,
         include_tracing: Optional[bool] = False,
         limit_to_ukrdc: Optional[bool] = True,
-        limit_query_length: Optional[int] = None,
+        ukrr_expanded: Optional[bool] = False,
     ):
         """
         Extract a complete patient cohort dataframe to be used in stats calculations
@@ -299,14 +280,14 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         self._patient_cohort = self._extract_base_patient_cohort(
             include_tracing=include_tracing,
             limit_to_ukrdc=limit_to_ukrdc,
-            limit_query_length=limit_query_length,
+            ukrr_expanded=ukrr_expanded,
         )
 
     def extract_stats(
         self,
         include_tracing: Optional[bool] = False,
         limit_to_ukrdc: Optional[bool] = True,
-        limit_query_length: Optional[int] = None,
+        ukrr_expanded: Optional[bool] = False,
     ) -> DemographicsStats:
         """Extract all stats for the demographics module
 
@@ -318,7 +299,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             self.extract_patient_cohort(
                 include_tracing=include_tracing,
                 limit_to_ukrdc=limit_to_ukrdc,
-                limit_query_length=limit_query_length,
+                ukrr_expanded=ukrr_expanded,
             )
 
         if self._patient_cohort is None:
