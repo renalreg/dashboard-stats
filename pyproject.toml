@@ -15,7 +15,7 @@ SQLAlchemy = "^2.0.0"
 pandas = "^2.2.2" 
 pydantic = "^1.10.1" 
 python = "^3.9" 
-ukrdc-sqla = "^2.0.0" 
+ukrdc-sqla = {git ="http://git@github.com/renalreg/ukrdc-sqla.git", branch = "xml-archieve-models"}
 freezegun = "^1.2.2"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
 setuptools = "^75.8.0"
@@ -27,7 +27,6 @@ coverage = {extras = ["toml"], version = "^6.4"}
 mimesis = "^6.1.1"
 pytest = "^7.1.2"
 pytest-cov = "^4.0.0"
-tox = "^3.24.5"
 sqlalchemy-utils = "^0.41.2"
 numpy = "^1.14.5"
 mypy = "^0.982"
