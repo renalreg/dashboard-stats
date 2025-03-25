@@ -18,14 +18,19 @@ from ukrdc_stats.models.base import JSONModel
 
 
 def get_archive_session(session: Session) -> Session:
-    # function to yield session of the xml v5 archive db
+    # function to return a session of the xml v5 archive db
     # (xmlschemaconverter storage) not sure why this doesn't work
+    db_url = session.bind.url
 
-    archive_db_name = "removed_xml_archive"
-    archive_db_url = str(session.bind.url).replace(
-        session.bind.url.database, archive_db_name
-    )
-    engine = create_engine(archive_db_url)
+    password = db_url.password
+    username = db_url.username
+    host = db_url.host
+    port = db_url.port
+    drivername = db_url.drivername
+    database = "removed_xml_archive"
+
+    new_url = f"{drivername}://{username}:{password}@{host}:{port}/{database}"
+    engine = create_engine(new_url)
     session = sessionmaker(bind=engine)
 
     with session() as archive_session:
@@ -69,6 +74,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.birthtime,
                 Patient.deathtime,
                 Treatment.admitreasoncode,
+                Treatment.admitreasoncodestd,
+                Treatment.admitreasondesc,
                 Treatment.fromtime,
                 Treatment.totime,
                 Patient.gender.label("sex"),
@@ -99,9 +106,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .order_by(PatientRecord.pid)
         )
 
-        base_cohort = pd.DataFrame(
-            self.session.execute(query_ckd_patients)
-        ).reset_index(drop=True)
+        base_cohort = (
+            pd.DataFrame(self.session.execute(query_ckd_patients))
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
 
         return base_cohort
 
@@ -129,18 +138,27 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         return patients_numbers.reset_index(drop=True).astype(str)
 
     def _get_archive_data(self, patient_numbers: pd.DataFrame):
-        query = (
+        assessments_query = (
             select(
-                XMLPatient.nationalid,
+                XMLPatient.nationalid.label("patientid"),
                 XMLPatient.organization,
                 XMLPatient.numbertype,
-                XMLTreatment.admitreasoncode,
-                XMLTreatment.fromtime,
-                XMLTreatment.totime,
+                XMLPatient.creation_date,
+                Assessment.assessmentstart,
+                Assessment.assessmentend,
+                Assessment.assessmenttypecode,
+                Assessment.assessmenttypecodestd,
+                Assessment.assessmenttypecodedesc,
+                Assessment.assessmentoutcomecode,
+                Assessment.assessmentoutcomecodestd,
+                Assessment.assessmentoutcomecodedesc,
             )
-            .join(XMLTreatment, XMLTreatment.patientid == XMLPatient.id, isouter=True)
-            .join(Assessment, Assessment.patientid == XMLPatient.id, isouter=True)
+            .join(
+                Assessment,
+                Assessment.patientid == XMLPatient.id,
+            )
             .where(
+                Assessment.assessmentstart < self._prevalence_point,
                 tuple_(
                     XMLPatient.nationalid,
                     XMLPatient.organization,
@@ -154,43 +172,152 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                         )
                     )
                 ),
-                XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
+            )
+        )
+
+        treatments_query = (
+            select(
+                XMLPatient.nationalid.label("patientid"),
+                XMLPatient.organization,
+                XMLPatient.numbertype,
+                XMLPatient.creation_date,
+                XMLTreatment.admitreasoncode,
+                XMLTreatment.admitreasoncodestd,
+                XMLTreatment.admitreasondesc,
+                XMLTreatment.fromtime,
+                XMLTreatment.totime,
+            )
+            .join(
+                XMLTreatment,
+                XMLTreatment.patientid == XMLPatient.id,
+            )
+            .where(
                 XMLTreatment.fromtime < self._prevalence_point,
                 or_(
                     XMLTreatment.totime > self._prevalence_point,
                     XMLTreatment.totime.is_(None),
                 ),
+                XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
+                tuple_(
+                    XMLPatient.nationalid,
+                    XMLPatient.organization,
+                    XMLPatient.numbertype,
+                ).in_(
+                    list(
+                        zip(
+                            patient_numbers["patientid"],
+                            patient_numbers["organization"],
+                            patient_numbers["numbertype"],
+                        )
+                    )
+                ),
             )
         )
 
-        archive_cohort = pd.DataFrame(self.v5_archive_session.execute(query))
+        assessments = pd.DataFrame(
+            self.v5_archive_session.execute(assessments_query)
+        ).reset_index(drop=True)
+        treatments = pd.DataFrame(
+            self.v5_archive_session.execute(treatments_query)
+        ).reset_index(drop=True)
 
-        # join the pid back in with a merge
-        archive_cohort = archive_cohort.rename(columns={"nationalid": "patientid"})
-        archive_cohort = pd.merge(
-            archive_cohort,
+        # drop ids and deduplicate (incase same patient has been written multiple times)
+        assessments = pd.merge(
+            assessments,
             patient_numbers,
             on=["patientid", "organization", "numbertype"],
+            how="inner",
+        )
+        treatments = pd.merge(
+            treatments,
+            patient_numbers,
+            on=["patientid", "organization", "numbertype"],
+            how="inner",
         )
 
-        return archive_cohort
+        assessments = assessments.drop(
+            columns=["patientid", "organization", "numbertype"]
+        ).drop_duplicates()
+        treatments = treatments.drop(
+            columns=["patientid", "organization", "numbertype"]
+        ).drop_duplicates()
 
-    def extract_patient_cohort(self):
+        return treatments, assessments
+
+    def _get_test_results(self, patient_ids):
+        """gets the most recent creatinine and lab egfr
+
+        Args:
+            patient_ids (_type_): _description_
+        """
+        return pd.DataFrame([], columns=["pid", "creat", "egfr"])
+
+    def _extract_base_patient_cohort(self):
         # Get main cohort from ukrdc
-        self._patient_cohort = self._core_query()
+        cohort = self._core_query()
 
-        if self._patient_cohort.empty:
+        if cohort.empty:
             return
 
         # Get all know patient identifiers for matching
-        patient_numbers = self._get_patient_numbers(
-            self._patient_cohort["pid"].tolist()
-        )
+        patient_numbers = self._get_patient_numbers(cohort["pid"].tolist())
 
         # Send patient numbers to the archive to extract data from there
-        self._archive_cohort = self._get_archive_data(patient_numbers)
+        treatments, assessments = self._get_archive_data(patient_numbers)
 
-        # now we combine the three dataframes in accordance with the
-        # specification
+        # correct the treatments using the archive data
+        # we assume treatments without corresponding ukrdc record are invalid
+        # this could/should be restricted to codes that can map to eachother
+        # e.g. 902 -> 900 where like '9%' or something
+        cohort = pd.merge(
+            cohort,
+            treatments,
+            on=["pid", "fromtime", "totime"],
+            how="left",
+            suffixes=("_ukrdc", ""),
+        )
 
-        pass
+        # add in treatments not in the archive and drop ukrdc values
+        ukrdc_only = cohort["admitreasoncode"].isnull()
+        cohort.loc[
+            ukrdc_only, ["admitreasoncode", "admitreasoncodestd", "admitreasondesc"]
+        ] = cohort.loc[
+            ukrdc_only,
+            [
+                "admitreasoncode_ukrdc",
+                "admitreasoncodestd_ukrdc",
+                "admitreasondesc_ukrdc",
+            ],
+        ].values
+        cohort = cohort.drop(
+            columns=[
+                "admitreasoncode_ukrdc",
+                "admitreasoncodestd_ukrdc",
+                "admitreasondesc_ukrdc",
+            ]
+        )
+
+        # join assessments
+        cohort = pd.merge(
+            cohort,
+            assessments,
+            on=["pid"],
+            how="left",
+            suffixes=("_treatment", "_assessment"),
+        )
+
+        test_results = self._get_test_results(cohort["pid"].tolist())
+
+        # get test results
+        cohort = pd.merge(
+            cohort,
+            test_results,
+            on=["pid"],
+            how="left",
+        )
+
+        return cohort
+
+    def extract_patient_cohort(self):
+        self._patient_cohort = self._extract_base_patient_cohort()
+        return self._patient_cohort

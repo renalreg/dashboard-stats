@@ -18,11 +18,9 @@ with ukrdc_sessionmaker() as ukrdc_session:
             session=ukrdc_session, 
             facility=facility, 
             prevalence_point=prevalence_point,
-            v5_archive_session=archive_session
-    )
-        cohort = calculator.extract_patient_cohort() 
-        
-        print(":)")
+        )
+        cohort = calculator._extract_base_patient_cohort()
+        print(cohort.head())
 
 
     
