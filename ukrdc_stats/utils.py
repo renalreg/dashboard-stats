@@ -10,17 +10,17 @@ import warnings
 from ukrdc_sqla.ukrdc import CodeMap, SatelliteMap
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
-from typing import Optional, Dict, List, Union
+from typing import Optional, Dict, List
 
 
 def egfr(
-    scr: int,
+    scr: float,
     scr_unit: str,
     scr_date: dt.datetime,
     dob: dt.datetime,
     sex: int = 1,
     ethnicity: Optional[str] = None,
-) -> Union[int, pd.NA]:
+) -> Optional[int]:
     """Function for calculating the egfr based on the equation found here:
     http://nephron.com/epi_equation
 
@@ -37,12 +37,12 @@ def egfr(
     """
 
     if pd.isna(scr) or pd.isna(scr_date):
-        return pd.NA
+        return
 
     age = age_from_dob_exact(scr_date, dob)
 
     if age < 18:
-        return pd.NA
+        return
 
     # only accept creatinines with accepted units
     if scr_unit == "umol/L":
@@ -54,7 +54,7 @@ def egfr(
     elif scr_unit == "mg/dL":
         pass
     else:
-        return pd.NA
+        return
 
     if ethnicity and ethnicity == "Black":
         ethnicity_multiplier = 1.159
