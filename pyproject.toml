@@ -15,7 +15,7 @@ SQLAlchemy = "^2.0.0"
 pandas = "^2.2.2" 
 pydantic = "^1.10.1" 
 python = "^3.9" 
-ukrdc-sqla = {git ="http://git@github.com/renalreg/ukrdc-sqla.git", branch = "xml-archieve-models"}
+ukrdc-sqla = {git ="http://git@github.com/renalreg/ukrdc-sqla.git", branch = "main"}
 freezegun = "^1.2.2"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
 setuptools = "^75.8.0"
