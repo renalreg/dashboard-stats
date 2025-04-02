@@ -1,11 +1,21 @@
 """Calculators associated with ckd. In particular the care planning."""
 
+from operator import and_
 import pandas as pd
 import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_
 from sqlalchemy.orm import Session, sessionmaker
 
-from ukrdc_sqla.ukrdc import Patient, PatientRecord, Treatment, Address, PatientNumber
+from ukrdc_sqla.ukrdc import (
+    Patient,
+    PatientRecord,
+    Treatment,
+    Address,
+    PatientNumber,
+    ResultItem,
+    LabOrder,
+    CodeMap,
+)
 from ukrdc_sqla.xmlarchive import (
     Patient as XMLPatient,
     Assessment,
@@ -15,6 +25,7 @@ from ukrdc_sqla.xmlarchive import (
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.models.generic_2d import BaseTable
 from ukrdc_stats.models.base import JSONModel
+from ukrdc_stats.utils import egfr
 
 
 def get_archive_session(session: Session) -> Session:
@@ -80,13 +91,20 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Treatment.totime,
                 Patient.gender.label("sex"),
                 Address.postcode,
-                Patient.ethnic_group_code,
-                Patient.ethnic_group_code_std,
-                Patient.ethnic_group_description,
+                Patient.ethnicgroupcode,
+                Patient.ethnicgroupdesc,
+                CodeMap.destination_code.label("ukkaethnicity"),
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
             .join(Address, Address.pid == PatientRecord.pid, isouter=True)
+            .outerjoin(
+                CodeMap,
+                and_(
+                    CodeMap.source_code == Patient.ethnicgroupcode,
+                    CodeMap.source_coding_standard == Patient.ethnicgroupcodestd,
+                ),
+            )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
             .where(
                 Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
@@ -102,6 +120,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Address.addressuse == "H",
                 PatientRecord.sendingfacility == self.facility,
                 PatientRecord.sendingextract == "UKRDC",
+                CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
             )
             .order_by(PatientRecord.pid)
         )
@@ -246,11 +265,70 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
     def _get_test_results(self, patient_ids):
         """gets the most recent creatinine and lab egfr
-
+        "QBLA1", "QBLAB", "QBLAL"
         Args:
-            patient_ids (_type_): _description_
+            patient_ids (_type_):
         """
-        return pd.DataFrame([], columns=["pid", "creat", "egfr"])
+
+        query = (
+            select(
+                LabOrder.pid,
+                ResultItem.serviceidcode,
+                ResultItem.resultvalue,
+                ResultItem.resultvalueunits,
+                ResultItem.observationtime,
+            )
+            .distinct(LabOrder.pid, ResultItem.serviceidcode)
+            .join(LabOrder, LabOrder.id == ResultItem.order_id)
+            .where(
+                ResultItem.serviceidcode.in_(["QBLA1", "QBLAB", "QBLAL"]),
+                LabOrder.pid.in_(patient_ids),
+                ResultItem.observation_time < self._prevalence_point,
+            )
+            .order_by(
+                LabOrder.pid,
+                ResultItem.serviceidcode,
+                ResultItem.observation_time.desc(),
+            )
+        )
+
+        results = pd.DataFrame(self.session.execute(query).all())
+
+        # separate and clean
+        egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAL"])].copy()
+        egfr_results["resultvalue"] = (
+            egfr_results["resultvalue"].str.replace("<", "").str.replace(">", "")
+        )
+        egfr_results["resultvalue"] = pd.to_numeric(
+            egfr_results["resultvalue"], errors="coerce"
+        )
+        # egfr_results = egfr_results.drop(columns=['serviceidcode'])
+
+        # Drop rows where eGFR conversion to numeric failed then deduplicate
+        egfr_results = egfr_results.dropna(subset=["resultvalue"])
+
+        egfr_results = egfr_results.sort_values("observationtime").drop_duplicates(
+            subset=["pid"], keep="last"
+        )
+
+        # Get creatinine results
+        creatinine_results = results[
+            results["serviceidcode"] == "QBLA1"
+        ]  # .drop(columns=['serviceidcode'])
+        creatinine_results["resultvalue"] = pd.to_numeric(
+            creatinine_results["resultvalue"], errors="coerce"
+        )
+
+        # Merge creatinine and eGFR results
+        merged_results = pd.merge(
+            creatinine_results,
+            egfr_results,
+            on="pid",
+            how="outer",
+            suffixes=("_creat", "_labegfr"),
+        )
+
+        return merged_results
 
     def _extract_base_patient_cohort(self):
         # Get main cohort from ukrdc
@@ -308,13 +386,45 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         test_results = self._get_test_results(cohort["pid"].tolist())
 
-        # get test results
+        # get test results and cakculate egfr
         cohort = pd.merge(
             cohort,
             test_results,
             on=["pid"],
             how="left",
         )
+
+        cohort["calculated_egfr"] = cohort.apply(
+            lambda row: egfr(
+                row["resultvalue_creat"],
+                row["resultvalueunits_creat"],
+                row["observationtime_creat"],
+                row["birthtime"],
+                row["sex"],
+                row["ukkaethnicity"],
+            ),
+            axis=1,
+        )
+
+        # Get universal patient ids (NHS number ideally)
+        patient_ids_sorted = (
+            patient_numbers.drop(columns=["numbertype"])
+            .sort_values(
+                by=["organization"],
+                key=lambda x: x.map({"NHS": 0, "CHI": 1, "HSC": 2, "LOCALHOSP": 3}),
+            )
+            .drop_duplicates(subset=["pid"], keep="first")
+        )
+
+        # Merge patient them back into the cohort
+        cohort = pd.merge(
+            cohort,
+            patient_ids_sorted,
+            on=["pid"],
+            how="left",
+        )
+
+        cohort.rename(columns={"patientid": "externalid"}, inplace=True)
 
         return cohort
 

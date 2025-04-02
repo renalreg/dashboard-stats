@@ -10,7 +10,8 @@ archive_conn._connection_details["db_name"] = "removed_xml_archive"
 archive_sessionmaker = archive_conn.session_maker()
 
 facility = "RCSLB"
-prevalence_point = dt.datetime.now()
+prevalence_point = dt.datetime(2024, 3, 1,0,0,0)
+#prevalence_point = dt.datetime.now()
 
 with ukrdc_sessionmaker() as ukrdc_session:
     with archive_sessionmaker() as archive_session:
@@ -21,6 +22,3 @@ with ukrdc_sessionmaker() as ukrdc_session:
         )
         cohort = calculator._extract_base_patient_cohort()
         print(cohort.head())
-
-
-    

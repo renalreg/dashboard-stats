@@ -10,7 +10,75 @@ import warnings
 from ukrdc_sqla.ukrdc import CodeMap, SatelliteMap
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
+
+
+def egfr(
+    scr: int,
+    scr_unit: str,
+    scr_date: dt.datetime,
+    dob: dt.datetime,
+    sex: int = 1,
+    ethnicity: Optional[str] = None,
+) -> Union[int, pd.NA]:
+    """Function for calculating the egfr based on the equation found here:
+    http://nephron.com/epi_equation
+
+    Args:
+        scr (int): serum creatinine level
+        scr_unit (str): unit of serum creatinine
+        scr_date (dt.datetime): date of serum creatinine measurement
+        dob (dt.datetime): date of birth
+        sex (int, optional): sex of patient. Defaults to 1 (male).
+        ethnicity (Optional[str], optional): ethnicity of patient. Defaults to None.
+
+    Returns:
+        Optional[int]: estimated glomerular filtration rate
+    """
+
+    if pd.isna(scr) or pd.isna(scr_date):
+        return pd.NA
+
+    age = age_from_dob_exact(scr_date, dob)
+
+    if age < 18:
+        return pd.NA
+
+    # only accept creatinines with accepted units
+    if scr_unit == "umol/L":
+        scr = scr / 88.4
+    elif scr_unit == "mmol/L":
+        scr = scr / (10 * 88.4)
+    elif scr_unit == "g/L":
+        scr = 100.0 * scr
+    elif scr_unit == "mg/dL":
+        pass
+    else:
+        return pd.NA
+
+    if ethnicity and ethnicity == "Black":
+        ethnicity_multiplier = 1.159
+    else:
+        ethnicity_multiplier = 1.0
+
+    if sex == "2":
+        kappa = 0.7
+        alpha = -0.329
+        multiplier = 1.018
+    else:
+        kappa = 0.9
+        alpha = -0.411
+        multiplier = 1.0
+
+    scr_frac = scr / kappa
+    if scr_frac > 1:
+        multiplier = multiplier * (scr_frac**-1.209)
+    else:
+        multiplier = multiplier * (scr_frac**alpha)
+
+    egfr = round(141 * multiplier * (0.993**age) * ethnicity_multiplier)
+
+    return egfr
 
 
 def age_from_dob(date: dt.date, dob: dt.date) -> int:
