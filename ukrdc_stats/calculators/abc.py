@@ -43,7 +43,7 @@ class AbstractFacilityStatsCalculator(ABC):
     def produce_report(
         self,
         output_columns: List[str],
-        input_filters: list[str] =None,
+        input_filters: list[str] = None,
         include_ni: bool = False,
     ) -> BaseTable:
         """
@@ -60,7 +60,6 @@ class AbstractFacilityStatsCalculator(ABC):
             patient_record_filtered = self._patient_cohort.query(dataframe_filter)
         else:
             patient_record_filtered = self._patient_cohort
-
 
         population = len(patient_record_filtered.pid.drop_duplicates())
 

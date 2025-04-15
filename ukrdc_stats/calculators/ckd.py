@@ -77,22 +77,13 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         pass
 
     def _core_query(self):
-
         # get a single address per patient with a preference for home address
         address_subquery = (
-            select(
-                Address.pid, 
-                Address.postcode, 
-                Address.addressuse
-            )
-            .order_by(
-                case((Address.addressuse == "H", 0), 
-                else_=1
-            ))
+            select(Address.pid, Address.postcode, Address.addressuse)
+            .order_by(case((Address.addressuse == "H", 0), else_=1))
             .limit(1)
             .subquery()
         )
-
 
         query_ckd_patients = (
             select(
@@ -114,10 +105,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
-            .outerjoin(
-                address_subquery,
-                address_subquery.c.pid == PatientRecord.pid
-            )
+            .outerjoin(address_subquery, address_subquery.c.pid == PatientRecord.pid)
             .outerjoin(
                 CodeMap,
                 and_(
@@ -141,7 +129,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.sendingextract == "UKRDC",
                 or_(
                     CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
-                    CodeMap.destination_coding_standard==None
+                    CodeMap.destination_coding_standard.is_(None),
                 ),
             )
             .order_by(PatientRecord.pid)
@@ -259,37 +247,41 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             self.v5_archive_session.execute(assessments_query)
         ).reset_index(drop=True)
         if assessments.empty:
-            assessments = pd.DataFrame(columns=[
-                "patientid",
-                "organization",
-                "numbertype",
-                "creation_date",
-                "assessmentstart",
-                "assessmentend",
-                "assessmenttypecode",
-                "assessmenttypecodestd",
-                "assessmenttypecodedesc",
-                "assessmentoutcomecode",
-                "assessmentoutcomecodestd",
-                "assessmentoutcomecodedesc",
-            ])
+            assessments = pd.DataFrame(
+                columns=[
+                    "patientid",
+                    "organization",
+                    "numbertype",
+                    "creation_date",
+                    "assessmentstart",
+                    "assessmentend",
+                    "assessmenttypecode",
+                    "assessmenttypecodestd",
+                    "assessmenttypecodedesc",
+                    "assessmentoutcomecode",
+                    "assessmentoutcomecodestd",
+                    "assessmentoutcomecodedesc",
+                ]
+            )
 
         treatments = pd.DataFrame(
             self.v5_archive_session.execute(treatments_query)
         ).reset_index(drop=True)
         if treatments.empty:
-            treatments = pd.DataFrame(columns=[
-                "patientid",
-                "organization",
-                "numbertype",
-                "creation_date",
-                "admitreasoncode",
-                "admitreasoncodestd",
-                "admitreasondesc",
-                "fromtime",
-                "totime",
-            ])
- 
+            treatments = pd.DataFrame(
+                columns=[
+                    "patientid",
+                    "organization",
+                    "numbertype",
+                    "creation_date",
+                    "admitreasoncode",
+                    "admitreasoncodestd",
+                    "admitreasondesc",
+                    "fromtime",
+                    "totime",
+                ]
+            )
+
         # drop ids and deduplicate (incase same patient has been written multiple times)
         assessments = pd.merge(
             assessments,
@@ -310,9 +302,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         treatments = treatments.drop(
             columns=["patientid", "organization", "numbertype"]
         ).drop_duplicates()
-
-
-
 
         return treatments, assessments
 
@@ -347,9 +336,14 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         results = pd.DataFrame(self.session.execute(query).all())
         if results.empty:
-            columns = ["pid", "serviceidcode", "resultvalue", "resultvalueunits", "observationtime"]
+            columns = [
+                "pid",
+                "serviceidcode",
+                "resultvalue",
+                "resultvalueunits",
+                "observationtime",
+            ]
             results = pd.DataFrame(columns=columns)
-
 
         # separate and clean
         egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAL"])].copy()
@@ -383,7 +377,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             how="outer",
             suffixes=("_creat", "_labegfr"),
         )
-
 
         return merged_results
 
