@@ -15,6 +15,8 @@ end = dt.datetime.now()
 
 
 with sessionmaker() as session:
-    calculator = KRTStatsCalculator(session=session, facility=facility, from_time=start, to_time=end)
+    calculator = KRTStatsCalculator(
+        session=session, 
+        facility=facility, from_time=start, to_time=end)
     report = calculator.generate_cohort_report(cohort="incident", include_ni=True)
     report.table.to_csv("report.csv")
