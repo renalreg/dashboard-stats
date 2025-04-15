@@ -7,13 +7,13 @@ import csv
 import pandas as pd
 
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import List, Optional, Any
 from pydantic import Field
 
 from ukrdc_stats.models.base import JSONModel
 
-Number = Union[int, float, None]
-RowData = List[Union[Number, str]]
+Number = int | float | None
+RowData = List[Any]
 
 
 # Generics
@@ -189,7 +189,7 @@ class BaseTable(JSONModel):
 
         :param file_path: The path to the file where the CSV data will be written.
         """
-        with open(file_path, mode="w", newline="") as csv_file:
+        with open(file_path, mode="w", newline="", encoding="utf-8") as csv_file:
             writer = csv.writer(csv_file)
             writer.writerow(self.headers)  # Write the headers
             for row in self.rows:

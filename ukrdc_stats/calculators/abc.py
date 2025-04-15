@@ -42,8 +42,8 @@ class AbstractFacilityStatsCalculator(ABC):
 
     def produce_report(
         self,
-        input_filters: list[str],
         output_columns: List[str],
+        input_filters: list[str] =None,
         include_ni: bool = False,
     ) -> BaseTable:
         """
@@ -55,8 +55,14 @@ class AbstractFacilityStatsCalculator(ABC):
         if self._patient_cohort is None:
             raise NoCohortError
 
-        dataframe_filter = "(" + ")&(".join(input_filters) + ")"
-        patient_record_filtered = self._patient_cohort.query(dataframe_filter)
+        if input_filters:
+            dataframe_filter = "(" + ")&(".join(input_filters) + ")"
+            patient_record_filtered = self._patient_cohort.query(dataframe_filter)
+        else:
+            patient_record_filtered = self._patient_cohort
+
+
+        population = len(patient_record_filtered.pid.drop_duplicates())
 
         # Create a table of the specified records
         report = (
@@ -77,8 +83,6 @@ class AbstractFacilityStatsCalculator(ABC):
 
             report = pd.merge(report, patient_numbers, on="pid", how="left")
             report["nhsno"] = report["nhsno"].fillna("Unknown")
-
-        population = len(report.pid.drop_duplicates())
 
         return population, BaseTable(
             headers=report.columns.tolist(),

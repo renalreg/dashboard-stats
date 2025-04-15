@@ -3,7 +3,7 @@
 from operator import and_
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, or_, create_engine, tuple_
+from sqlalchemy import select, or_, create_engine, tuple_, case
 from sqlalchemy.orm import Session, sessionmaker
 
 from ukrdc_sqla.ukrdc import (
@@ -77,6 +77,23 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         pass
 
     def _core_query(self):
+
+        # get a single address per patient with a preference for home address
+        address_subquery = (
+            select(
+                Address.pid, 
+                Address.postcode, 
+                Address.addressuse
+            )
+            .order_by(
+                case((Address.addressuse == "H", 0), 
+                else_=1
+            ))
+            .limit(1)
+            .subquery()
+        )
+
+
         query_ckd_patients = (
             select(
                 PatientRecord.pid,
@@ -90,14 +107,17 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Treatment.fromtime,
                 Treatment.totime,
                 Patient.gender.label("sex"),
-                Address.postcode,
+                address_subquery.c.postcode,
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
-            .join(Address, Address.pid == PatientRecord.pid, isouter=True)
+            .outerjoin(
+                address_subquery,
+                address_subquery.c.pid == PatientRecord.pid
+            )
             .outerjoin(
                 CodeMap,
                 and_(
@@ -117,10 +137,12 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     Patient.deathtime > self._prevalence_point,
                     Patient.deathtime.is_(None),
                 ),
-                Address.addressuse == "H",
                 PatientRecord.sendingfacility == self.facility,
                 PatientRecord.sendingextract == "UKRDC",
-                CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
+                or_(
+                    CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
+                    CodeMap.destination_coding_standard==None
+                ),
             )
             .order_by(PatientRecord.pid)
         )
@@ -236,10 +258,38 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         assessments = pd.DataFrame(
             self.v5_archive_session.execute(assessments_query)
         ).reset_index(drop=True)
+        if assessments.empty:
+            assessments = pd.DataFrame(columns=[
+                "patientid",
+                "organization",
+                "numbertype",
+                "creation_date",
+                "assessmentstart",
+                "assessmentend",
+                "assessmenttypecode",
+                "assessmenttypecodestd",
+                "assessmenttypecodedesc",
+                "assessmentoutcomecode",
+                "assessmentoutcomecodestd",
+                "assessmentoutcomecodedesc",
+            ])
+
         treatments = pd.DataFrame(
             self.v5_archive_session.execute(treatments_query)
         ).reset_index(drop=True)
-
+        if treatments.empty:
+            treatments = pd.DataFrame(columns=[
+                "patientid",
+                "organization",
+                "numbertype",
+                "creation_date",
+                "admitreasoncode",
+                "admitreasoncodestd",
+                "admitreasondesc",
+                "fromtime",
+                "totime",
+            ])
+ 
         # drop ids and deduplicate (incase same patient has been written multiple times)
         assessments = pd.merge(
             assessments,
@@ -260,6 +310,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         treatments = treatments.drop(
             columns=["patientid", "organization", "numbertype"]
         ).drop_duplicates()
+
+
+
 
         return treatments, assessments
 
@@ -293,6 +346,10 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         )
 
         results = pd.DataFrame(self.session.execute(query).all())
+        if results.empty:
+            columns = ["pid", "serviceidcode", "resultvalue", "resultvalueunits", "observationtime"]
+            results = pd.DataFrame(columns=columns)
+
 
         # separate and clean
         egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAL"])].copy()
@@ -302,7 +359,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         egfr_results["resultvalue"] = pd.to_numeric(
             egfr_results["resultvalue"], errors="coerce"
         )
-        # egfr_results = egfr_results.drop(columns=['serviceidcode'])
 
         # Drop rows where eGFR conversion to numeric failed then deduplicate
         egfr_results = egfr_results.dropna(subset=["resultvalue"])
@@ -327,6 +383,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             how="outer",
             suffixes=("_creat", "_labegfr"),
         )
+
 
         return merged_results
 
