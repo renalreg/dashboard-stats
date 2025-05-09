@@ -9,7 +9,8 @@ from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 
 # connection to the database
-ukrdc_conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
+server = "ukrdc_live"
+ukrdc_conn = PostgresConnection(app = server, tunnel = True, via_app = True)
 ukrdc_sessionmaker = ukrdc_conn.session_maker()
 
 
@@ -17,8 +18,8 @@ ukrdc_sessionmaker = ukrdc_conn.session_maker()
 facilities = ["RHW01", "RAQ01"]
 prevalence_point = dt.datetime(2025, 3, 31,0,0,0)
 #prevalence_point = dt.datetime(2023, 12, 31,0,0,0)
-#report_file_path = Path("Q:/UKRDC/Assessments/Phil_extracts/")
-report_file_path = Path(".do_not_commit")
+report_file_path = Path(r"Q:\UKRDC\Assessments\Phil_extracts\2025_05_09")
+#report_file_path = Path(".do_not_commit")
 
 with ukrdc_sessionmaker() as ukrdc_session:
     for facility in facilities:
@@ -51,5 +52,12 @@ with ukrdc_sessionmaker() as ukrdc_session:
 
         # output results
         output_path = report_file_path / Path(f"ckd_report_{facility}.csv")
-        report.to_csv(output_path)
+        metadata = f"""# CKD Assessment Report
+# Renal Unit : {facility}
+# Database Server : {server}
+# Prevalence Point : {prevalence_point.strftime("%Y-%m-%d")}
+# Date Run : {dt.datetime.now().strftime("%Y-%m-%d")}
+"""
+        
+        report.to_csv(output_path, metadata=metadata)
         print(f"{population} CKD patients extracted to file {output_path}")
