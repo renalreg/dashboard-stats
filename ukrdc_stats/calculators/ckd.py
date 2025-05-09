@@ -83,15 +83,13 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Address.pid,
                 Address.postcode,
                 Address.addressuse,
-                func.row_number().over(
+                func.row_number()
+                .over(
                     partition_by=Address.pid,
-                    order_by=case((Address.addressuse == "H", 0), else_=1)
-                ).label("rn")
-            )
-            .where(
-                Address.postcode.is_not(None),
-                func.trim(Address.postcode) != ""
-            )
+                    order_by=case((Address.addressuse == "H", 0), else_=1),
+                )
+                .label("rn"),
+            ).where(Address.postcode.is_not(None), func.trim(Address.postcode) != "")
         ).subquery()
 
         query_ckd_patients = (
@@ -141,7 +139,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
                     CodeMap.destination_coding_standard.is_(None),
                 ),
-                address_ranked.c.rn == 1
+                address_ranked.c.rn == 1,
             )
             .order_by(PatientRecord.pid)
         )
@@ -182,11 +180,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         BATCH_SIZE = 1000
         all_assessments = []
         all_treatments = []
-        
+
         # Process patient numbers in batches
         for i in range(0, len(patient_numbers), BATCH_SIZE):
-            batch = patient_numbers.iloc[i:i+BATCH_SIZE]
-            
+            batch = patient_numbers.iloc[i : i + BATCH_SIZE]
+
             # Assessments query for this batch
             assessments_query = (
                 select(
@@ -224,7 +222,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     ),
                 )
             )
-            
+
             # Treatments query for this batch
             treatments_query = (
                 select(
@@ -264,16 +262,20 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     ),
                 )
             )
-            
+
             # Execute queries and collect results
-            batch_assessments = pd.DataFrame(self.v5_archive_session.execute(assessments_query))
+            batch_assessments = pd.DataFrame(
+                self.v5_archive_session.execute(assessments_query)
+            )
             if not batch_assessments.empty:
                 all_assessments.append(batch_assessments)
-                
-            batch_treatments = pd.DataFrame(self.v5_archive_session.execute(treatments_query))
+
+            batch_treatments = pd.DataFrame(
+                self.v5_archive_session.execute(treatments_query)
+            )
             if not batch_treatments.empty:
                 all_treatments.append(batch_treatments)
-        
+
         # Combine results from all batches
         if all_assessments:
             assessments = pd.concat(all_assessments).reset_index(drop=True)
@@ -294,7 +296,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     "assessmentoutcomecodedesc",
                 ]
             )
-        
+
         if all_treatments:
             treatments = pd.concat(all_treatments).reset_index(drop=True)
         else:
