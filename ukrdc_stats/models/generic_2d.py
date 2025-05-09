@@ -183,13 +183,17 @@ class BaseTable(JSONModel):
     #    ..., description="Rows of the table containing the data"
     # )
 
-    def to_csv(self, file_path: str, blank_na: bool = True) -> None:
+    def to_csv(
+        self, file_path: str, blank_na: bool = True, metadata: str = None
+    ) -> None:
         """
         Serializes the BaseTable to a CSV file.
 
         :param file_path: The path to the file where the CSV data will be written.
         """
         with open(file_path, mode="w", newline="", encoding="utf-8") as csv_file:
+            if metadata:
+                csv_file.write(metadata)
             writer = csv.writer(csv_file)
             writer.writerow(self.headers)  # Write the headers
             for row in self.rows:
