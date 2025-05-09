@@ -3,7 +3,7 @@
 from operator import and_
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, or_, create_engine, tuple_, case
+from sqlalchemy import select, or_, create_engine, tuple_, case, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from ukrdc_sqla.ukrdc import (
@@ -78,12 +78,19 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
     def _core_query(self):
         # get a single address per patient with a preference for home address
-        address_subquery = (
-            select(Address.pid, Address.postcode, Address.addressuse)
-            .order_by(case((Address.addressuse == "H", 0), else_=1))
-            .limit(1)
-            .subquery()
-        )
+        address_ranked = (
+            select(
+                Address.pid,
+                Address.postcode,
+                Address.addressuse,
+                func.row_number()
+                .over(
+                    partition_by=Address.pid,
+                    order_by=case((Address.addressuse == "H", 0), else_=1),
+                )
+                .label("rn"),
+            ).where(Address.postcode.is_not(None), func.trim(Address.postcode) != "")
+        ).subquery()
 
         query_ckd_patients = (
             select(
@@ -98,14 +105,15 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Treatment.fromtime,
                 Treatment.totime,
                 Patient.gender.label("sex"),
-                address_subquery.c.postcode,
+                address_ranked.c.postcode,
+                address_ranked.c.addressuse,
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
-            .outerjoin(address_subquery, address_subquery.c.pid == PatientRecord.pid)
+            .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
             .outerjoin(
                 CodeMap,
                 and_(
@@ -131,6 +139,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
                     CodeMap.destination_coding_standard.is_(None),
                 ),
+                address_ranked.c.rn == 1,
             )
             .order_by(PatientRecord.pid)
         )
@@ -167,86 +176,110 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         return patients_numbers.reset_index(drop=True).astype(str)
 
     def _get_archive_data(self, patient_numbers: pd.DataFrame):
-        assessments_query = (
-            select(
-                XMLPatient.nationalid.label("patientid"),
-                XMLPatient.organization,
-                XMLPatient.numbertype,
-                XMLPatient.creation_date,
-                Assessment.assessmentstart,
-                Assessment.assessmentend,
-                Assessment.assessmenttypecode,
-                Assessment.assessmenttypecodestd,
-                Assessment.assessmenttypecodedesc,
-                Assessment.assessmentoutcomecode,
-                Assessment.assessmentoutcomecodestd,
-                Assessment.assessmentoutcomecodedesc,
-            )
-            .join(
-                Assessment,
-                Assessment.patientid == XMLPatient.id,
-            )
-            .where(
-                Assessment.assessmentstart < self._prevalence_point,
-                tuple_(
-                    XMLPatient.nationalid,
+        # Break up large queries into chunks to avoid PostgreSQL stack overflow
+        BATCH_SIZE = 1000
+        all_assessments = []
+        all_treatments = []
+
+        # Process patient numbers in batches
+        for i in range(0, len(patient_numbers), BATCH_SIZE):
+            batch = patient_numbers.iloc[i : i + BATCH_SIZE]
+
+            # Assessments query for this batch
+            assessments_query = (
+                select(
+                    XMLPatient.nationalid.label("patientid"),
                     XMLPatient.organization,
                     XMLPatient.numbertype,
-                ).in_(
-                    list(
-                        zip(
-                            patient_numbers["patientid"],
-                            patient_numbers["organization"],
-                            patient_numbers["numbertype"],
+                    XMLPatient.creation_date,
+                    Assessment.assessmentstart,
+                    Assessment.assessmentend,
+                    Assessment.assessmenttypecode,
+                    Assessment.assessmenttypecodestd,
+                    Assessment.assessmenttypecodedesc,
+                    Assessment.assessmentoutcomecode,
+                    Assessment.assessmentoutcomecodestd,
+                    Assessment.assessmentoutcomecodedesc,
+                )
+                .join(
+                    Assessment,
+                    Assessment.patientid == XMLPatient.id,
+                )
+                .where(
+                    Assessment.assessmentstart < self._prevalence_point,
+                    tuple_(
+                        XMLPatient.nationalid,
+                        XMLPatient.organization,
+                        XMLPatient.numbertype,
+                    ).in_(
+                        list(
+                            zip(
+                                batch["patientid"],
+                                batch["organization"],
+                                batch["numbertype"],
+                            )
                         )
-                    )
-                ),
+                    ),
+                )
             )
-        )
 
-        treatments_query = (
-            select(
-                XMLPatient.nationalid.label("patientid"),
-                XMLPatient.organization,
-                XMLPatient.numbertype,
-                XMLPatient.creation_date,
-                XMLTreatment.admitreasoncode,
-                XMLTreatment.admitreasoncodestd,
-                XMLTreatment.admitreasondesc,
-                XMLTreatment.fromtime,
-                XMLTreatment.totime,
-            )
-            .join(
-                XMLTreatment,
-                XMLTreatment.patientid == XMLPatient.id,
-            )
-            .where(
-                XMLTreatment.fromtime < self._prevalence_point,
-                or_(
-                    XMLTreatment.totime > self._prevalence_point,
-                    XMLTreatment.totime.is_(None),
-                ),
-                XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
-                tuple_(
-                    XMLPatient.nationalid,
+            # Treatments query for this batch
+            treatments_query = (
+                select(
+                    XMLPatient.nationalid.label("patientid"),
                     XMLPatient.organization,
                     XMLPatient.numbertype,
-                ).in_(
-                    list(
-                        zip(
-                            patient_numbers["patientid"],
-                            patient_numbers["organization"],
-                            patient_numbers["numbertype"],
+                    XMLPatient.creation_date,
+                    XMLTreatment.admitreasoncode,
+                    XMLTreatment.admitreasoncodestd,
+                    XMLTreatment.admitreasondesc,
+                    XMLTreatment.fromtime,
+                    XMLTreatment.totime,
+                )
+                .join(
+                    XMLTreatment,
+                    XMLTreatment.patientid == XMLPatient.id,
+                )
+                .where(
+                    XMLTreatment.fromtime < self._prevalence_point,
+                    or_(
+                        XMLTreatment.totime > self._prevalence_point,
+                        XMLTreatment.totime.is_(None),
+                    ),
+                    XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
+                    tuple_(
+                        XMLPatient.nationalid,
+                        XMLPatient.organization,
+                        XMLPatient.numbertype,
+                    ).in_(
+                        list(
+                            zip(
+                                batch["patientid"],
+                                batch["organization"],
+                                batch["numbertype"],
+                            )
                         )
-                    )
-                ),
+                    ),
+                )
             )
-        )
 
-        assessments = pd.DataFrame(
-            self.v5_archive_session.execute(assessments_query)
-        ).reset_index(drop=True)
-        if assessments.empty:
+            # Execute queries and collect results
+            batch_assessments = pd.DataFrame(
+                self.v5_archive_session.execute(assessments_query)
+            )
+            if not batch_assessments.empty:
+                all_assessments.append(batch_assessments)
+
+            batch_treatments = pd.DataFrame(
+                self.v5_archive_session.execute(treatments_query)
+            )
+            if not batch_treatments.empty:
+                all_treatments.append(batch_treatments)
+
+        # Combine results from all batches
+        if all_assessments:
+            assessments = pd.concat(all_assessments).reset_index(drop=True)
+        else:
             assessments = pd.DataFrame(
                 columns=[
                     "patientid",
@@ -264,10 +297,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 ]
             )
 
-        treatments = pd.DataFrame(
-            self.v5_archive_session.execute(treatments_query)
-        ).reset_index(drop=True)
-        if treatments.empty:
+        if all_treatments:
+            treatments = pd.concat(all_treatments).reset_index(drop=True)
+        else:
             treatments = pd.DataFrame(
                 columns=[
                     "patientid",
