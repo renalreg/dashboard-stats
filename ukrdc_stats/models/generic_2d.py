@@ -183,7 +183,7 @@ class BaseTable(JSONModel):
     #    ..., description="Rows of the table containing the data"
     # )
 
-    def to_csv(self, file_path: str) -> None:
+    def to_csv(self, file_path: str, blank_na: bool = True) -> None:
         """
         Serializes the BaseTable to a CSV file.
 
@@ -193,7 +193,11 @@ class BaseTable(JSONModel):
             writer = csv.writer(csv_file)
             writer.writerow(self.headers)  # Write the headers
             for row in self.rows:
-                writer.writerow(row)
+                writer.writerow(
+                    [item if not pd.isna(item) else "" for item in row]
+                    if blank_na
+                    else row
+                )
 
     def to_pandas(self) -> None:
         return pd.DataFrame(self.rows, columns=self.headers).astype("string")
