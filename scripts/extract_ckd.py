@@ -6,7 +6,6 @@ stats calculator to a csv file.
 import datetime as dt
 from pathlib import Path
 from rr_connection_manager import PostgresConnection
-from ukrdc_sqla.ukrdc import Facility
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 
 # connection to the database
@@ -51,6 +50,6 @@ with ukrdc_sessionmaker() as ukrdc_session:
             )
 
         # output results
-        output_path = report_file_path / Path(f"ckd_report_{facility}")
+        output_path = report_file_path / Path(f"ckd_report_{facility}.csv")
         report.to_csv(output_path)
         print(f"{population} CKD patients extracted to file {output_path}")
