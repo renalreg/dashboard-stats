@@ -987,7 +987,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # check the centre is in the output
         if cohort == "incident":
             pop, report = self.produce_report(
-                [cohort, "first_treatment"],
                 [
                     "pid",
                     "healthcarefacilitycode",
@@ -995,11 +994,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "admitreasoncodestd",
                     "registry_code_type",
                 ],
+                [cohort, "first_treatment"],
                 include_ni=include_ni,
             )
         elif cohort == "prevalent":
             pop, report = self.produce_report(
-                [cohort, "most_recent"],
                 [
                     "pid",
                     "healcarefacilitycode",
@@ -1007,6 +1006,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "admitreasoncodestd",
                     "registry_code_type",
                 ],
+                [cohort, "most_recent"],
                 include_ni=include_ni,
             )
 

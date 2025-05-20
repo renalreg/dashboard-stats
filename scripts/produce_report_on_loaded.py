@@ -55,7 +55,7 @@ def write_treatments(nhs_nos,session):
 
 
 ENV_FILE:str = ".env"
-RENAL_CENTRE:str = "RJZ" 
+RENAL_CENTRE:str = "RCSLB" 
 COHORT:str = "incident"
 YEAR:int = 2022 # report year 
 OUTPUT_FILE_NAME:str = f"{COHORT}_{YEAR}_{RENAL_CENTRE}_report.xlsx"
@@ -75,7 +75,7 @@ if not os.path.isfile(ENV_FILE):
     raise Exception("env file doesn't exist")
     
 
-conn = PostgresConnection(app = "ukrdc_staging", tunnel = True, via_app = True)
+conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
 conn.connection_check()
 sessionmaker = conn.session_maker()
 
