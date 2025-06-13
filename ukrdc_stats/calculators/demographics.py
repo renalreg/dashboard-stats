@@ -3,7 +3,7 @@ Patient cohort demographics stats calculator
 """
 
 import datetime as dt
-from typing import Optional, List
+from typing import Optional
 from pydantic import Field
 
 import pandas as pd
@@ -15,7 +15,6 @@ from ukrdc_sqla.ukrdc import (
     Treatment,
     ResultItem,
     Observation,
-    SatelliteMap,
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
@@ -25,6 +24,7 @@ from ukrdc_stats.utils import (
     map_codes,
     _calculate_base_patient_histogram,
     _mapped_if_exists,
+    _get_satellite_list,
 )
 
 from ukrdc_stats.descriptions import demographic_descriptions
@@ -76,18 +76,6 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # Set the date to calculate at, defaulting to today
         self.date: dt.datetime = date or dt.datetime.today()
 
-    def _get_satellite_list(self) -> List[str]:
-        """Get the list of satellites for the facility."""
-        return (
-            self.session.execute(
-                select(SatelliteMap.satellite_code).where(
-                    SatelliteMap.main_unit_code == self.facility
-                )
-            )
-            .scalars()
-            .all()
-        )
-
     def _extract_base_patient_cohort(
         self,
         include_tracing: Optional[bool] = True,
@@ -104,7 +92,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: _description_
         """
 
-        sats = self._get_satellite_list()
+        sats = _get_satellite_list(self.facility, self.session)
 
         # the following reflect criteria which are applied to the ukrr
         # quarterly extract process (i.e the criteria used to load data into
