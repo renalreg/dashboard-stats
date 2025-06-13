@@ -356,6 +356,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Execute query
         base_cohort = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+        if base_cohort.empty:
+            raise NoCohortError(
+                f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
+            )
 
         # pandas by default tries to be helpful and create compound keys
         # this is more overly helpful so we drop them
@@ -965,6 +969,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # loop over each unit and calculate stats
         for unit in _get_satellite_list(self.facility, self.session):
             unit_stats[unit] = self.extract_satellite_stats(unit)
+
+        unit_stats[self.facility] = self.extract_satellite_stats(self.facility)
 
         return UnitLevelKRTStats(all=self.extract_satellite_stats(), units=unit_stats)
 

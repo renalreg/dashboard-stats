@@ -3,7 +3,7 @@ Patient cohort demographics stats calculator
 """
 
 import datetime as dt
-from typing import Optional, List
+from typing import Optional
 from pydantic import Field
 
 import pandas as pd
@@ -15,7 +15,6 @@ from ukrdc_sqla.ukrdc import (
     Treatment,
     ResultItem,
     Observation,
-    SatelliteMap,
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
@@ -25,6 +24,7 @@ from ukrdc_stats.utils import (
     map_codes,
     _calculate_base_patient_histogram,
     _mapped_if_exists,
+    _get_satellite_list,
 )
 
 from ukrdc_stats.descriptions import demographic_descriptions
@@ -76,18 +76,6 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # Set the date to calculate at, defaulting to today
         self.date: dt.datetime = date or dt.datetime.today()
 
-    def _get_satellite_list(self) -> List[str]:
-        """Get the list of satellites for the facility."""
-        return (
-            self.session.execute(
-                select(SatelliteMap.satellite_code).where(
-                    SatelliteMap.main_unit_code == self.facility
-                )
-            )
-            .scalars()
-            .all()
-        )
-
     def _extract_base_patient_cohort(
         self,
         include_tracing: Optional[bool] = True,
@@ -104,7 +92,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: _description_
         """
 
-        sats = self._get_satellite_list()
+        sats = _get_satellite_list(self.facility, self.session)
 
         # the following reflect criteria which are applied to the ukrr
         # quarterly extract process (i.e the criteria used to load data into
@@ -119,7 +107,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     or_(
                         and_(
                             Treatment.fromtime < self.date,
-                            Treatment.healthcarefacilitycode.in_(sats),
+                            or_(
+                                Treatment.healthcarefacilitycode.in_(sats),
+                                Treatment.healthcarefacilitycode.in_(self.facility),
+                            ),
                             or_(
                                 Treatment.totime >= self.date - dt.timedelta(days=90),
                                 Treatment.totime.is_(None),
@@ -144,7 +135,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 .distinct()
                 .where(
                     Treatment.fromtime < self.date - dt.timedelta(days=90),
-                    Treatment.healthcarefacilitycode.in_(sats),
+                    or_(
+                        Treatment.healthcarefacilitycode.in_(sats),
+                        Treatment.healthcarefacilitycode == self.facility,
+                    ),
                     or_(
                         Treatment.totime >= self.date,
                         Treatment.totime.is_(None),
@@ -172,8 +166,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if limit_to_ukrdc:
             patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # limit number of records returned (for benchmarking)
+        # extract patient cohort
         patients = pd.DataFrame(self.session.execute(patient_query)).drop_duplicates()
+        if patients.empty:
+            raise NoCohortError(
+                f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
+            )
 
         if include_tracing:
             # Can we trace deathtime by crosslinking records in the ukrdc?
@@ -303,7 +301,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             )
 
         if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
+            raise NoCohortError(
+                f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
+            )
 
         pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 
