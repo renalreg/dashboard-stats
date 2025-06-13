@@ -119,7 +119,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     or_(
                         and_(
                             Treatment.fromtime < self.date,
-                            Treatment.healthcarefacilitycode.in_(sats),
+                            or_(
+                                Treatment.healthcarefacilitycode.in_(sats),
+                                Treatment.healthcarefacilitycode.in_(self.facility),
+                            ),
                             or_(
                                 Treatment.totime >= self.date - dt.timedelta(days=90),
                                 Treatment.totime.is_(None),
@@ -144,7 +147,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 .distinct()
                 .where(
                     Treatment.fromtime < self.date - dt.timedelta(days=90),
-                    Treatment.healthcarefacilitycode.in_(sats),
+                    or_(
+                        Treatment.healthcarefacilitycode.in_(sats),
+                        Treatment.healthcarefacilitycode == self.facility,
+                    ),
                     or_(
                         Treatment.totime >= self.date,
                         Treatment.totime.is_(None),
@@ -172,8 +178,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if limit_to_ukrdc:
             patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # limit number of records returned (for benchmarking)
+        # extract patient cohort
         patients = pd.DataFrame(self.session.execute(patient_query)).drop_duplicates()
+        if patients.empty:
+            raise NoCohortError(
+                f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
+            )
 
         if include_tracing:
             # Can we trace deathtime by crosslinking records in the ukrdc?
@@ -303,7 +313,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             )
 
         if self._patient_cohort is None:
-            raise NoCohortError("No patient cohort has been extracted")
+            raise NoCohortError(
+                f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
+            )
 
         pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
 

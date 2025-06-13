@@ -43,6 +43,12 @@ def code_map():
 
 
 @pytest.fixture
+def empty_cohort():
+    """Fixture to provide an empty cohort dataframe."""
+    return pd.DataFrame()
+
+
+@pytest.fixture
 def demographics_calculator(sample_cohort):
     """Fixture to mock the demographics calculator."""
     calculator = DemographicStatsCalculator(session=MagicMock(), facility="RFDOG", date=dt.datetime(2025, 1, 1))
