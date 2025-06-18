@@ -60,13 +60,11 @@ class AbstractFacilityStatsCalculator(ABC):
         if "ukrdcid" not in output_columns:
             output_columns.append("ukrdcid")
 
-        
         if input_filters:
             dataframe_filter = "(" + ")&(".join(input_filters) + ")"
             patient_record_filtered = self._patient_cohort.query(dataframe_filter)
         else:
             patient_record_filtered = self._patient_cohort
-
 
         population = len(patient_record_filtered.ukrdcid.drop_duplicates())
 
@@ -80,9 +78,7 @@ class AbstractFacilityStatsCalculator(ABC):
             patient_numbers = pd.DataFrame(
                 self.session.execute(
                     select(PatientRecord.ukrdcid, PatientNumber.patientid)
-                    .join(
-                        PatientRecord, PatientNumber.pid == PatientRecord.pid
-                    )
+                    .join(PatientRecord, PatientNumber.pid == PatientRecord.pid)
                     .where(
                         PatientNumber.organization == "NHS",
                         PatientRecord.ukrdcid.in_(report.ukrdcid.drop_duplicates()),
