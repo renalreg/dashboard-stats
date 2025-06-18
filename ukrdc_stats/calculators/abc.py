@@ -13,7 +13,7 @@ from ukrdc_stats.models.base import JSONModel
 from ukrdc_stats.models.generic_2d import BaseTable
 from ukrdc_stats.exceptions import NoCohortError
 
-from ukrdc_sqla.ukrdc import PatientNumber
+from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 
 
 class AbstractFacilityStatsCalculator(ABC):
@@ -51,19 +51,25 @@ class AbstractFacilityStatsCalculator(ABC):
         as aggregated stats. As UI users can't query patients on the pid they
         should probably be returned as a list of mrns.
         """
+        if self._patient_cohort is None:
+            self.extract_stats()
 
         if self._patient_cohort is None:
             raise NoCohortError
 
+        if "ukrdcid" not in output_columns:
+            output_columns.append("ukrdcid")
+
+        
         if input_filters:
             dataframe_filter = "(" + ")&(".join(input_filters) + ")"
             patient_record_filtered = self._patient_cohort.query(dataframe_filter)
         else:
             patient_record_filtered = self._patient_cohort
 
-        population = len(patient_record_filtered.pid.drop_duplicates())
 
-        # Create a table of the specified records
+        population = len(patient_record_filtered.ukrdcid.drop_duplicates())
+
         report = (
             patient_record_filtered[output_columns]
             .drop_duplicates()
@@ -73,14 +79,18 @@ class AbstractFacilityStatsCalculator(ABC):
         if include_ni:
             patient_numbers = pd.DataFrame(
                 self.session.execute(
-                    select(PatientNumber.pid, PatientNumber.patientid).where(
+                    select(PatientRecord.ukrdcid, PatientNumber.patientid)
+                    .join(
+                        PatientRecord, PatientNumber.pid == PatientRecord.pid
+                    )
+                    .where(
                         PatientNumber.organization == "NHS",
-                        PatientNumber.pid.in_(report.pid.drop_duplicates()),
+                        PatientRecord.ukrdcid.in_(report.ukrdcid.drop_duplicates()),
                     )
                 ),
             ).rename(columns={"patientid": "nhsno"})
 
-            report = pd.merge(report, patient_numbers, on="pid", how="left")
+            report = pd.merge(report, patient_numbers, on="ukrdcid", how="left")
             report["nhsno"] = report["nhsno"].fillna("Unknown")
 
         return population, BaseTable(

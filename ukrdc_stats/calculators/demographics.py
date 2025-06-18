@@ -188,7 +188,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     and_(
                         # PatientRecord.sendingfacility == "TRACING",
                         PatientRecord.ukrdcid.in_(
-                            patients[pd.isna(patients.deathtime)].ukrdcid
+                            patients[pd.isna(patients.death_time)].ukrdcid
                         ),
                         Patient.death_time < self.end_date,
                     )
