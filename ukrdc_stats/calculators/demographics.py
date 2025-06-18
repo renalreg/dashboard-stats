@@ -62,7 +62,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
     """Calculates the demographics information based on the personal information listed in the patient table"""
 
     def __init__(
-        self, session: Session, facility: str, date: Optional[dt.datetime] = None
+        self,
+        session: Session,
+        facility: str,
+        date: Optional[dt.datetime] = None,
+        end_date: Optional[dt.datetime] = None,
+        start_date: Optional[dt.datetime] = None,
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
@@ -73,8 +78,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         """
         super().__init__(session, facility)
 
-        # Set the date to calculate at, defaulting to today
-        self.date: dt.datetime = date or dt.datetime.today()
+        # Set the dates to calculate between, defaulting to today and 90 days ago
+        self.end_date: dt.datetime = date or end_date or dt.datetime.today()
+        self.start_date: dt.datetime = start_date or self.end_date - dt.timedelta(
+            days=90
+        )
 
     def _extract_base_patient_cohort(
         self,
@@ -106,25 +114,23 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 .where(
                     or_(
                         and_(
-                            Treatment.fromtime < self.date,
+                            Treatment.fromtime < self.start_date,
                             or_(
                                 Treatment.healthcarefacilitycode.in_(sats),
                                 Treatment.healthcarefacilitycode.in_(self.facility),
                             ),
                             or_(
-                                Treatment.totime >= self.date - dt.timedelta(days=90),
+                                Treatment.totime >= self.end_date,
                                 Treatment.totime.is_(None),
                             ),
                         ),
                         and_(
-                            ResultItem.observation_time < self.date,  # pylint: disable=C0121
-                            ResultItem.observation_time
-                            >= self.date - dt.timedelta(days=90),
+                            ResultItem.observation_time < self.start_date,  # pylint: disable=C0121
+                            ResultItem.observation_time >= self.end_date,
                         ),
                         and_(
-                            Observation.observation_time < self.date,  # pylint: disable=C0121
-                            Observation.observation_time
-                            >= self.date - dt.timedelta(days=90),
+                            Observation.observation_time < self.start_date,  # pylint: disable=C0121
+                            Observation.observation_time >= self.end_date,
                         ),
                     )
                 )
@@ -134,13 +140,13 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 select(Treatment.pid)
                 .distinct()
                 .where(
-                    Treatment.fromtime < self.date - dt.timedelta(days=90),
+                    Treatment.fromtime < self.end_date,
                     or_(
                         Treatment.healthcarefacilitycode.in_(sats),
                         Treatment.healthcarefacilitycode == self.facility,
                     ),
                     or_(
-                        Treatment.totime >= self.date,
+                        Treatment.totime >= self.end_date,
                         Treatment.totime.is_(None),
                     ),
                 )
@@ -182,9 +188,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     and_(
                         # PatientRecord.sendingfacility == "TRACING",
                         PatientRecord.ukrdcid.in_(
-                            patients[pd.isna(patients.deathtime)].ukrdcid
+                            patients[pd.isna(patients.death_time)].ukrdcid
                         ),
-                        Patient.death_time < self.date,
+                        Patient.death_time < self.end_date,
                     )
                 )
             )
@@ -250,7 +256,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # add column with ages and calculate histogram
         self._patient_cohort["age"] = self._patient_cohort["birth_time"][
             pd.isna(self._patient_cohort.death_time)
-        ].apply(lambda dob: age_from_dob(self.date, dob))
+        ].apply(lambda dob: age_from_dob(self.end_date, dob))
 
         age = _calculate_base_patient_histogram(self._patient_cohort, "age")
 

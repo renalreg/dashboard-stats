@@ -51,7 +51,7 @@ def empty_cohort():
 @pytest.fixture
 def demographics_calculator(sample_cohort):
     """Fixture to mock the demographics calculator."""
-    calculator = DemographicStatsCalculator(session=MagicMock(), facility="RFDOG", date=dt.datetime(2025, 1, 1))
+    calculator = DemographicStatsCalculator(session=MagicMock(), facility="RFDOG", end_date=dt.datetime(2025, 1, 1))
     
     # Overwrite data with sample cohort
     calculator._patient_cohort = sample_cohort

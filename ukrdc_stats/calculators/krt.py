@@ -986,10 +986,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             BaseTable: _description_
         """
 
-        # check we have done the extract
-        if self._patient_cohort is None:
-            _ = self.extract_stats()
-
         # check the centre is in the output
         if cohort == "incident":
             pop, report = self.produce_report(
