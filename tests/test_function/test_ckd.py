@@ -1,0 +1,141 @@
+import pytest
+from datetime import datetime
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
+from ukrdc_sqla.ukrdc import (
+    PatientRecord,
+    Patient,
+    Treatment,
+    Address,
+    CodeMap,
+    PatientNumber,
+)
+
+
+@pytest.fixture
+def sqlite_session():
+    # Create in-memeory DB for tests
+    
+    engine = create_engine("sqlite:///:memory:")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    PatientRecord.__table__.create(bind=engine)
+    Patient.__table__.create(bind=engine)
+    Treatment.__table__.create(bind=engine)
+    Address.__table__.create(bind=engine)
+    CodeMap.__table__.create(bind=engine)
+    PatientNumber.__table__.create(bind=engine)
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def populated_patient(sqlite_session):
+    pid = 1
+
+    # Add mock patients
+    sqlite_session.add_all(
+        [
+            PatientRecord(
+                pid="1",
+                sendingfacility="FAC1",
+                sendingextract="UKRDC",
+                localpatientid="XYZ123",
+                repositorycreationdate=datetime.now(),
+                repositoryupdatedate=datetime.now(),
+                creation_date=datetime.now(),
+            ),
+            Patient(
+                pid=pid,
+                birthtime=datetime(1960, 1, 1),
+                deathtime=None,
+                gender="1",
+                ethnicgroupcode="A",
+                ethnicgroupdesc="White",
+                ethnicgroupcodestd="ABC",
+                creation_date=datetime.now(),
+            ),
+            Address(
+                id=1,
+                pid=pid,
+                postcode="AB12 3CD",
+                addressuse="H",
+                creation_date=datetime.now(),
+            ),
+            CodeMap(
+                source_code="A",
+                source_coding_standard="ABC",
+                destination_code="W",
+                destination_coding_standard="URTS_ETHNIC_GROUPING",
+                update_date=None,
+                creation_date=datetime.now(),
+            ),
+            PatientNumber(
+                id=1,
+                pid=pid,
+                patientid="1234567890",
+                organization="NHS",
+                numbertype="NHS",
+                creation_date=datetime.now(),
+            ),
+        ]
+    )
+
+    # 3 treatments
+    sqlite_session.add_all(
+        [
+            Treatment(
+                id=1,
+                pid=pid,
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="CKD",
+                fromtime=datetime(2020, 1, 1),
+                totime=datetime(2024, 1, 1),
+                creation_date=datetime.now(),
+            ),
+            Treatment(
+                id=2,
+                pid=pid,
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="CKD",
+                fromtime=datetime(2022, 6, 1),
+                totime=None,
+                creation_date=datetime.now(),
+            ),
+            Treatment(
+                id=3,
+                pid=pid,
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="CKD",
+                fromtime=datetime(2023, 6, 1),
+                totime=datetime(2024, 6, 1),
+                creation_date=datetime.now(),
+            ),
+        ]
+    )
+
+    sqlite_session.commit()
+    return pid
+
+
+def test_core_query_with_real_sqlite(sqlite_session, populated_patient):
+    prevalence_point = datetime(2023, 1, 1)
+    calculator = PrevalentCKDCalculator(
+        session=sqlite_session,
+        facility="FAC1",
+        prevalence_point=prevalence_point
+    )
+    calculator._ckd_cohort_codes = ["900"] 
+
+    # Unfiltered — should return all 3 treatments
+    df_all = calculator._core_query(extract_all=True)
+    assert len(df_all) == 3
+
+    # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
+    df_filtered = calculator._core_query(extract_all=False)
+    assert len(df_filtered) == 2
+    assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()

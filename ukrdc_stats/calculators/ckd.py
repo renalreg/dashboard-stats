@@ -76,7 +76,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
     def extract_stats(self):
         pass
 
-    def _core_query(self):
+    def _core_query(self, extract_all: bool = False):
         # get a single address per patient with a preference for home address
         address_ranked = (
             select(
@@ -124,15 +124,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
             .where(
                 Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
-                Treatment.fromtime < self._prevalence_point,
-                or_(
-                    Treatment.totime > self._prevalence_point,
-                    Treatment.totime.is_(None),
-                ),
-                or_(
-                    Patient.deathtime > self._prevalence_point,
-                    Patient.deathtime.is_(None),
-                ),
                 PatientRecord.sendingfacility == self.facility,
                 PatientRecord.sendingextract == "UKRDC",
                 or_(
@@ -143,6 +134,21 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
             .order_by(PatientRecord.pid)
         )
+        
+        if not extract_all:
+            query_ckd_patients = query_ckd_patients.where(
+                Treatment.fromtime < self._prevalence_point,
+                or_(
+                    Treatment.totime > self._prevalence_point,
+                    Treatment.totime.is_(None),
+                ),
+                or_(
+                    Patient.deathtime > self._prevalence_point,
+                    Patient.deathtime.is_(None),
+                ),
+            )
+
+        query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
 
         base_cohort = (
             pd.DataFrame(self.session.execute(query_ckd_patients))
@@ -412,9 +418,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return merged_results
 
-    def _extract_base_patient_cohort(self):
+    def _extract_base_patient_cohort(self, extract_all: bool = False):
         # Get main cohort from ukrdc
-        cohort = self._core_query()
+        cohort = self._core_query(extract_all)
 
         if cohort.empty:
             return
@@ -510,6 +516,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return cohort
 
-    def extract_patient_cohort(self):
-        self._patient_cohort = self._extract_base_patient_cohort()
+    def extract_patient_cohort(self, extract_all: bool = True):
+        self._patient_cohort = self._extract_base_patient_cohort(extract_all)
         return self._patient_cohort
