@@ -10,13 +10,42 @@ from ukrdc_sqla.ukrdc import (
     Address,
     CodeMap,
     PatientNumber,
+    ModalityCodes,
 )
+
+from sqlalchemy.types import TypeDecorator, Boolean
+from sqlalchemy.dialects.mysql import BIT as MySQL_BIT
+
+
+class SQLiteSafeBIT(TypeDecorator):
+    impl = Boolean
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(Boolean)
+        else:
+            return dialect.type_descriptor(MySQL_BIT(1))
+
+
+def patch_modality_bit_columns():
+    for colname in [
+        "acute",
+        "transfer_in",
+        "ckd",
+        "cons",
+        "rrt",
+        "end_of_care",
+        "is_imprecise",
+        "transfer_out",
+    ]:
+        col = ModalityCodes.__table__.c[colname]
+        col.type = SQLiteSafeBIT()
 
 
 @pytest.fixture
 def sqlite_session():
     # Create in-memeory DB for tests
-    
+
     engine = create_engine("sqlite:///:memory:")
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -26,6 +55,8 @@ def sqlite_session():
     Address.__table__.create(bind=engine)
     CodeMap.__table__.create(bind=engine)
     PatientNumber.__table__.create(bind=engine)
+    patch_modality_bit_columns()
+    ModalityCodes.__table__.create(bind=engine)
     yield session
     session.close()
 
@@ -38,7 +69,7 @@ def populated_patient(sqlite_session):
     sqlite_session.add_all(
         [
             PatientRecord(
-                pid="1",
+                pid=1,
                 sendingfacility="FAC1",
                 sendingextract="UKRDC",
                 localpatientid="XYZ123",
@@ -47,7 +78,7 @@ def populated_patient(sqlite_session):
                 creation_date=datetime.now(),
             ),
             Patient(
-                pid=pid,
+                pid=1,
                 birthtime=datetime(1960, 1, 1),
                 deathtime=None,
                 gender="1",
@@ -58,7 +89,7 @@ def populated_patient(sqlite_session):
             ),
             Address(
                 id=1,
-                pid=pid,
+                pid=1,
                 postcode="AB12 3CD",
                 addressuse="H",
                 creation_date=datetime.now(),
@@ -73,11 +104,22 @@ def populated_patient(sqlite_session):
             ),
             PatientNumber(
                 id=1,
-                pid=pid,
+                pid=1,
                 patientid="1234567890",
                 organization="NHS",
                 numbertype="NHS",
                 creation_date=datetime.now(),
+            ),
+            ModalityCodes(
+                registry_code="900",
+                registry_code_type="TP1",
+                acute=False,
+                transfer_in=False,
+                ckd=False,
+                cons=False,
+                rrt=False,
+                end_of_care=False,
+                is_imprecise=False,
             ),
         ]
     )
@@ -127,9 +169,10 @@ def test_core_query_with_real_sqlite(sqlite_session, populated_patient):
     calculator = PrevalentCKDCalculator(
         session=sqlite_session,
         facility="FAC1",
-        prevalence_point=prevalence_point
+        prevalence_point=prevalence_point,
+        v5_archive_session=sqlite_session,
     )
-    calculator._ckd_cohort_codes = ["900"] 
+    calculator._ckd_cohort_codes = ["900"]
 
     # Unfiltered — should return all 3 treatments
     df_all = calculator._core_query(extract_all=True)

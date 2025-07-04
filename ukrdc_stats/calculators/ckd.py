@@ -15,6 +15,7 @@ from ukrdc_sqla.ukrdc import (
     ResultItem,
     LabOrder,
     CodeMap,
+    ModalityCodes
 )
 from ukrdc_sqla.xmlarchive import (
     Patient as XMLPatient,
@@ -110,6 +111,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
+                ModalityCodes.registry_code_type
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
@@ -122,6 +124,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 ),
             )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
+            .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
             .where(
                 Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
                 PatientRecord.sendingfacility == self.facility,
