@@ -186,7 +186,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return patients_numbers.reset_index(drop=True).astype(str)
 
-    def _get_archive_data(self, patient_numbers: pd.DataFrame):
+    def _get_archive_data(self, patient_numbers: pd.DataFrame, extract_all: bool = False):
         # Break up large queries into chunks to avoid PostgreSQL stack overflow
         BATCH_SIZE = 1000
         all_assessments = []
@@ -252,11 +252,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     XMLTreatment.patientid == XMLPatient.id,
                 )
                 .where(
-                    XMLTreatment.fromtime < self._prevalence_point,
-                    or_(
-                        XMLTreatment.totime > self._prevalence_point,
-                        XMLTreatment.totime.is_(None),
-                    ),
                     XMLTreatment.admitreasoncode.in_(self._ckd_not_rrt_codes),
                     tuple_(
                         XMLPatient.nationalid,
@@ -273,6 +268,15 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     ),
                 )
             )
+            
+            if not extract_all:
+                treatments_query = treatments_query.where(
+                    XMLTreatment.fromtime < self._prevalence_point,
+                    or_(
+                        XMLTreatment.totime > self._prevalence_point,
+                        XMLTreatment.totime.is_(None),
+                    ),
+                )
 
             # Execute queries and collect results
             batch_assessments = pd.DataFrame(
@@ -434,7 +438,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         patient_numbers = self._get_patient_numbers(cohort["pid"].tolist())
 
         # Send patient numbers to the archive to extract data from there
-        treatments, assessments = self._get_archive_data(patient_numbers)
+        treatments, assessments = self._get_archive_data(patient_numbers, extract_all)
 
         # correct the treatments using the archive data
         # we assume treatments without corresponding ukrdc record are invalid

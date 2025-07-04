@@ -105,7 +105,7 @@ def populated_archive(archive_session):
                 creation_date=datetime.now(),
             ),
             XMLTreatment(
-                patientid=2,
+                patientid=1,
                 fromtime=datetime(2025, 1, 1),
                 totime=datetime(2026, 1, 1),
                 admitreasoncode="900",
@@ -133,8 +133,6 @@ def mock_patient_numbers():
 
 @pytest.fixture
 def sqlite_session():
-    # Create in-memeory DB for tests
-
     engine = create_engine("sqlite:///:memory:")
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -291,3 +289,8 @@ def test_get_archive_data(archive_session, populated_archive, mock_patient_numbe
     assert len(treatments) == 1
     assert isinstance(assessments, pd.DataFrame)
     assert assessments.empty
+
+    treatments, assessments = calculator._get_archive_data(mock_patient_numbers, True)
+    # Select all, meaning even the ones not on prevalence_point should get returned
+    assert len(treatments) == 2
+    assert all(treatments["admitreasoncode"] == "900")
