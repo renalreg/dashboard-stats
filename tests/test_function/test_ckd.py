@@ -1,7 +1,10 @@
 import pytest
+import pandas as pd
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.types import TypeDecorator, Boolean
+from sqlalchemy.dialects.mysql import BIT as MySQL_BIT
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_sqla.ukrdc import (
     PatientRecord,
@@ -12,9 +15,11 @@ from ukrdc_sqla.ukrdc import (
     PatientNumber,
     ModalityCodes,
 )
-
-from sqlalchemy.types import TypeDecorator, Boolean
-from sqlalchemy.dialects.mysql import BIT as MySQL_BIT
+from ukrdc_sqla.xmlarchive import (
+    Patient as XMLPatient,
+    Assessment,
+    Treatment as XMLTreatment,
+)
 
 
 class SQLiteSafeBIT(TypeDecorator):
@@ -27,6 +32,7 @@ class SQLiteSafeBIT(TypeDecorator):
             return dialect.type_descriptor(MySQL_BIT(1))
 
 
+# Sqlite doesn't support BIT, so we need to monkey patch it
 def patch_modality_bit_columns():
     for colname in [
         "acute",
@@ -40,6 +46,89 @@ def patch_modality_bit_columns():
     ]:
         col = ModalityCodes.__table__.c[colname]
         col.type = SQLiteSafeBIT()
+
+
+@pytest.fixture
+def archive_session():
+    engine = create_engine("sqlite:///:memory:")
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    XMLPatient.__table__.create(bind=engine)
+    XMLTreatment.__table__.create(bind=engine)
+    Assessment.__table__.create(bind=engine)
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def populated_archive(archive_session):
+    archive_session.add_all(
+        [
+            XMLPatient(
+                id=1,
+                sendingfacility="FAC1",
+                nationalid="123",
+                organization="NHS",
+                numbertype="NHS",
+                creation_date=datetime.now(),
+            ),
+            XMLPatient(
+                id=2,
+                sendingfacility="FAC1",
+                nationalid="456",
+                organization="NHS",
+                numbertype="NHS",
+                creation_date=datetime.now(),
+            ),
+        ]
+    )
+
+    # Add treatments
+    archive_session.add_all(
+        [
+            XMLTreatment(
+                patientid=1,
+                fromtime=datetime(2022, 1, 1),
+                totime=datetime(2024, 1, 1),
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="CKD",
+                creation_date=datetime.now(),
+            ),
+            XMLTreatment(
+                patientid=2,
+                fromtime=datetime(2022, 1, 1),
+                totime=datetime(2024, 1, 1),
+                admitreasoncode="80",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="RRT",
+                creation_date=datetime.now(),
+            ),
+            XMLTreatment(
+                patientid=2,
+                fromtime=datetime(2025, 1, 1),
+                totime=datetime(2026, 1, 1),
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="CKD",
+                creation_date=datetime.now(),
+            ),
+        ]
+    )
+
+    archive_session.commit()
+
+
+@pytest.fixture
+def mock_patient_numbers():
+    return pd.DataFrame(
+        {
+            "patientid": ["123"],
+            "organization": ["NHS"],
+            "numbertype": ["NHS"],
+            "pid": [1],
+        }
+    )
 
 
 @pytest.fixture
@@ -170,7 +259,7 @@ def test_core_query_with_real_sqlite(sqlite_session, populated_patient):
         session=sqlite_session,
         facility="FAC1",
         prevalence_point=prevalence_point,
-        v5_archive_session=sqlite_session,
+        v5_archive_session=archive_session,
     )
     calculator._ckd_cohort_codes = ["900"]
 
@@ -182,3 +271,23 @@ def test_core_query_with_real_sqlite(sqlite_session, populated_patient):
     df_filtered = calculator._core_query(extract_all=False)
     assert len(df_filtered) == 2
     assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()
+
+
+def test_get_archive_data(archive_session, populated_archive, mock_patient_numbers):
+    calculator = PrevalentCKDCalculator(
+        session=archive_session,
+        v5_archive_session=archive_session,
+        facility="FAC1",
+        prevalence_point=datetime(2023, 1, 1),
+    )
+    calculator._ckd_not_rrt_codes = ["900"]  # Only include this
+
+    treatments, assessments = calculator._get_archive_data(mock_patient_numbers)
+
+    assert isinstance(treatments, pd.DataFrame)
+    assert not treatments.empty
+    assert all(treatments["admitreasoncode"] == "900")
+
+    assert len(treatments) == 1
+    assert isinstance(assessments, pd.DataFrame)
+    assert assessments.empty

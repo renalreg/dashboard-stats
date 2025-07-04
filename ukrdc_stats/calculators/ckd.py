@@ -73,6 +73,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         # should probably be a look up against modality codes table
         self._ckd_cohort_codes = ["900", "901", "902", "903", "92", "93", "94"]
+        
+        self._ckd_not_rrt_codes = ["901", "902", "903"]
 
     def extract_stats(self):
         pass
@@ -255,7 +257,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                         XMLTreatment.totime > self._prevalence_point,
                         XMLTreatment.totime.is_(None),
                     ),
-                    XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
+                    XMLTreatment.admitreasoncode.in_(self._ckd_not_rrt_codes),
                     tuple_(
                         XMLPatient.nationalid,
                         XMLPatient.organization,
