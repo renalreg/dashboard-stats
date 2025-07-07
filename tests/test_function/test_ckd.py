@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 from datetime import datetime
+from unittest.mock import MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator, Boolean
@@ -251,7 +252,7 @@ def populated_patient(sqlite_session):
     return pid
 
 
-def test_core_query_with_real_sqlite(sqlite_session, populated_patient):
+def test_core_query(sqlite_session, populated_patient):
     prevalence_point = datetime(2023, 1, 1)
     calculator = PrevalentCKDCalculator(
         session=sqlite_session,
@@ -294,3 +295,50 @@ def test_get_archive_data(archive_session, populated_archive, mock_patient_numbe
     # Select all, meaning even the ones not on prevalence_point should get returned
     assert len(treatments) == 2
     assert all(treatments["admitreasoncode"] == "900")
+
+
+def test_extract_base_patient_cohort(
+    sqlite_session, archive_session, populated_patient, populated_archive
+):
+    prevalence_point = datetime(2023, 1, 1)
+    calculator = PrevalentCKDCalculator(
+        session=sqlite_session,
+        v5_archive_session=archive_session,
+        facility="FAC1",
+        prevalence_point=prevalence_point,
+    )
+    calculator._ckd_cohort_codes = ["900"]
+    calculator._ckd_not_rrt_codes = ["900"]
+
+    calculator._get_test_results = MagicMock(
+        return_value=pd.DataFrame(
+            {
+                "pid": [1],
+                "resultvalue_creat": [80],
+                "resultvalueunits_creat": ["umol/L"],
+                "observationtime_creat": [datetime(2022, 12, 1)],
+            }
+        ).astype({"pid": str})
+    )
+
+    cohort = calculator._extract_base_patient_cohort()
+
+    assert isinstance(cohort, pd.DataFrame)
+    assert not cohort.empty
+
+    expected_cols = {
+        "ukrdcid",
+        "pid",
+        "admitreasoncode",
+        "calculated_egfr",
+        "externalid",
+    }
+    assert expected_cols.issubset(set(cohort.columns))
+
+    assert len(cohort) == 2
+    assert (cohort["pid"] == "1").all()
+    assert (cohort["admitreasoncode"] == "900").all()
+    assert cohort["calculated_egfr"][0] == 90
+
+    cohort = calculator._extract_base_patient_cohort(extract_all=True)
+    assert len(cohort) == 3
