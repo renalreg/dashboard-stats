@@ -15,7 +15,7 @@ from ukrdc_sqla.ukrdc import (
     ResultItem,
     LabOrder,
     CodeMap,
-    ModalityCodes
+    ModalityCodes,
 )
 from ukrdc_sqla.xmlarchive import (
     Patient as XMLPatient,
@@ -73,7 +73,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         # should probably be a look up against modality codes table
         self._ckd_cohort_codes = ["900", "901", "902", "903", "92", "93", "94"]
-        
+
         self._ckd_not_rrt_codes = ["901", "902", "903"]
 
     def extract_stats(self):
@@ -113,7 +113,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
-                ModalityCodes.registry_code_type
+                ModalityCodes.registry_code_type,
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
@@ -126,7 +126,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 ),
             )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
-            .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
+            .join(
+                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
+            )
             .where(
                 Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
                 PatientRecord.sendingfacility == self.facility,
@@ -139,7 +141,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
             .order_by(PatientRecord.pid)
         )
-        
+
         if not extract_all:
             query_ckd_patients = query_ckd_patients.where(
                 Treatment.fromtime < self._prevalence_point,
@@ -186,7 +188,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return patients_numbers.reset_index(drop=True).astype(str)
 
-    def _get_archive_data(self, patient_numbers: pd.DataFrame, extract_all: bool = False):
+    def _get_archive_data(
+        self, patient_numbers: pd.DataFrame, extract_all: bool = False
+    ):
         # Break up large queries into chunks to avoid PostgreSQL stack overflow
         BATCH_SIZE = 1000
         all_assessments = []
@@ -268,7 +272,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     ),
                 )
             )
-            
+
             if not extract_all:
                 treatments_query = treatments_query.where(
                     XMLTreatment.fromtime < self._prevalence_point,
