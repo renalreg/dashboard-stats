@@ -1,5 +1,4 @@
 import pytest
-import pandas as pd
 import polars as pl
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -270,7 +269,9 @@ def test_core_query(sqlite_session, populated_patient):
     # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
     df_filtered = calculator._core_query(extract_all=False)
     assert len(df_filtered) == 2
-    assert not df_filtered.select(pl.col("fromtime").is_in([datetime(2023, 6, 1)]).any()).item()
+    assert not df_filtered.select(
+        pl.col("fromtime").is_in([datetime(2023, 6, 1)]).any()
+    ).item()
 
 
 def test_get_archive_data(archive_session, populated_archive, mock_patient_numbers):

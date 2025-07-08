@@ -1,7 +1,6 @@
 """Calculators associated with ckd. In particular the care planning."""
 
 from operator import and_
-import pandas as pd
 import polars as pl
 import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_, case, func
@@ -300,8 +299,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         else:
             assessments = pl.DataFrame(
                 schema={
-                    "patientid" : pl.String,
-                    "organization" : pl.String,
+                    "patientid": pl.String,
+                    "organization": pl.String,
                     "numbertype": pl.String,
                     "creation_date": pl.Datetime,
                     "assessmentstart": pl.Datetime,
@@ -320,8 +319,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         else:
             treatments = pl.DataFrame(
                 schema={
-                    "patientid" : pl.String,
-                    "organization" : pl.String,
+                    "patientid": pl.String,
+                    "organization": pl.String,
                     "numbertype": pl.String,
                     "creation_date": pl.Datetime,
                     "admitreasoncode": pl.String,
@@ -344,15 +343,13 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             on=["patientid", "organization", "numbertype"],
             how="inner",
         )
-        assessments = (
-            assessments.drop(["patientid", "organization", "numbertype"])
-            .unique()
-        )
+        assessments = assessments.drop(
+            ["patientid", "organization", "numbertype"]
+        ).unique()
 
-        treatments = (
-            treatments.drop(["patientid", "organization", "numbertype"])
-            .unique()
-        )
+        treatments = treatments.drop(
+            ["patientid", "organization", "numbertype"]
+        ).unique()
 
         return treatments, assessments
 
@@ -398,38 +395,35 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         # separate and clean
         egfr_results = (
-            results
-            .filter(pl.col("serviceidcode").is_in(["QBLAB", "QBLAL"]))
-            .with_columns([
-                pl.col("resultvalue")
-                .str.replace_all("<", "")
-                .str.replace_all(">", "")
-                .cast(pl.Float64)
-                .alias("resultvalue")
-            ])
+            results.filter(pl.col("serviceidcode").is_in(["QBLAB", "QBLAL"]))
+            .with_columns(
+                [
+                    pl.col("resultvalue")
+                    .str.replace_all("<", "")
+                    .str.replace_all(">", "")
+                    .cast(pl.Float64)
+                    .alias("resultvalue")
+                ]
+            )
             .drop_nulls("resultvalue")
             .sort("observationtime")
             .unique(subset=["pid"], keep="last")
         )
 
         # Get creatinine results
-        creatinine_results = (
-            results
-            .filter(pl.col("serviceidcode") == "QBLA1")
-            .with_columns([
-                pl.col("resultvalue").cast(pl.Float64).alias("resultvalue")
-            ])
-        )
+        creatinine_results = results.filter(
+            pl.col("serviceidcode") == "QBLA1"
+        ).with_columns([pl.col("resultvalue").cast(pl.Float64).alias("resultvalue")])
 
         # Add suffixes before merge as polars doesn't support adding them to both dfs on joins
-        egfr_results = egfr_results.rename({col: f"{col}_labegfr" for col in egfr_results.columns if col != "pid"})
-        creatinine_results = creatinine_results.rename({col: f"{col}_creat" for col in creatinine_results.columns if col != "pid"})
-        # Merge creatinine and eGFR results
-        merged_results = creatinine_results.join(
-            egfr_results,
-            on="pid",
-            how="outer"
+        egfr_results = egfr_results.rename(
+            {col: f"{col}_labegfr" for col in egfr_results.columns if col != "pid"}
         )
+        creatinine_results = creatinine_results.rename(
+            {col: f"{col}_creat" for col in creatinine_results.columns if col != "pid"}
+        )
+        # Merge creatinine and eGFR results
+        merged_results = creatinine_results.join(egfr_results, on="pid", how="outer")
 
         return merged_results
 
@@ -451,10 +445,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         # this could/should be restricted to codes that can map to eachother
         # e.g. 902 -> 900 where like '9%' or something
         cohort = cohort.join(
-            treatments,
-            on=["pid", "fromtime", "totime"],
-            how="left",
-            suffix="_ukrdc"
+            treatments, on=["pid", "fromtime", "totime"], how="left", suffix="_ukrdc"
         )
 
         # add in treatments not in the archive and drop ukrdc values
@@ -463,31 +454,26 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .then(cohort["admitreasoncode_ukrdc"])
             .otherwise(cohort["admitreasoncode"])
             .alias("admitreasoncode"),
-
             pl.when(cohort["admitreasoncodestd"].is_null())
             .then(cohort["admitreasoncodestd_ukrdc"])
             .otherwise(cohort["admitreasoncodestd"])
             .alias("admitreasoncodestd"),
-
             pl.when(cohort["admitreasondesc"].is_null())
             .then(cohort["admitreasondesc_ukrdc"])
             .otherwise(cohort["admitreasondesc"])
             .alias("admitreasondesc"),
         )
-        
-        cohort = cohort.drop([
-            "admitreasoncode_ukrdc",
-            "admitreasoncodestd_ukrdc",
-            "admitreasondesc_ukrdc",
-        ])
+
+        cohort = cohort.drop(
+            [
+                "admitreasoncode_ukrdc",
+                "admitreasoncodestd_ukrdc",
+                "admitreasondesc_ukrdc",
+            ]
+        )
 
         # join assessments
-        cohort = cohort.join(
-            assessments,
-            on="pid",
-            how="left",
-            suffix="_assessment"
-        )
+        cohort = cohort.join(assessments, on="pid", how="left", suffix="_assessment")
 
         test_results = self._get_test_results(cohort["pid"].to_list())
 
@@ -498,30 +484,38 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             how="left",
         )
 
-        cohort = cohort.with_columns([
-            pl.struct([
-                "resultvalue_creat",
-                "resultvalueunits_creat",
-                "observationtime_creat",
-                "birthtime",
-                "sex",
-                "ukkaethnicity"
-            ]).map_elements(lambda row: egfr(
-                row["resultvalue_creat"],
-                row["resultvalueunits_creat"],
-                row["observationtime_creat"],
-                row["birthtime"],
-                row["sex"],
-                row["ukkaethnicity"]
-            ), return_dtype=pl.Int64).alias("calculated_egfr")
-        ])
+        cohort = cohort.with_columns(
+            [
+                pl.struct(
+                    [
+                        "resultvalue_creat",
+                        "resultvalueunits_creat",
+                        "observationtime_creat",
+                        "birthtime",
+                        "sex",
+                        "ukkaethnicity",
+                    ]
+                )
+                .map_elements(
+                    lambda row: egfr(
+                        row["resultvalue_creat"],
+                        row["resultvalueunits_creat"],
+                        row["observationtime_creat"],
+                        row["birthtime"],
+                        row["sex"],
+                        row["ukkaethnicity"],
+                    ),
+                    return_dtype=pl.Int64,
+                )
+                .alias("calculated_egfr")
+            ]
+        )
 
         # Get universal patient ids (NHS number ideally)
         priority_map = {"NHS": 0, "CHI": 1, "HSC": 2, "LOCALHOSP": 3}
 
         patient_ids_sorted = (
-            patient_numbers
-            .drop("numbertype")
+            patient_numbers.drop("numbertype")
             .with_columns(
                 pl.col("organization").replace(priority_map).alias("org_priority")
             )
