@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+import polars as pl
 from datetime import datetime
 from unittest.mock import MagicMock
 from sqlalchemy import create_engine
@@ -122,7 +123,7 @@ def populated_archive(archive_session):
 
 @pytest.fixture
 def mock_patient_numbers():
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "patientid": ["123"],
             "organization": ["NHS"],
@@ -269,7 +270,7 @@ def test_core_query(sqlite_session, populated_patient):
     # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
     df_filtered = calculator._core_query(extract_all=False)
     assert len(df_filtered) == 2
-    assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()
+    assert not df_filtered.select(pl.col("fromtime").is_in([datetime(2023, 6, 1)]).any()).item()
 
 
 def test_get_archive_data(archive_session, populated_archive, mock_patient_numbers):
@@ -283,13 +284,13 @@ def test_get_archive_data(archive_session, populated_archive, mock_patient_numbe
 
     treatments, assessments = calculator._get_archive_data(mock_patient_numbers)
 
-    assert isinstance(treatments, pd.DataFrame)
-    assert not treatments.empty
+    assert isinstance(treatments, pl.DataFrame)
+    assert not treatments.is_empty()
     assert all(treatments["admitreasoncode"] == "900")
 
     assert len(treatments) == 1
-    assert isinstance(assessments, pd.DataFrame)
-    assert assessments.empty
+    assert isinstance(assessments, pl.DataFrame)
+    assert assessments.is_empty()
 
     treatments, assessments = calculator._get_archive_data(mock_patient_numbers, True)
     # Select all, meaning even the ones not on prevalence_point should get returned
@@ -311,20 +312,20 @@ def test_extract_base_patient_cohort(
     calculator._ckd_not_rrt_codes = ["900"]
 
     calculator._get_test_results = MagicMock(
-        return_value=pd.DataFrame(
+        return_value=pl.DataFrame(
             {
                 "pid": [1],
                 "resultvalue_creat": [80],
                 "resultvalueunits_creat": ["umol/L"],
                 "observationtime_creat": [datetime(2022, 12, 1)],
             }
-        ).astype({"pid": str})
+        ).with_columns(pl.col("pid").cast(pl.Utf8))
     )
 
     cohort = calculator._extract_base_patient_cohort()
 
-    assert isinstance(cohort, pd.DataFrame)
-    assert not cohort.empty
+    assert isinstance(cohort, pl.DataFrame)
+    assert not cohort.is_empty()
 
     expected_cols = {
         "ukrdcid",
@@ -336,9 +337,9 @@ def test_extract_base_patient_cohort(
     assert expected_cols.issubset(set(cohort.columns))
 
     assert len(cohort) == 2
-    assert (cohort["pid"] == "1").all()
-    assert (cohort["admitreasoncode"] == "900").all()
-    assert cohort["calculated_egfr"][0] == 90
+    assert cohort.select((pl.col("pid") == "1").all()).item()
+    assert cohort.select((pl.col("admitreasoncode") == "900").all()).item()
+    assert cohort.select("calculated_egfr").to_series()[0] == 90
 
     cohort = calculator._extract_base_patient_cohort(extract_all=True)
     assert len(cohort) == 3

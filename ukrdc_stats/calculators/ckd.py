@@ -2,6 +2,7 @@
 
 from operator import and_
 import pandas as pd
+import polars as pl
 import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_, case, func
 from sqlalchemy.orm import Session, sessionmaker
@@ -157,15 +158,13 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
 
-        base_cohort = (
-            pd.DataFrame(self.session.execute(query_ckd_patients))
-            .drop_duplicates()
-            .reset_index(drop=True)
-        )
+        result = self.session.execute(query_ckd_patients).fetchall()
+        columns = [col.key for col in query_ckd_patients.selected_columns]
+        base_cohort = pl.DataFrame(result, schema=columns).unique()
 
         return base_cohort
 
-    def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
+    def _get_patient_numbers(self, pids: list[str]) -> pl.DataFrame:
         query = (
             select(
                 PatientNumber.pid,
@@ -184,12 +183,12 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
-        patients_numbers = pd.DataFrame(self.session.execute(query))
+        patients_numbers = pl.DataFrame(self.session.execute(query))
 
-        return patients_numbers.reset_index(drop=True).astype(str)
+        return patients_numbers.with_columns(pl.all().cast(pl.Utf8))
 
     def _get_archive_data(
-        self, patient_numbers: pd.DataFrame, extract_all: bool = False
+        self, patient_numbers: pl.DataFrame, extract_all: bool = False
     ):
         # Break up large queries into chunks to avoid PostgreSQL stack overflow
         BATCH_SIZE = 1000
@@ -198,7 +197,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         # Process patient numbers in batches
         for i in range(0, len(patient_numbers), BATCH_SIZE):
-            batch = patient_numbers.iloc[i : i + BATCH_SIZE]
+            batch = patient_numbers[i : i + BATCH_SIZE]
 
             # Assessments query for this batch
             assessments_query = (
@@ -283,76 +282,77 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 )
 
             # Execute queries and collect results
-            batch_assessments = pd.DataFrame(
+            batch_assessments = pl.DataFrame(
                 self.v5_archive_session.execute(assessments_query)
             )
-            if not batch_assessments.empty:
+            if not batch_assessments.is_empty():
                 all_assessments.append(batch_assessments)
 
-            batch_treatments = pd.DataFrame(
+            batch_treatments = pl.DataFrame(
                 self.v5_archive_session.execute(treatments_query)
             )
-            if not batch_treatments.empty:
+            if not batch_treatments.is_empty():
                 all_treatments.append(batch_treatments)
 
         # Combine results from all batches
         if all_assessments:
-            assessments = pd.concat(all_assessments).reset_index(drop=True)
+            assessments = pl.concat(all_assessments, how="vertical")
         else:
-            assessments = pd.DataFrame(
-                columns=[
-                    "patientid",
-                    "organization",
-                    "numbertype",
-                    "creation_date",
-                    "assessmentstart",
-                    "assessmentend",
-                    "assessmenttypecode",
-                    "assessmenttypecodestd",
-                    "assessmenttypecodedesc",
-                    "assessmentoutcomecode",
-                    "assessmentoutcomecodestd",
-                    "assessmentoutcomecodedesc",
-                ]
+            assessments = pl.DataFrame(
+                schema={
+                    "patientid" : pl.String,
+                    "organization" : pl.String,
+                    "numbertype": pl.String,
+                    "creation_date": pl.Datetime,
+                    "assessmentstart": pl.Datetime,
+                    "assessmentend": pl.Datetime,
+                    "assessmenttypecode": pl.String,
+                    "assessmenttypecodestd": pl.String,
+                    "assessmenttypecodedesc": pl.String,
+                    "assessmentoutcomecode": pl.String,
+                    "assessmentoutcomecodestd": pl.String,
+                    "assessmentoutcomecodedesc": pl.String,
+                }
             )
 
         if all_treatments:
-            treatments = pd.concat(all_treatments).reset_index(drop=True)
+            treatments = pl.concat(all_treatments, how="vertical")
         else:
-            treatments = pd.DataFrame(
-                columns=[
-                    "patientid",
-                    "organization",
-                    "numbertype",
-                    "creation_date",
-                    "admitreasoncode",
-                    "admitreasoncodestd",
-                    "admitreasondesc",
-                    "fromtime",
-                    "totime",
-                ]
+            treatments = pl.DataFrame(
+                schema={
+                    "patientid" : pl.String,
+                    "organization" : pl.String,
+                    "numbertype": pl.String,
+                    "creation_date": pl.Datetime,
+                    "admitreasoncode": pl.String,
+                    "admitreasoncodestd": pl.String,
+                    "admitreasondesc": pl.String,
+                    "fromtime": pl.Datetime,
+                    "totime": pl.Datetime,
+                }
             )
 
         # drop ids and deduplicate (incase same patient has been written multiple times)
-        assessments = pd.merge(
-            assessments,
-            patient_numbers,
-            on=["patientid", "organization", "numbertype"],
-            how="inner",
-        )
-        treatments = pd.merge(
-            treatments,
+        assessments = assessments.join(
             patient_numbers,
             on=["patientid", "organization", "numbertype"],
             how="inner",
         )
 
-        assessments = assessments.drop(
-            columns=["patientid", "organization", "numbertype"]
-        ).drop_duplicates()
-        treatments = treatments.drop(
-            columns=["patientid", "organization", "numbertype"]
-        ).drop_duplicates()
+        treatments = treatments.join(
+            patient_numbers,
+            on=["patientid", "organization", "numbertype"],
+            how="inner",
+        )
+        assessments = (
+            assessments.drop(["patientid", "organization", "numbertype"])
+            .unique()
+        )
+
+        treatments = (
+            treatments.drop(["patientid", "organization", "numbertype"])
+            .unique()
+        )
 
         return treatments, assessments
 
@@ -385,7 +385,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
-        results = pd.DataFrame(self.session.execute(query).all())
+        results = pl.DataFrame(self.session.execute(query).all())
         if results.empty:
             columns = [
                 "pid",
@@ -394,39 +394,41 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 "resultvalueunits",
                 "observationtime",
             ]
-            results = pd.DataFrame(columns=columns)
+            results = pl.DataFrame(schema=columns)
 
         # separate and clean
-        egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAL"])].copy()
-        egfr_results["resultvalue"] = (
-            egfr_results["resultvalue"].str.replace("<", "").str.replace(">", "")
-        )
-        egfr_results["resultvalue"] = pd.to_numeric(
-            egfr_results["resultvalue"], errors="coerce"
-        )
-
-        # Drop rows where eGFR conversion to numeric failed then deduplicate
-        egfr_results = egfr_results.dropna(subset=["resultvalue"])
-
-        egfr_results = egfr_results.sort_values("observationtime").drop_duplicates(
-            subset=["pid"], keep="last"
+        egfr_results = (
+            results
+            .filter(pl.col("serviceidcode").is_in(["QBLAB", "QBLAL"]))
+            .with_columns([
+                pl.col("resultvalue")
+                .str.replace_all("<", "")
+                .str.replace_all(">", "")
+                .cast(pl.Float64)
+                .alias("resultvalue")
+            ])
+            .drop_nulls("resultvalue")
+            .sort("observationtime")
+            .unique(subset=["pid"], keep="last")
         )
 
         # Get creatinine results
-        creatinine_results = results[
-            results["serviceidcode"] == "QBLA1"
-        ]  # .drop(columns=['serviceidcode'])
-        creatinine_results["resultvalue"] = pd.to_numeric(
-            creatinine_results["resultvalue"], errors="coerce"
+        creatinine_results = (
+            results
+            .filter(pl.col("serviceidcode") == "QBLA1")
+            .with_columns([
+                pl.col("resultvalue").cast(pl.Float64).alias("resultvalue")
+            ])
         )
 
+        # Add suffixes before merge as polars doesn't support adding them to both dfs on joins
+        egfr_results = egfr_results.rename({col: f"{col}_labegfr" for col in egfr_results.columns if col != "pid"})
+        creatinine_results = creatinine_results.rename({col: f"{col}_creat" for col in creatinine_results.columns if col != "pid"})
         # Merge creatinine and eGFR results
-        merged_results = pd.merge(
-            creatinine_results,
+        merged_results = creatinine_results.join(
             egfr_results,
             on="pid",
-            how="outer",
-            suffixes=("_creat", "_labegfr"),
+            how="outer"
         )
 
         return merged_results
@@ -435,11 +437,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         # Get main cohort from ukrdc
         cohort = self._core_query(extract_all)
 
-        if cohort.empty:
+        if cohort.is_empty():
             return
 
         # Get all know patient identifiers for matching
-        patient_numbers = self._get_patient_numbers(cohort["pid"].tolist())
+        patient_numbers = self._get_patient_numbers(cohort["pid"].to_list())
 
         # Send patient numbers to the archive to extract data from there
         treatments, assessments = self._get_archive_data(patient_numbers, extract_all)
@@ -448,84 +450,94 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         # we assume treatments without corresponding ukrdc record are invalid
         # this could/should be restricted to codes that can map to eachother
         # e.g. 902 -> 900 where like '9%' or something
-        cohort = pd.merge(
-            cohort,
+        cohort = cohort.join(
             treatments,
             on=["pid", "fromtime", "totime"],
             how="left",
-            suffixes=("_ukrdc", ""),
+            suffix="_ukrdc"
         )
 
         # add in treatments not in the archive and drop ukrdc values
-        ukrdc_only = cohort["admitreasoncode"].isnull()
-        cohort.loc[
-            ukrdc_only, ["admitreasoncode", "admitreasoncodestd", "admitreasondesc"]
-        ] = cohort.loc[
-            ukrdc_only,
-            [
-                "admitreasoncode_ukrdc",
-                "admitreasoncodestd_ukrdc",
-                "admitreasondesc_ukrdc",
-            ],
-        ].values
-        cohort = cohort.drop(
-            columns=[
-                "admitreasoncode_ukrdc",
-                "admitreasoncodestd_ukrdc",
-                "admitreasondesc_ukrdc",
-            ]
+        cohort = cohort.with_columns(
+            pl.when(cohort["admitreasoncode"].is_null())
+            .then(cohort["admitreasoncode_ukrdc"])
+            .otherwise(cohort["admitreasoncode"])
+            .alias("admitreasoncode"),
+
+            pl.when(cohort["admitreasoncodestd"].is_null())
+            .then(cohort["admitreasoncodestd_ukrdc"])
+            .otherwise(cohort["admitreasoncodestd"])
+            .alias("admitreasoncodestd"),
+
+            pl.when(cohort["admitreasondesc"].is_null())
+            .then(cohort["admitreasondesc_ukrdc"])
+            .otherwise(cohort["admitreasondesc"])
+            .alias("admitreasondesc"),
         )
+        
+        cohort = cohort.drop([
+            "admitreasoncode_ukrdc",
+            "admitreasoncodestd_ukrdc",
+            "admitreasondesc_ukrdc",
+        ])
 
         # join assessments
-        cohort = pd.merge(
-            cohort,
+        cohort = cohort.join(
             assessments,
-            on=["pid"],
+            on="pid",
             how="left",
-            suffixes=("_treatment", "_assessment"),
+            suffix="_assessment"
         )
 
-        test_results = self._get_test_results(cohort["pid"].tolist())
+        test_results = self._get_test_results(cohort["pid"].to_list())
 
         # get test results and cakculate egfr
-        cohort = pd.merge(
-            cohort,
+        cohort = cohort.join(
             test_results,
-            on=["pid"],
+            on="pid",
             how="left",
         )
 
-        cohort["calculated_egfr"] = cohort.apply(
-            lambda row: egfr(
+        cohort = cohort.with_columns([
+            pl.struct([
+                "resultvalue_creat",
+                "resultvalueunits_creat",
+                "observationtime_creat",
+                "birthtime",
+                "sex",
+                "ukkaethnicity"
+            ]).map_elements(lambda row: egfr(
                 row["resultvalue_creat"],
                 row["resultvalueunits_creat"],
                 row["observationtime_creat"],
                 row["birthtime"],
                 row["sex"],
-                row["ukkaethnicity"],
-            ),
-            axis=1,
-        )
+                row["ukkaethnicity"]
+            ), return_dtype=pl.Int64).alias("calculated_egfr")
+        ])
 
         # Get universal patient ids (NHS number ideally)
+        priority_map = {"NHS": 0, "CHI": 1, "HSC": 2, "LOCALHOSP": 3}
+
         patient_ids_sorted = (
-            patient_numbers.drop(columns=["numbertype"])
-            .sort_values(
-                by=["organization"],
-                key=lambda x: x.map({"NHS": 0, "CHI": 1, "HSC": 2, "LOCALHOSP": 3}),
+            patient_numbers
+            .drop("numbertype")
+            .with_columns(
+                pl.col("organization").replace(priority_map).alias("org_priority")
             )
-            .drop_duplicates(subset=["pid"], keep="first")
+            .sort(["pid", "org_priority"])
+            .unique(subset=["pid"], keep="first")
+            .drop("org_priority")
         )
 
         # Merge patient them back into the cohort
-        cohort = pd.merge(
-            cohort,
+        cohort = cohort.join(
             patient_ids_sorted,
-            on=["pid"],
+            on="pid",
             how="left",
         )
 
-        cohort.rename(columns={"patientid": "externalid"}, inplace=True)
+        cohort = cohort.rename({"patientid": "externalid"})
 
         return cohort
 
