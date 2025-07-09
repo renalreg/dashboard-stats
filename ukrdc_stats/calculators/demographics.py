@@ -203,7 +203,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             # filter out patients in the exclusion list
             patients = patients.filter(~pl.col("ukrdcid").is_in(exclude_patients_list["ukrdcid"]))
 
-        return patients.drop_duplicates()
+        return patients.unique()
 
     def _calculate_gender(self) -> Labelled2d:
         if self._patient_cohort is None:
@@ -236,7 +236,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         ethnic_group_code = _calculate_base_patient_histogram(
             self._patient_cohort, "ethnic_group_code", ethnic_group_map
         )
-
+        
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",

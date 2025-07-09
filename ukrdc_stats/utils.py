@@ -197,6 +197,7 @@ def _calculate_base_patient_histogram(
 
         histogram = (
             cohort.select(["ukrdcid", mapped_column])
+            .with_columns(pl.col(mapped_column).fill_null("None"))
             .unique()
             .group_by(mapped_column)
             .len()
@@ -206,6 +207,7 @@ def _calculate_base_patient_histogram(
     else:
         histogram = (
             cohort.select(["ukrdcid", group])
+            .with_columns(pl.col(group).fill_null("None"))
             .unique()
             .group_by(group)
             .len()
