@@ -7,6 +7,7 @@ from typing import Optional
 from pydantic import Field
 
 import pandas as pd
+import polars as pl
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 from ukrdc_sqla.ukrdc import (
@@ -89,7 +90,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         include_tracing: Optional[bool] = True,
         limit_to_ukrdc: Optional[bool] = True,
         ukrr_expanded: Optional[bool] = False,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """Main database queries to produce a dataframe containing the patient demographics
         for a specified Unit.
 
@@ -97,7 +98,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             include_tracing (bool, optional): Switch to use tracing rec. Defaults to False.
 
         Returns:
-            pd.DataFrame: _description_
+            pl.DataFrame: _description_
         """
 
         sats = _get_satellite_list(self.facility, self.session)
@@ -173,8 +174,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             patient_query = patient_query.where(PatientRecord.sendingextract == "UKRDC")
 
         # extract patient cohort
-        patients = pd.DataFrame(self.session.execute(patient_query)).drop_duplicates()
-        if patients.empty:
+        patients = pl.DataFrame(self.session.execute(patient_query)).unique()
+        if patients.is_empty():
             raise NoCohortError(
                 f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
             )
@@ -188,19 +189,19 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     and_(
                         # PatientRecord.sendingfacility == "TRACING",
                         PatientRecord.ukrdcid.in_(
-                            patients[pd.isna(patients.death_time)].ukrdcid
+                            patients.filter(pl.col("death_time").is_null()).select("ukrdcid")
                         ),
                         Patient.death_time < self.end_date,
                     )
                 )
             )
 
-            exclude_patients_list = pd.DataFrame(
+            exclude_patients_list = pl.DataFrame(
                 self.session.execute(exclude_patients)
-            ).drop_duplicates()
+            ).unique()
 
             # filter out patients in the exclusion list
-            patients = patients[~patients.ukrdcid.isin(exclude_patients_list.ukrdcid)]
+            patients = patients.filter(~pl.col("ukrdcid").is_in(exclude_patients_list["ukrdcid"]))
 
         return patients.drop_duplicates()
 
@@ -220,7 +221,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(gender, "gender").tolist(), y=gender.Count.tolist()
+                x=_mapped_if_exists(gender, "gender").to_list(), y=gender["Count"].to_list()
             ),
         )
 
@@ -244,8 +245,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(ethnic_group_code, "ethnic_group_code").tolist(),
-                y=ethnic_group_code.Count.tolist(),
+                x=_mapped_if_exists(ethnic_group_code, "ethnic_group_code").to_list(),
+                y=ethnic_group_code["Count"].to_list(),
             ),
         )
 
@@ -254,12 +255,16 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
-        self._patient_cohort["age"] = self._patient_cohort["birth_time"][
-            pd.isna(self._patient_cohort.death_time)
-        ].apply(lambda dob: age_from_dob(self.end_date, dob))
+        self._patient_cohort = self._patient_cohort.with_columns(
+            pl.when(pl.col("death_time").is_null())
+            .then(pl.col("birth_time").map_elements(lambda dob: age_from_dob(self.end_date, dob), return_dtype=pl.Int64))
+            .otherwise(None)
+            .alias("age")
+        )
 
         age = _calculate_base_patient_histogram(self._patient_cohort, "age")
 
+        print(age.head(5))
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Age Distribution",
@@ -267,7 +272,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 description=demographic_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
-            data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
+            data=Labelled2dData(x=age["age"].to_list(), y=age["Count"].to_list()),
         )
 
     def extract_patient_cohort(
@@ -311,7 +316,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
             )
 
-        pop_size = len(self._patient_cohort[["ukrdcid"]].drop_duplicates())
+        pop_size = len(self._patient_cohort.select("ukrdcid").unique())
 
         # Build output object
         return DemographicsStats(

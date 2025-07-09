@@ -6,6 +6,7 @@ from ukrdc_stats.calculators.demographics import _calculate_base_patient_histogr
 
 import pytest
 import pandas as pd
+import polars as pl
 import datetime as dt
 
 from ukrdc_stats.calculators.demographics import (
@@ -19,7 +20,7 @@ from unittest.mock import MagicMock, patch
 @pytest.fixture
 def sample_cohort():
     """Fixture to provide sample cohort data."""
-    return pd.DataFrame({
+    return pl.DataFrame({
         "ukrdcid": [1, 2, 3, 4, 5, 6],
         "group_col": ["A", "B", "A", "C", "A", "C"],
         "gender": ["1", "2", "1", "X", "1", "9"],
@@ -45,7 +46,7 @@ def code_map():
 @pytest.fixture
 def empty_cohort():
     """Fixture to provide an empty cohort dataframe."""
-    return pd.DataFrame()
+    return pl.DataFrame()
 
 
 @pytest.fixture
@@ -83,26 +84,24 @@ def test_calculate_age(demographics_calculator):
 
 def test_histogram_without_code_map(sample_cohort):
     """Test the histogram calculation without a code map."""
-    expected_result = pd.DataFrame({
+    expected_result = pl.DataFrame({
         "group_col": ["A", "B", "C"],
         "Count": [3, 1, 2],
     })
 
     result = _calculate_base_patient_histogram(sample_cohort, "group_col")
 
-    pd.testing.assert_frame_equal(
-        result.sort_values("group_col").reset_index(drop=True),
-        expected_result.sort_values("group_col").reset_index(drop=True),
+    assert result.sort("group_col").equals(
+        expected_result.sort("group_col")
     )
 
 def test_histogram_with_code_map(sample_cohort, code_map):
-    expected_result = pd.DataFrame({
+    expected_result = pl.DataFrame({
         "group_col_mapped": ["Alice", "Bob", "Charlie"],
         "Count": [3, 1, 2],
     })
     result = _calculate_base_patient_histogram(sample_cohort,"group_col", code_map)
     
-    pd.testing.assert_frame_equal(
-        result.sort_values("group_col_mapped").reset_index(drop=True),
-        expected_result.sort_values("group_col_mapped").reset_index(drop=True),
+    assert result.sort("group_col_mapped").equals(
+        expected_result.sort("group_col_mapped")
     )

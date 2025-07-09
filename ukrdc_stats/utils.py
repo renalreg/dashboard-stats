@@ -4,6 +4,7 @@ Common utility functions useful in multiple statistics
 
 import datetime as dt
 import pandas as pd
+import polars as pl
 import fileinput
 import warnings
 
@@ -36,7 +37,7 @@ def egfr(
         Optional[int]: estimated glomerular filtration rate
     """
 
-    if pd.isna(scr) or pd.isna(scr_date):
+    if scr is None or scr_date is None:
         return
 
     age = age_from_dob_exact(scr_date, dob)
@@ -170,56 +171,61 @@ def _mapped_key(key: str) -> str:
 
 
 def _calculate_base_patient_histogram(
-    cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
-) -> pd.DataFrame:
+    cohort: pl.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
+) -> pl.DataFrame:
     """Extract a histogram of the patient cohort, grouped by the given column
 
     Args:
-        cohort (pd.DataFrame): Patient cohort
+        cohort (pl.DataFrame): Patient cohort
         group (str): Column to group by
 
     Raises:
         NoCohortError: If the patient cohort is empty
 
     Returns:
-        pd.DataFrame: Histogram dataframe of the patient cohort
+        pl.DataFrame: Histogram dataframe of the patient cohort
     """
 
     if code_map:
         mapped_column = _mapped_key(group)
-        cohort[mapped_column] = cohort[group].map(code_map)
+        lookup = pl.DataFrame({
+            group: list(code_map.keys()),
+            mapped_column: list(code_map.values())
+        })
+        
+        cohort = cohort.join(lookup, on=group, how="left")
 
         histogram = (
-            cohort[["ukrdcid", mapped_column]]
-            .drop_duplicates()
-            .groupby([mapped_column])
-            .count()
-            .reset_index()
+            cohort.select(["ukrdcid", mapped_column])
+            .unique()
+            .group_by(mapped_column)
+            .len()
+            .sort(mapped_column)
         )
 
     else:
         histogram = (
-            cohort[["ukrdcid", group]]
-            .drop_duplicates()
-            .groupby([group])
-            .count()
-            .reset_index()
+            cohort.select(["ukrdcid", group])
+            .unique()
+            .group_by(group)
+            .len()
+            .sort(group)
         )
 
-    return histogram.rename(columns={"ukrdcid": "Count"})
+    return histogram.rename({"len": "Count"})
 
 
-def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
+def _mapped_if_exists(df: pl.DataFrame, column: str) -> pl.Series:
     """
     Convenience function to return the mapped column if it exists,
     otherwise return the original column
 
     Args:
-        df (pd.DataFrame): Input dataframe
+        df (pl.DataFrame): Input dataframe
         column (str): Column to return
 
     Returns:
-        pd.Series: Mapped column if it exists, otherwise the original column
+        pl.Series: Mapped column if it exists, otherwise the original column
     """
     mapped_column: str = _mapped_key(column)
     if mapped_column in df.columns:
