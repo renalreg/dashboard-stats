@@ -383,7 +383,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         )
 
         results = pl.DataFrame(self.session.execute(query).all())
-        if results.empty:
+        if results.is_empty():
             columns = [
                 "pid",
                 "serviceidcode",
@@ -401,7 +401,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     pl.col("resultvalue")
                     .str.replace_all("<", "")
                     .str.replace_all(">", "")
-                    .cast(pl.Float64)
+                    .cast(pl.Float64, strict=False)
                     .alias("resultvalue")
                 ]
             )
@@ -413,7 +413,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         # Get creatinine results
         creatinine_results = results.filter(
             pl.col("serviceidcode") == "QBLA1"
-        ).with_columns([pl.col("resultvalue").cast(pl.Float64).alias("resultvalue")])
+        ).with_columns([pl.col("resultvalue").cast(pl.Float64, strict=False).alias("resultvalue")])
 
         # Add suffixes before merge as polars doesn't support adding them to both dfs on joins
         egfr_results = egfr_results.rename(
