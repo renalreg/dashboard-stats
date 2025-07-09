@@ -188,11 +188,10 @@ def _calculate_base_patient_histogram(
 
     if code_map:
         mapped_column = _mapped_key(group)
-        lookup = pl.DataFrame({
-            group: list(code_map.keys()),
-            mapped_column: list(code_map.values())
-        })
-        
+        lookup = pl.DataFrame(
+            {group: list(code_map.keys()), mapped_column: list(code_map.values())}
+        )
+
         cohort = cohort.join(lookup, on=group, how="left")
 
         histogram = (

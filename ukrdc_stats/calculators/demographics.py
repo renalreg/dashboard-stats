@@ -6,7 +6,6 @@ import datetime as dt
 from typing import Optional
 from pydantic import Field
 
-import pandas as pd
 import polars as pl
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
@@ -189,7 +188,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                     and_(
                         # PatientRecord.sendingfacility == "TRACING",
                         PatientRecord.ukrdcid.in_(
-                            patients.filter(pl.col("death_time").is_null()).select("ukrdcid")
+                            patients.filter(pl.col("death_time").is_null()).select(
+                                "ukrdcid"
+                            )
                         ),
                         Patient.death_time < self.end_date,
                     )
@@ -201,7 +202,9 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             ).unique()
 
             # filter out patients in the exclusion list
-            patients = patients.filter(~pl.col("ukrdcid").is_in(exclude_patients_list["ukrdcid"]))
+            patients = patients.filter(
+                ~pl.col("ukrdcid").is_in(exclude_patients_list["ukrdcid"])
+            )
 
         return patients.unique()
 
@@ -221,7 +224,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(gender, "gender").to_list(), y=gender["Count"].to_list()
+                x=_mapped_if_exists(gender, "gender").to_list(),
+                y=gender["Count"].to_list(),
             ),
         )
 
@@ -236,7 +240,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         ethnic_group_code = _calculate_base_patient_histogram(
             self._patient_cohort, "ethnic_group_code", ethnic_group_map
         )
-        
+
         return Labelled2d(
             metadata=Labelled2dMetadata(
                 title="Ethnic Group",
@@ -257,7 +261,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # add column with ages and calculate histogram
         self._patient_cohort = self._patient_cohort.with_columns(
             pl.when(pl.col("death_time").is_null())
-            .then(pl.col("birth_time").map_elements(lambda dob: age_from_dob(self.end_date, dob), return_dtype=pl.Int64))
+            .then(
+                pl.col("birth_time").map_elements(
+                    lambda dob: age_from_dob(self.end_date, dob), return_dtype=pl.Int64
+                )
+            )
             .otherwise(None)
             .alias("age")
         )

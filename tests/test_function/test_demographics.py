@@ -1,11 +1,9 @@
 
 import pytest
-import pandas as pd
 from ukrdc_stats.calculators.demographics import _calculate_base_patient_histogram
 
 
 import pytest
-import pandas as pd
 import polars as pl
 import datetime as dt
 
