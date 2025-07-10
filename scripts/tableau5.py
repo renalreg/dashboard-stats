@@ -1,3 +1,4 @@
+import os
 from rr_connection_manager import PostgresConnection
 from sqlalchemy import select
 from ukrdc_sqla.ukrdc import Patient
@@ -20,6 +21,9 @@ session = conn.session()
 
 START_DATE = dt.datetime(2024, 10, 1)
 END_DATE = dt.datetime(2025, 1, 1)
+
+OUTPUT_DIR = ".do_not_commit"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 FILTER_COLUMNS = [
                 "centre",
@@ -68,12 +72,17 @@ data = {
     ],
 }
 
+# Create a dataframe of units
 units = pd.DataFrame(data=data)
+
+# Load centres and satellites from csv files
 main_centres = pd.read_csv("C:/Intel/main_centres.csv")
 satellite_centres = pd.read_csv("C:/Intel/satellite_centres.csv")
 
-tableaudf = pd.DataFrame() # Create empty dataframe to store all the individual years / units / groups results
+# Create empty dataframe to store all the individual years / units / groups results
+tableaudf = pd.DataFrame() 
 
+# Get a separate list of facilities ("centre_code" in the units dataframe)
 facilities = units["centre_code"].to_list()
 print(facilities)
 
@@ -107,10 +116,12 @@ demographics["agegroup"] = pd.cut(
     demographics["age"], bins=bins, labels=labels, right=False
 ).astype("object")
 
-# recode sex 1 2 into Male Female
-demographics.loc[demographics["gender"] == "1", "gender"] = "Male"
-demographics.loc[demographics["gender"] == "2", "gender"] = "Female"
-# Not quite correct as this recodes None as Other
+# Recode gender 1/2 into Male Female using dictionary
+demographics["gender"] = demographics["gender"].replace({
+    "1": "Male",
+    "2": "Female"
+})
+# Recode gender that is not NaN or in ["Male", "Female"] into "Other"
 demographics["gender"] = demographics["gender"].apply(
     lambda x: x if pd.isna(x) or x in ["Male", "Female"] else "Other"
 )
@@ -141,35 +152,50 @@ demographics["ethnicgroupcode"] = demographics["ethnicgroupcode"].apply(
 
 print("Demographics dataframe complete")
 
-for y in facilities:
-    facility = y
-    print(y)
+# Iterate through all facilities one by one
+for facility in facilities:
+    print(facility)
+    # Iterate through 4 quarters backwards (i.e., start at Q4, then Q3 etc.)
     for x in range(4):
         print(x)
+        
+        # Create an instance of a KRT Calculator object - it's responsible for extracting cohort
         calculator1 = KRTStatsCalculator(
             session=session, facility=facility, from_time=START_DATE, to_time=START_DATE
         )
+        
+        # Extract base patient cohort
         jfm1 = calculator1._extract_base_patient_cohort()
+        # Pass the patient cohort to _extract_incident_prevalent function to add incident/prevalence data to it
         jfm2 = calculator1._extract_incident_prevalent(jfm1)
 
+        # Calculate date columns based on START_DATE
         jfm2["year"] = START_DATE.strftime("%Y")  # append Year column with all same value
         jfm2["quarter"] = (START_DATE.month + 2) / 3  # append Quarter column with  same value
+        
+        # Hardcode some of the metadata
         jfm2["adultpaed"] = "Adult"  # append Adult column with all same value
         jfm2["incidprev"] = "Incident"  # append Incidence column with all same value
         jfm2["variable2"] = "Gender"
         jfm2["measure"] = "Demography"
         jfm2["option"] = "Number"
+        
+        # Assign "TX" to the registry_code_type only for patients where admitreasoncode == "120"
         jfm2.loc[jfm2["admitreasoncode"] == "120", "registry_code_type"] = (
             "TX"  # mend missing 120 in Leic
         )
+        
+        # Assign "Transplant" to the registry_code_type only for patients where registry_code_type == "TX"
         jfm2.loc[jfm2["registry_code_type"] == "TX", "registry_code_type"] = (
             "Transplant"  # recode for tableau
         )
 
+        # Merge patient cohort with the units dataframe
         with_centre = pd.merge(
             jfm2, units, left_on="sendingfacility", right_on="centre_code", how="left"
         )
 
+        # Merge cohort with the satelite dataframe 
         with_satellite = pd.merge(
             with_centre,
             satellite_centres,
@@ -178,22 +204,26 @@ for y in facilities:
             how="left",
         )
 
+        # Merge cohort with the demographics data
         with_demographics = pd.merge(with_satellite, demographics, on="pid", how="left")
 
+        # If "satellite_code" is not specified, set "satellite_code" to "centre_code", else keep it "satellite_code"
         with_demographics["satellite_code"] = np.where(
             with_demographics["satellite_code"].isna(),
             with_demographics["centre_code"],
             with_demographics["satellite_code"],
-        )  # Assign blank satellite code to main unit code
+        ) 
+        
+        # If "satellite" is not specified, set "satellite" to "centre", else keep it "satellite"
         with_demographics["satellite"] = np.where(
             with_demographics["satellite"].isna(),
             with_demographics["centre"],
             with_demographics["satellite"],
-        )  # Assign blank satellite to main unitfacility
+        ) 
 
-        # incidence
+        # Hardcode "incideprev" with "Incident" value
         with_demographics["incidprev"] = (
-            "Incident"  # update incidprev = Incident with all same value
+            "Incident"
         )
         
         # Select only relevant columns from the dataset
@@ -229,7 +259,7 @@ for y in facilities:
         jfm3["variable2"] = "Gender"
         jfm4 = jfm3.groupby(FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"gender": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -240,7 +270,7 @@ for y in facilities:
         jfm3["variable2"] = "Ethnicity"
         jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"ethnicgroupcode": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -250,7 +280,7 @@ for y in facilities:
         jfm3["variable2"] = "Age"
         jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"agegroup": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -292,7 +322,7 @@ for y in facilities:
         jfm3["variable2"] = "Gender"
         jfm4 = jfm3.groupby(["gender"] + FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"gender": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -302,7 +332,7 @@ for y in facilities:
         jfm3["variable2"] = "Ethnicity"
         jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"ethnicgroupcode": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -312,7 +342,7 @@ for y in facilities:
         jfm3["variable2"] = "Age"
         jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
             as_index=False,
-        ).agg(value=("pid", "count"))
+        ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"agegroup": "variable"}, inplace=True
         )  # characteristics all in 'variable' column
@@ -323,4 +353,4 @@ for y in facilities:
 
 # print(tableaudf)
 tableaudf.rename(columns={"registry_code_type": "dialtplt"}, inplace=True)
-tableaudf.to_csv("C:/Intel/tableau4.csv", index=True)
+tableaudf.to_csv(os.path.join(OUTPUT_DIR, "tableau4.csv"), index=True)
