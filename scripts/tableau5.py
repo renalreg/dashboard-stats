@@ -7,19 +7,37 @@ import numpy as np
 import datetime as dt
 from dateutil.relativedelta import relativedelta
 
-from ukrdc_stats.calculators.krt_JM import (
+from ukrdc_stats.calculators.krt import (
     KRTStatsCalculator,
 )  # includes timeline_code 120 as a transplant patient
 # from ukrdc_stats.calculators.krt import KRTStatsCalculator
+
+from ukrdc_sqla.ukrdc import CodeMap
 
 # conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
 conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
 session = conn.session()
 
-start = dt.datetime(2024, 10, 1)
-end = dt.datetime(2025, 1, 1)
+START_DATE = dt.datetime(2024, 10, 1)
+END_DATE = dt.datetime(2025, 1, 1)
 
-d = {
+FILTER_COLUMNS = [
+                "centre",
+                "adultpaed",
+                "registry_code_type",
+                "country",
+                "variable2",
+                "measure",
+                "centre_code",
+                "satellite_code",
+                "satellite",
+                "year",
+                "option",
+                "incidprev",
+                "quarter",
+                "region"]
+
+data = {
     "centre_code": ["RNJ00", "RAQ01", "RHW01", "RCSLB", "RK7CC", "RFBAK", "RH8"],
     "centre": [
         "Barts",
@@ -50,12 +68,11 @@ d = {
     ],
 }
 
-units = pd.DataFrame(data=d)
+units = pd.DataFrame(data=data)
 main_centres = pd.read_csv("C:/Intel/main_centres.csv")
 satellite_centres = pd.read_csv("C:/Intel/satellite_centres.csv")
-tableaudf = (
-    pd.DataFrame()
-)  # composite dataframe of all the individual years / units / groups
+
+tableaudf = pd.DataFrame() # Create empty dataframe to store all the individual years / units / groups results
 
 facilities = units["centre_code"].to_list()
 print(facilities)
@@ -72,9 +89,11 @@ query = (
 )
 demographics = pd.DataFrame(session.execute(query).all())
 
+# Convert birthtimes into a DateTime object, making them easier to work with
+# If the input is an invalid date for some reason (e.g., formating) - set it to NaT (Not a Time)
 demographics["birthtime"] = pd.to_datetime(
     demographics["birthtime"], errors="coerce"
-)  # oddly some non-dates in the birthtime crashes age calc
+) 
 
 # not quite correct as this is age NOW not age in the particular quarter
 demographics["age"] = round(
@@ -93,25 +112,29 @@ demographics.loc[demographics["gender"] == "1", "gender"] = "Male"
 demographics.loc[demographics["gender"] == "2", "gender"] = "Female"
 # Not quite correct as this recodes None as Other
 demographics["gender"] = demographics["gender"].apply(
-    lambda x: "Other" if x not in ["Male", "Female"] else x
+    lambda x: x if pd.isna(x) or x in ["Male", "Female"] else "Other"
 )
 
-# recode ethnicity
-demographics.loc[
-    demographics["ethnicgroupcode"].isin(["A", "B", "C"]), "ethnicgroupcode"
-] = "White"
-demographics.loc[
-    demographics["ethnicgroupcode"].isin(["H", "J", "K", "L"]), "ethnicgroupcode"
-] = "Asian"
-demographics.loc[
-    demographics["ethnicgroupcode"].isin(["M", "N", "P"]), "ethnicgroupcode"
-] = "Black"
-demographics.loc[demographics["ethnicgroupcode"].isin(["Z"]), "ethnicgroupcode"] = (
-    "Unknown"
+# Recode ethnicity using CodeMap table
+# First, get source_code and destination_code from the database
+query = select(CodeMap.source_code, CodeMap.destination_code).where(CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING")
+ethnicity_map = pd.DataFrame(session.execute(query).all())
+
+# Then merge the map with the dataset
+demographics = demographics.merge(
+    ethnicity_map,
+    how="left",
+    left_on="ethnicgroupcode",
+    right_on="source_code"
 )
-# Not quite correct as this recodes None as Other
+
+# Finally, cleanup the dataset by renaming "destination_code" into a "ethnicgroupcode"
+demographics = demographics.drop(columns=["ethnicgroupcode", "source_code"])
+demographics = demographics.rename(columns={"destination_code": "ethnicgroupcode"})
+
+# Recode ethnicities that are not NaN or in ["White", "Asian", "Black", "Unknown"] as "Other"
 demographics["ethnicgroupcode"] = demographics["ethnicgroupcode"].apply(
-    lambda x: "Other" if x not in ["White", "Asian", "Black", "Unknown"] else x
+    lambda x: x if pd.isna(x) or x in ["White", "Asian", "Black", "Unknown"] else "Other"
 )
 
 # add IMD
@@ -124,13 +147,13 @@ for y in facilities:
     for x in range(4):
         print(x)
         calculator1 = KRTStatsCalculator(
-            session=session, facility=facility, from_time=start, to_time=end
+            session=session, facility=facility, from_time=START_DATE, to_time=START_DATE
         )
         jfm1 = calculator1._extract_base_patient_cohort()
         jfm2 = calculator1._extract_incident_prevalent(jfm1)
 
-        jfm2["year"] = start.strftime("%Y")  # append Year column with all same value
-        jfm2["quarter"] = (start.month + 2) / 3  # append Quarter column with  same value
+        jfm2["year"] = START_DATE.strftime("%Y")  # append Year column with all same value
+        jfm2["quarter"] = (START_DATE.month + 2) / 3  # append Quarter column with  same value
         jfm2["adultpaed"] = "Adult"  # append Adult column with all same value
         jfm2["incidprev"] = "Incident"  # append Incidence column with all same value
         jfm2["variable2"] = "Gender"
@@ -172,6 +195,8 @@ for y in facilities:
         with_demographics["incidprev"] = (
             "Incident"  # update incidprev = Incident with all same value
         )
+        
+        # Select only relevant columns from the dataset
         jfm3 = with_demographics[
             [
                 "gender",
@@ -193,33 +218,16 @@ for y in facilities:
                 "registry_code_type",
                 "pid",
             ]
-        ].loc[
-            (with_demographics.first_treatment)
-            & (with_demographics.incident)
-            & (with_demographics["sendingfacility"] == facility)
-            & (with_demographics["admissionsourcecode"].isnull())
+        ].loc[ # Filter for rows where all of the following is true:
+            (with_demographics.first_treatment) # This is first treatment
+            & (with_demographics.incident) # This is an incident
+            & (with_demographics["sendingfacility"] == facility) # Sending facility matches
+            & (with_demographics["admissionsourcecode"].isnull()) # Admission source is not specified
         ]
 
-        # gender
-        jfm3["varable2"] = "Gender"
-        jfm4 = jfm3.groupby(
-            [
-                "gender",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by gender (keeping all the other data)
+        jfm3["variable2"] = "Gender"
+        jfm4 = jfm3.groupby(FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -228,26 +236,9 @@ for y in facilities:
         tableaudf = pd.concat([tableaudf, jfm4])
         print(jfm4)
 
-        # ethnnicity
-        jfm3["varable2"] = "Ethnicity"
-        jfm4 = jfm3.groupby(
-            [
-                "ethnicgroupcode",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by ethncity (keeping all the other data)
+        jfm3["variable2"] = "Ethnicity"
+        jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -255,26 +246,9 @@ for y in facilities:
         )  # characteristics all in 'variable' column
         tableaudf = pd.concat([tableaudf, jfm4])
 
-        # agegroup
-        jfm3["varable2"] = "Age"
-        jfm4 = jfm3.groupby(
-            [
-                "agegroup",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by agegroup (keeping all the other data)
+        jfm3["variable2"] = "Age"
+        jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -286,6 +260,7 @@ for y in facilities:
         with_demographics["incidprev"] = (
             "Prevalent"  # update incidprev = Prevalent with all same value
         )
+        # Select only relevant columns from the dataset
         jfm3 = with_demographics[
             [
                 "gender",
@@ -307,32 +282,15 @@ for y in facilities:
                 "registry_code_type",
                 "pid",
             ]
-        ].loc[
-            (with_demographics.first_treatment)
-            & (with_demographics.prevalent)
-            & (with_demographics["sendingfacility"] == facility)
+        ].loc[ # Filter for rows where all of the following is true:
+            (with_demographics.first_treatment) # This is first treatment
+            & (with_demographics.prevalent) # This is prevalent case
+            & (with_demographics["sendingfacility"] == facility) # Facility matches
         ]
 
-        # gender
-        jfm3["varable2"] = "Gender"
-        jfm4 = jfm3.groupby(
-            [
-                "gender",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by gender (keeping all the other data)
+        jfm3["variable2"] = "Gender"
+        jfm4 = jfm3.groupby(["gender"] + FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -340,26 +298,9 @@ for y in facilities:
         )  # characteristics all in 'variable' column
         tableaudf = pd.concat([tableaudf, jfm4])
 
-        # ethnnicity
-        jfm3["varable2"] = "Ethnicity"
-        jfm4 = jfm3.groupby(
-            [
-                "ethnicgroupcode",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by ethnicity (keeping all the other data)
+        jfm3["variable2"] = "Ethnicity"
+        jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -367,26 +308,9 @@ for y in facilities:
         )  # characteristics all in 'variable' column
         tableaudf = pd.concat([tableaudf, jfm4])
 
-        # agegroup
-        jfm3["varable2"] = "Age"
-        jfm4 = jfm3.groupby(
-            [
-                "agegroup",
-                "centre",
-                "adultpaed",
-                "registry_code_type",
-                "country",
-                "variable2",
-                "measure",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "region",
-            ],
+        # Group by agegroup (keeping all the other data)
+        jfm3["variable2"] = "Age"
+        jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))
         jfm4.rename(
@@ -394,8 +318,8 @@ for y in facilities:
         )  # characteristics all in 'variable' column
         tableaudf = pd.concat([tableaudf, jfm4])
 
-        start = start - relativedelta(months=3)
-        end = end - relativedelta(months=3)
+        START_DATE = START_DATE - relativedelta(months=3)
+        START_DATE = START_DATE - relativedelta(months=3)
 
 # print(tableaudf)
 tableaudf.rename(columns={"registry_code_type": "dialtplt"}, inplace=True)
