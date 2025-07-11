@@ -3,7 +3,7 @@
 from operator import and_
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, or_, create_engine, tuple_, case, func
+from sqlalchemy import select, or_, create_engine, tuple_, case, func, literal_column
 from sqlalchemy.orm import Session, sessionmaker
 
 from ukrdc_sqla.ukrdc import (
@@ -113,7 +113,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
-                ModalityCodes.registry_code_type,
+                ModalityCodes.registry_code_type
+                if not extract_all
+                else literal_column("NULL").label("registry_code_type"),
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
@@ -126,20 +128,22 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 ),
             )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
-            .join(
+        )
+
+        if not extract_all:
+            query_ckd_patients = query_ckd_patients.join(
                 ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
             )
-            .where(
-                Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
-                PatientRecord.sendingfacility == self.facility,
-                PatientRecord.sendingextract == "UKRDC",
-                or_(
-                    CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
-                    CodeMap.destination_coding_standard.is_(None),
-                ),
-                address_ranked.c.rn == 1,
-            )
-            .order_by(PatientRecord.pid)
+
+        query_ckd_patients = query_ckd_patients.where(
+            Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
+            PatientRecord.sendingfacility == self.facility,
+            PatientRecord.sendingextract == "UKRDC",
+            or_(
+                CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
+                CodeMap.destination_coding_standard.is_(None),
+            ),
+            address_ranked.c.rn == 1,
         )
 
         if not extract_all:
