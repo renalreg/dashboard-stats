@@ -364,9 +364,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # pandas by default tries to be helpful and create compound keys
         # this is more overly helpful so we drop them
         base_cohort = base_cohort.reset_index(drop=True)
-        
+
         # If all values in the database are NULL then pandas can't infer that it's DateTime causing problems later
-        base_cohort["deathtime"] = pd.to_datetime(base_cohort["deathtime"], errors="coerce")
+        base_cohort["deathtime"] = pd.to_datetime(
+            base_cohort["deathtime"], errors="coerce"
+        )
 
         return base_cohort
 
