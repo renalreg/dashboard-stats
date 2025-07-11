@@ -16,6 +16,7 @@ from ukrdc_stats.calculators.krt import (
 from ukrdc_sqla.ukrdc import CodeMap
 
 # conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
+# Establish connection to UKRDC
 conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
 session = conn.session()
 
@@ -25,7 +26,8 @@ END_DATE = dt.datetime(2025, 1, 1)
 OUTPUT_DIR = ".do_not_commit"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-FILTER_COLUMNS = [
+# Columns by which the data is grouped
+GROUP_COLUMNS = [
                 "centre",
                 "adultpaed",
                 "registry_code_type",
@@ -40,6 +42,28 @@ FILTER_COLUMNS = [
                 "incidprev",
                 "quarter",
                 "region"]
+
+# Relevant columns from the dataset
+DATASET_COLUMNS = [
+    "gender",
+    "ethnicgroupcode",
+    "agegroup",
+    "variable2",
+    "measure",
+    "country",
+    "region",
+    "centre_code",
+     "satellite_code",
+    "satellite",
+    "centre",
+    "year",
+    "option",
+    "incidprev",
+    "quarter",
+    "adultpaed",
+    "registry_code_type",
+    "pid",
+]
 
 data = {
     "centre_code": ["RNJ00", "RAQ01", "RHW01", "RCSLB", "RK7CC", "RFBAK", "RH8"],
@@ -76,7 +100,6 @@ data = {
 units = pd.DataFrame(data=data)
 
 # Load centres and satellites from csv files
-main_centres = pd.read_csv("C:/Intel/main_centres.csv")
 satellite_centres = pd.read_csv("C:/Intel/satellite_centres.csv")
 
 # Create empty dataframe to store all the individual years / units / groups results
@@ -167,6 +190,7 @@ for facility in facilities:
         # Extract base patient cohort
         jfm1 = calculator1._extract_base_patient_cohort()
         # Pass the patient cohort to _extract_incident_prevalent function to add incident/prevalence data to it
+        print(facility, x)
         jfm2 = calculator1._extract_incident_prevalent(jfm1)
 
         # Calculate date columns based on START_DATE
@@ -227,28 +251,7 @@ for facility in facilities:
         )
         
         # Select only relevant columns from the dataset
-        jfm3 = with_demographics[
-            [
-                "gender",
-                "ethnicgroupcode",
-                "agegroup",
-                "variable2",
-                "measure",
-                "country",
-                "region",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "centre",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "adultpaed",
-                "registry_code_type",
-                "pid",
-            ]
-        ].loc[ # Filter for rows where all of the following is true:
+        jfm3 = with_demographics[DATASET_COLUMNS].loc[ # Filter for rows where all of the following is true:
             (with_demographics.first_treatment) # This is first treatment
             & (with_demographics.incident) # This is an incident
             & (with_demographics["sendingfacility"] == facility) # Sending facility matches
@@ -257,33 +260,36 @@ for facility in facilities:
 
         # Group by gender (keeping all the other data)
         jfm3["variable2"] = "Gender"
-        jfm4 = jfm3.groupby(FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
-            columns={"gender": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+            columns={"gender": "variable"}, inplace=True 
+        ) # Rename "gender" column into "variable", so that columns are the same across all groups
+        # Add the gender grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
-        print(jfm4)
+        print(jfm4.head(5)) # Print first 5 rows of the dataframe
 
         # Group by ethncity (keeping all the other data)
         jfm3["variable2"] = "Ethnicity"
-        jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(["ethnicgroupcode"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
-            columns={"ethnicgroupcode": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+            columns={"ethnicgroupcode": "variable"}, inplace=True 
+        ) # Rename "ethnicgroupcode" column into "variable"
+        # Add the ethnicity grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
 
         # Group by agegroup (keeping all the other data)
         jfm3["variable2"] = "Age"
-        jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(["agegroup"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"agegroup": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+        )  # Rename "agegroup" column into "variable"
+        # Add the agegroup grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
 
         # prevalence
@@ -292,26 +298,7 @@ for facility in facilities:
         )
         # Select only relevant columns from the dataset
         jfm3 = with_demographics[
-            [
-                "gender",
-                "ethnicgroupcode",
-                "agegroup",
-                "variable2",
-                "measure",
-                "country",
-                "region",
-                "centre_code",
-                "satellite_code",
-                "satellite",
-                "centre",
-                "year",
-                "option",
-                "incidprev",
-                "quarter",
-                "adultpaed",
-                "registry_code_type",
-                "pid",
-            ]
+            DATASET_COLUMNS
         ].loc[ # Filter for rows where all of the following is true:
             (with_demographics.first_treatment) # This is first treatment
             & (with_demographics.prevalent) # This is prevalent case
@@ -320,37 +307,46 @@ for facility in facilities:
 
         # Group by gender (keeping all the other data)
         jfm3["variable2"] = "Gender"
-        jfm4 = jfm3.groupby(["gender"] + FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(["gender"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"gender": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+        )  # Rename "gender" column into "variable"
+        # Add the gender grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
 
         # Group by ethnicity (keeping all the other data)
         jfm3["variable2"] = "Ethnicity"
-        jfm4 = jfm3.groupby(["ethnicgroupcode"] + FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(["ethnicgroupcode"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"ethnicgroupcode": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+        )  # Rename "ethnicgroupcode" column into "variable"
+        # Add the ethnicity grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
 
         # Group by agegroup (keeping all the other data)
         jfm3["variable2"] = "Age"
-        jfm4 = jfm3.groupby(["agegroup"] + FILTER_COLUMNS,
+        jfm4 = jfm3.groupby(["agegroup"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count")) # Count how many rows in each group
         jfm4.rename(
             columns={"agegroup": "variable"}, inplace=True
-        )  # characteristics all in 'variable' column
+        )  # Rename "agegroup" column into "variable"
+        # Add the age grouping to the results dataframe 
         tableaudf = pd.concat([tableaudf, jfm4])
 
+        # Reduce start and end date by 3 to go to the previous quarter
         START_DATE = START_DATE - relativedelta(months=3)
-        START_DATE = START_DATE - relativedelta(months=3)
+        END_DATE = END_DATE - relativedelta(months=3)
+
+# Close database connection
+session.close()
 
 # print(tableaudf)
 tableaudf.rename(columns={"registry_code_type": "dialtplt"}, inplace=True)
+
+# Save dataframe to the OUTPUT_DIR location
 tableaudf.to_csv(os.path.join(OUTPUT_DIR, "tableau4.csv"), index=True)
