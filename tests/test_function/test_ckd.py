@@ -209,6 +209,17 @@ def populated_patient(sqlite_session):
                 end_of_care=False,
                 is_imprecise=False,
             ),
+            ModalityCodes(
+                registry_code="123",
+                registry_code_type="TST",
+                acute=False,
+                transfer_in=False,
+                ckd=False,
+                cons=False,
+                rrt=False,
+                end_of_care=False,
+                is_imprecise=False,
+            )
         ]
     )
 
@@ -245,6 +256,16 @@ def populated_patient(sqlite_session):
                 totime=datetime(2024, 6, 1),
                 creation_date=datetime.now(),
             ),
+            Treatment(
+                id=4,
+                pid=pid,
+                admitreasoncode="123",
+                admitreasoncodestd="TEST1",
+                admitreasondesc="TEST",
+                fromtime=datetime(2022, 6, 1),
+                totime=None,
+                creation_date=datetime.now(),
+            ),
         ]
     )
 
@@ -264,7 +285,7 @@ def test_core_query(sqlite_session, populated_patient):
 
     # Unfiltered — should return all 3 treatments
     df_all = calculator._core_query(extract_all=True)
-    assert len(df_all) == 3
+    assert len(df_all) == 4
 
     # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
     df_filtered = calculator._core_query(extract_all=False)
@@ -341,4 +362,4 @@ def test_extract_base_patient_cohort(
     assert cohort["calculated_egfr"][0] == 90
 
     cohort = calculator._extract_base_patient_cohort(extract_all=True)
-    assert len(cohort) == 3
+    assert len(cohort) == 4

@@ -4,7 +4,7 @@ from operator import and_
 import pandas as pd
 import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_, case, func
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, aliased
 
 from ukrdc_sqla.ukrdc import (
     Patient,
@@ -92,6 +92,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             ).where(Address.postcode.is_not(None), func.trim(Address.postcode) != "")
         ).subquery()
 
+        # Create an alias for Treatment to join on itslef later
+        Treatment2 = aliased(Treatment)
+        
         query_ckd_patients = (
             select(
                 PatientRecord.pid,
@@ -114,9 +117,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
-            .join(
-                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
-            )
             .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
             .outerjoin(
                 CodeMap,
@@ -126,30 +126,46 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 ),
             )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
-        )
-
-        query_ckd_patients = query_ckd_patients.where(
-            ModalityCodes.registry_code_type.in_(["CK", "CN"]),
-            PatientRecord.sendingfacility == self.facility,
-            PatientRecord.sendingextract == "UKRDC",
-            or_(
-                CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
-                CodeMap.destination_coding_standard.is_(None),
-            ),
-            address_ranked.c.rn == 1,
-        )
-
-        if not extract_all:  # Checks to extract partial timeline
-            query_ckd_patients = query_ckd_patients.where(
-                Treatment.fromtime < self._prevalence_point,
-                or_(
-                    Treatment.totime > self._prevalence_point,
-                    Treatment.totime.is_(None),
-                ),
+            .where(
+                ModalityCodes.registry_code_type.in_(["CK", "CN"]),
+                PatientRecord.sendingfacility == self.facility,
+                PatientRecord.sendingextract == "UKRDC",
                 or_(
                     Patient.deathtime > self._prevalence_point,
                     Patient.deathtime.is_(None),
                 ),
+                or_(
+                    CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
+                    CodeMap.destination_coding_standard.is_(None),
+                ),
+                address_ranked.c.rn == 1,
+            )
+        )
+
+        if extract_all:
+            query_ckd_patients = (
+                query_ckd_patients
+                .join(Treatment2, Treatment2.pid == Treatment.pid)
+                .join(ModalityCodes, ModalityCodes.registry_code == Treatment2.admitreasoncode)
+                .where(
+                    Treatment2.fromtime < self._prevalence_point,
+                    or_(
+                        Treatment2.totime > self._prevalence_point,
+                        Treatment2.totime.is_(None),
+                    )
+                )
+            )
+        else:
+            query_ckd_patients = (
+                query_ckd_patients
+                .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
+                .where(
+                    Treatment.fromtime < self._prevalence_point,
+                    or_(
+                        Treatment.totime > self._prevalence_point,
+                        Treatment.totime.is_(None),
+                    )
+                )
             )
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
