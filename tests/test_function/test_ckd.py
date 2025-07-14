@@ -200,7 +200,7 @@ def populated_patient(sqlite_session):
             ),
             ModalityCodes(
                 registry_code="900",
-                registry_code_type="TP1",
+                registry_code_type="CK",
                 acute=False,
                 transfer_in=False,
                 ckd=False,

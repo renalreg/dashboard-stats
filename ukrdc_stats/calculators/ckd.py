@@ -3,7 +3,7 @@
 from operator import and_
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, or_, create_engine, tuple_, case, func, literal_column
+from sqlalchemy import select, or_, create_engine, tuple_, case, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from ukrdc_sqla.ukrdc import (
@@ -71,9 +71,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         else:
             self.v5_archive_session = v5_archive_session
 
-        # should probably be a look up against modality codes table
-        self._ckd_cohort_codes = ["900", "901", "902", "903", "92", "93", "94"]
-
         self._ckd_not_rrt_codes = ["901", "902", "903"]
 
     def extract_stats(self):
@@ -113,12 +110,13 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
-                ModalityCodes.registry_code_type
-                if not extract_all
-                else literal_column("NULL").label("registry_code_type"),
+                ModalityCodes.registry_code_type,
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
+            .join(
+                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
+            )
             .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
             .outerjoin(
                 CodeMap,
@@ -130,13 +128,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
         )
 
-        if not extract_all:
-            query_ckd_patients = query_ckd_patients.join(
-                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
-            )
-
         query_ckd_patients = query_ckd_patients.where(
-            Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
+            ModalityCodes.registry_code_type.in_(["CK", "CN"]),
             PatientRecord.sendingfacility == self.facility,
             PatientRecord.sendingextract == "UKRDC",
             or_(
@@ -146,7 +139,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             address_ranked.c.rn == 1,
         )
 
-        if not extract_all:
+        if not extract_all:  # Checks to extract partial timeline
             query_ckd_patients = query_ckd_patients.where(
                 Treatment.fromtime < self._prevalence_point,
                 or_(
