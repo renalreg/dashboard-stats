@@ -13,12 +13,13 @@ server = "ukrdc_live"
 ukrdc_conn = PostgresConnection(app = server, tunnel = True, via_app = True)
 ukrdc_sessionmaker = ukrdc_conn.session_maker()
 
+FULL_EXTRACT = False
 
 # set parameters
-facilities = ["RHW01", "RAQ01"]
-prevalence_point = dt.datetime(2025, 3, 31,0,0,0)
+facilities = ["RCSLB", "RAQ01"]  #"RAL01", "RAE05", "RFPFG"
+prevalence_point = dt.datetime(2025, 6, 30,0,0,0)
 #prevalence_point = dt.datetime(2023, 12, 31,0,0,0)
-report_file_path = Path(r"Q:\UKRDC\Assessments\Phil_extracts\2025_05_09")
+report_file_path = Path(r"Q:\UKRDC\Assessments\Phil_extracts\2025_07_15")
 #report_file_path = Path(".do_not_commit")
 
 with ukrdc_sessionmaker() as ukrdc_session:
@@ -30,7 +31,7 @@ with ukrdc_sessionmaker() as ukrdc_session:
             facility=facility, 
             prevalence_point=prevalence_point,
         )
-        cohort = calculator.extract_patient_cohort()
+        cohort = calculator.extract_patient_cohort(extract_all=FULL_EXTRACT)
         
         # generate a report from the extracted data
         population, report = calculator.produce_report(
@@ -51,7 +52,10 @@ with ukrdc_sessionmaker() as ukrdc_session:
             )
 
         # output results
-        output_path = report_file_path / Path(f"ckd_report_{facility}.csv")
+        if FULL_EXTRACT:
+            output_path = report_file_path / Path(f"ckd_report_{facility}_{prevalence_point.strftime("%y_%m_%d")}_full_timeline.csv")
+        else:
+            output_path = report_file_path / Path(f"ckd_report_{facility}_{prevalence_point.strftime("%y_%m_%d")}.csv")
         metadata = f"""# CKD Assessment Report
 # Renal Unit : {facility}
 # Database Server : {server}
