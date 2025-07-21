@@ -140,7 +140,7 @@ def calculate_therapy_types(
     return labels, patients
 
 
-def adjust_next_fromtime(group: pd.DataFrame):
+def adjust_next_fromtime(group: pd.DataFrame, **kwargs):
     """
     Utility function to adjust the next_fromtime in the case where there are
     overlaps in the treatment records.
@@ -381,9 +381,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             "fromtime"
         ].shift(-1)
 
-        raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[raw_patients.columns].apply(
-            adjust_next_fromtime
-        )
+        raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[
+            raw_patients.columns
+        ].apply(adjust_next_fromtime, include_group=False)
 
         return raw_patients
 
