@@ -94,7 +94,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         # Create an alias for Treatment to join on itslef later
         Treatment2 = aliased(Treatment)
-        
+
         query_ckd_patients = (
             select(
                 PatientRecord.pid,
@@ -144,28 +144,28 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         if extract_all:
             query_ckd_patients = (
-                query_ckd_patients
-                .join(Treatment2, Treatment2.pid == Treatment.pid)
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment2.admitreasoncode)
+                query_ckd_patients.join(Treatment2, Treatment2.pid == Treatment.pid)
+                .join(
+                    ModalityCodes,
+                    ModalityCodes.registry_code == Treatment2.admitreasoncode,
+                )
                 .where(
                     Treatment2.fromtime < self._prevalence_point,
                     or_(
                         Treatment2.totime > self._prevalence_point,
                         Treatment2.totime.is_(None),
-                    )
+                    ),
                 )
             )
         else:
-            query_ckd_patients = (
-                query_ckd_patients
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
-                .where(
-                    Treatment.fromtime < self._prevalence_point,
-                    or_(
-                        Treatment.totime > self._prevalence_point,
-                        Treatment.totime.is_(None),
-                    )
-                )
+            query_ckd_patients = query_ckd_patients.join(
+                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
+            ).where(
+                Treatment.fromtime < self._prevalence_point,
+                or_(
+                    Treatment.totime > self._prevalence_point,
+                    Treatment.totime.is_(None),
+                ),
             )
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
@@ -179,25 +179,16 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         return base_cohort
 
     def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
-        query = (
-            select(
-                PatientNumber.pid,
-                PatientNumber.patientid,
-                PatientNumber.organization,
-                PatientNumber.numbertype,
-            )
-            .distinct(
-                PatientNumber.pid,
-                PatientNumber.patientid,
-                PatientNumber.organization,
-                PatientNumber.numbertype,
-            )
-            .where(
-                PatientNumber.pid.in_(pids),
-            )
+        query = select(
+            PatientNumber.pid,
+            PatientNumber.patientid,
+            PatientNumber.organization,
+            PatientNumber.numbertype,
+        ).where(
+            PatientNumber.pid.in_(pids),
         )
 
-        patients_numbers = pd.DataFrame(self.session.execute(query))
+        patients_numbers = pd.DataFrame(self.session.execute(query)).drop_duplicates()
 
         return patients_numbers.reset_index(drop=True).astype(str)
 
