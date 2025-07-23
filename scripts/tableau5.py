@@ -20,9 +20,6 @@ from ukrdc_sqla.ukrdc import CodeMap
 conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
 session = conn.session()
 
-START_DATE = dt.datetime(2024, 10, 1)
-END_DATE = dt.datetime(2025, 1, 1)
-
 OUTPUT_DIR = ".do_not_commit"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -175,13 +172,17 @@ print("Demographics dataframe complete")
 # Iterate through all facilities one by one
 for facility in facilities:
     print(facility)
+# Reset dates back to start for the next facility
+    START_DATE = dt.datetime(2024, 10, 1)
+    END_DATE = dt.datetime(2025, 1, 1)
+
     # Iterate through 4 quarters backwards (i.e., start at Q4, then Q3 etc.)
     for x in range(4):
         print(x)
 
         # Create an instance of a KRT Calculator object - it's responsible for extracting cohort
         calculator1 = KRTStatsCalculator(
-            session=session, facility=facility, from_time=START_DATE, to_time=START_DATE
+            session=session, facility=facility, from_time=START_DATE, to_time=END_DATE
         )
 
         # Extract base patient cohort
@@ -266,7 +267,7 @@ for facility in facilities:
         # Group by gender (keeping all the other data)
         jfm3["variable2"] = "Gender"
         jfm4 = jfm3.groupby(
-            GROUP_COLUMNS,
+            ["gender"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))  # Count how many rows in each group
         jfm4.rename(
