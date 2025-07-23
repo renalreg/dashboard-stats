@@ -3,7 +3,16 @@
 from operator import and_
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, or_, create_engine, tuple_, case, func
+from sqlalchemy import (
+    select,
+    or_,
+    create_engine,
+    tuple_,
+    case,
+    func,
+    not_,
+    literal_column,
+)
 from sqlalchemy.orm import Session, sessionmaker, aliased
 
 from ukrdc_sqla.ukrdc import (
@@ -77,24 +86,48 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         pass
 
     def _core_query(self, extract_all: bool = False):
-        treatment_ranked = (
-            select(
-                Treatment.pid,
-                Treatment.admitreasoncode,
-                Treatment.admitreasoncodestd,
-                Treatment.admitreasondesc,
-                Treatment.fromtime,
-                Treatment.totime,
-                func.row_number()
-                .over(
-                    partition_by=(Treatment.pid, Treatment.fromtime),
-                    order_by=Treatment.id,
-                )
-                .label("rn"),
+        # Deduplicate treatments spanning the prevalence point
+        spanning = select(
+            Treatment.pid,
+            Treatment.admitreasoncode,
+            Treatment.admitreasoncodestd,
+            Treatment.admitreasondesc,
+            Treatment.fromtime,
+            Treatment.totime,
+            func.row_number()
+            .over(
+                partition_by=(Treatment.pid, Treatment.fromtime), order_by=Treatment.id
             )
-            .select_from(Treatment)
-            .subquery()
+            .label("rn"),
+        ).where(
+            Treatment.fromtime < self._prevalence_point,
+            or_(Treatment.totime > self._prevalence_point, Treatment.totime.is_(None)),
         )
+
+        # Do not deduplicate treatments outside of prevalence point
+        non_spanning = select(
+            Treatment.pid,
+            Treatment.admitreasoncode,
+            Treatment.admitreasoncodestd,
+            Treatment.admitreasondesc,
+            Treatment.fromtime,
+            Treatment.totime,
+            literal_column("1").label(
+                "rn"
+            ),  # Assign 1 to keep compatible for the union
+        ).where(
+            not_(
+                and_(
+                    Treatment.fromtime < self._prevalence_point,
+                    or_(
+                        Treatment.totime > self._prevalence_point,
+                        Treatment.totime.is_(None),
+                    ),
+                )
+            )
+        )
+
+        treatment_ranked = spanning.union_all(non_spanning).subquery()
 
         # get a single address per patient with a preference for home address
         address_ranked = (
@@ -111,8 +144,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             ).where(Address.postcode.is_not(None), func.trim(Address.postcode) != "")
         ).subquery()
 
-        # Create an alias for Treatment to join on itslef later
+        # Alias the deduplicated treatments
         Treatment1 = aliased(treatment_ranked)
+        # Create an alias for Treatment to join on itslef later
         Treatment2 = aliased(Treatment)
 
         query_ckd_patients = (
@@ -135,10 +169,10 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 CodeMap.destination_code.label("ukkaethnicity"),
                 ModalityCodes.registry_code_type,
             )
-            .join(Treatment1, and_(
-                Treatment1.c.pid == PatientRecord.pid,
-                Treatment1.c.rn == 1
-            ))
+            .join(
+                Treatment1,
+                and_(Treatment1.c.pid == PatientRecord.pid, Treatment1.c.rn == 1),
+            )
             .join(Patient, Patient.pid == PatientRecord.pid)
             .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
             .outerjoin(
@@ -167,28 +201,29 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         if extract_all:
             query_ckd_patients = (
-                query_ckd_patients
-                .join(Treatment2, Treatment2.pid == Treatment1.c.pid)
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment2.admitreasoncode)
+                query_ckd_patients.join(Treatment2, Treatment2.pid == Treatment1.c.pid)
+                .join(
+                    ModalityCodes,
+                    ModalityCodes.registry_code == Treatment2.admitreasoncode,
+                )
                 .where(
                     Treatment2.fromtime < self._prevalence_point,
                     or_(
                         Treatment2.totime > self._prevalence_point,
                         Treatment2.totime.is_(None),
-                    )
+                    ),
                 )
             )
         else:
-            query_ckd_patients = (
-                query_ckd_patients
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment1.c.admitreasoncode)
-                .where(
-                    Treatment1.c.fromtime < self._prevalence_point,
-                    or_(
-                        Treatment1.c.totime > self._prevalence_point,
-                        Treatment1.c.totime.is_(None),
-                    )
-                )
+            query_ckd_patients = query_ckd_patients.join(
+                ModalityCodes,
+                ModalityCodes.registry_code == Treatment1.c.admitreasoncode,
+            ).where(
+                Treatment1.c.fromtime < self._prevalence_point,
+                or_(
+                    Treatment1.c.totime > self._prevalence_point,
+                    Treatment1.c.totime.is_(None),
+                ),
             )
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)

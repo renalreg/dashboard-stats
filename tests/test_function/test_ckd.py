@@ -276,6 +276,16 @@ def populated_patient(sqlite_session):
                 totime=None,
                 creation_date=datetime.now(),
             ),
+            Treatment( # Duplicate of 3  (outside of prevalence point)
+                id=6,
+                pid=pid,
+                admitreasoncode="900",
+                admitreasoncodestd="UKKID",
+                admitreasondesc="TEST2",
+                fromtime=datetime(2023, 6, 1),
+                totime=datetime(2024, 6, 1),
+                creation_date=datetime.now(),
+            ),
         ]
     )
 
@@ -293,10 +303,10 @@ def test_core_query(sqlite_session, populated_patient):
     )
     calculator._ckd_cohort_codes = ["900"]
     
-    # Unfiltered — should return 4/5 treatments (one got deduplicated)
+    # Unfiltered — should return 5/6 treatments (one got deduplicated)
     df_all = calculator._core_query(extract_all=True)
     print(df_all["fromtime"])
-    assert len(df_all) == 4
+    assert len(df_all) == 5
 
     # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point, 4 has wrong code and 5 got deduplicated
     df_filtered = calculator._core_query(extract_all=False)
@@ -373,7 +383,7 @@ def test_extract_base_patient_cohort(
     assert cohort["calculated_egfr"][0] == 90
 
     cohort = calculator._extract_base_patient_cohort(extract_all=True)
-    assert len(cohort) == 4
+    assert len(cohort) == 5
 
 
 import pytest
