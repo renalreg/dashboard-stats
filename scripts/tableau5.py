@@ -43,7 +43,7 @@ GROUP_COLUMNS = [
 
 # Relevant columns from the dataset
 DATASET_COLUMNS = [
-    "gender",
+    "sex",
     "ethnicgroupcode",
     "agegroup",
     "variable2",
@@ -118,6 +118,8 @@ query = (
     #    )
 )
 demographics = pd.DataFrame(session.execute(query).all())
+# from the outset get the habit that the variable is 'sex' not 'gender'
+demographics.rename(columns={"gender": "sex"}, inplace=True)
 
 # Convert birthtimes into a DateTime object, making them easier to work with
 # If the input is an invalid date for some reason (e.g., formating) - set it to NaT (Not a Time)
@@ -136,9 +138,9 @@ demographics["agegroup"] = pd.cut(
 ).astype("object")
 
 # Recode gender 1/2 into Male Female using dictionary
-demographics["gender"] = demographics["gender"].replace({"1": "Male", "2": "Female"})
+demographics["sex"] = demographics["sex"].replace({"1": "Male", "2": "Female"})
 # Recode gender that is not NaN or in ["Male", "Female"] into "Other"
-demographics["gender"] = demographics["gender"].apply(
+demographics["sex"] = demographics["sex"].apply(
     lambda x: x if pd.isna(x) or x in ["Male", "Female"] else "Other"
 )
 
@@ -203,8 +205,8 @@ for facility in facilities:
         jfm2["adultpaed"] = "Adult"  # append Adult column with all same value
         jfm2["incidprev"] = "Incident"  # append Incidence column with all same value
         jfm2["variable2"] = "Gender"
-        jfm2["measure"] = "Demography"
-        jfm2["option"] = "Number"
+        jfm2["measure"]   = "Demography"
+        jfm2["option"]    = "Number"
 
         # Assign "TX" to the registry_code_type only for patients where admitreasoncode == "120"
         jfm2.loc[jfm2["admitreasoncode"] == "120", "registry_code_type"] = (
@@ -265,13 +267,13 @@ for facility in facilities:
         ]
 
         # Group by gender (keeping all the other data)
-        jfm3["variable2"] = "Gender"
+        jfm3["variable2"] = "Sex"
         jfm4 = jfm3.groupby(
-            ["gender"] + GROUP_COLUMNS,
+            ["sex"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))  # Count how many rows in each group
         jfm4.rename(
-            columns={"gender": "variable"}, inplace=True
+            columns={"sex": "variable"}, inplace=True
         )  # Rename "gender" column into "variable", so that columns are the same across all groups
         # Add the gender grouping to the results dataframe
         tableaudf = pd.concat([tableaudf, jfm4])
@@ -301,6 +303,18 @@ for facility in facilities:
         # Add the agegroup grouping to the results dataframe
         tableaudf = pd.concat([tableaudf, jfm4])
 
+        # Group by modality (this is different as it is in the GROUP_COLUMNS already)
+        jfm3["variable2"] = "Modality"
+        jfm4 = jfm3.groupby(
+            GROUP_COLUMNS,
+            as_index=False,
+        ).agg(value=("pid", "count"))  # Count how many rows in each group
+        # duplicate the 'registry_code_type' as the first column 'variable'
+        jfm4.insert(0, "variable", jfm4["registry_code_type"])
+#        jfm4["variable"] = jfm4["registry_code_type"]
+        # Add the agegroup grouping to the results dataframe
+        tableaudf = pd.concat([tableaudf, jfm4])        
+
         # prevalence
         with_demographics["incidprev"] = (
             "Prevalent"  # update incidprev = Prevalent with all same value
@@ -315,13 +329,13 @@ for facility in facilities:
         ]
 
         # Group by gender (keeping all the other data)
-        jfm3["variable2"] = "Gender"
+        jfm3["variable2"] = "Sex"
         jfm4 = jfm3.groupby(
-            ["gender"] + GROUP_COLUMNS,
+            ["sex"] + GROUP_COLUMNS,
             as_index=False,
         ).agg(value=("pid", "count"))  # Count how many rows in each group
         jfm4.rename(
-            columns={"gender": "variable"}, inplace=True
+            columns={"sex": "variable"}, inplace=True
         )  # Rename "gender" column into "variable"
         # Add the gender grouping to the results dataframe
         tableaudf = pd.concat([tableaudf, jfm4])
@@ -348,6 +362,18 @@ for facility in facilities:
             columns={"agegroup": "variable"}, inplace=True
         )  # Rename "agegroup" column into "variable"
         # Add the age grouping to the results dataframe
+        tableaudf = pd.concat([tableaudf, jfm4])
+
+        # Group by modality (this is different as it is in the GROUP_COLUMNS already)
+        jfm3["variable2"] = "Modality"
+        jfm4 = jfm3.groupby(
+            GROUP_COLUMNS,
+            as_index=False,
+        ).agg(value=("pid", "count"))  # Count how many rows in each group
+        # duplicate the 'registry_code_type' as the first column 'variable'
+        jfm4.insert(0, "variable", jfm4["registry_code_type"])
+#        jfm4["variable"] = jfm4["registry_code_type"]
+        # Add the agegroup grouping to the results dataframe
         tableaudf = pd.concat([tableaudf, jfm4])
 
         # Reduce start and end date by 3 to go to the previous quarter
