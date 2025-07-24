@@ -112,8 +112,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         ).subquery()
 
         # Create an alias for Treatment to join on itslef later
-        Treatment1 = aliased(treatment_ranked)
-        Treatment2 = aliased(Treatment)
+        Treatment2 = aliased(treatment_ranked)
 
         query_ckd_patients = (
             select(
@@ -122,11 +121,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.sendingfacility,
                 Patient.birthtime,
                 Patient.deathtime,
-                Treatment1.c.admitreasoncode,
-                Treatment1.c.admitreasoncodestd,
-                Treatment1.c.admitreasondesc,
-                Treatment1.c.fromtime,
-                Treatment1.c.totime,
+                Treatment2.c.admitreasoncode,
+                Treatment2.c.admitreasoncodestd,
+                Treatment2.c.admitreasondesc,
+                Treatment2.c.fromtime,
+                Treatment2.c.totime,
                 Patient.gender.label("sex"),
                 address_ranked.c.postcode,
                 address_ranked.c.addressuse,
@@ -135,9 +134,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 CodeMap.destination_code.label("ukkaethnicity"),
                 ModalityCodes.registry_code_type,
             )
-            .join(Treatment1, and_(
-                Treatment1.c.pid == PatientRecord.pid,
-                Treatment1.c.rn == 1
+            .join(Treatment2, and_(
+                Treatment2.c.pid == PatientRecord.pid,
+                Treatment2.c.rn == 1
             ))
             .join(Patient, Patient.pid == PatientRecord.pid)
             .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
@@ -166,32 +165,33 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         )
 
         if extract_all:
-            query_ckd_patients = (
-                query_ckd_patients
-                .join(Treatment2, Treatment2.pid == Treatment1.c.pid)
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment2.admitreasoncode)
+            exists_filter = (
+                select(Treatment.id)
                 .where(
-                    Treatment2.fromtime < self._prevalence_point,
+                    ModalityCodes.registry_code == Treatment.admitreasoncode,
+                    Treatment.pid == PatientRecord.pid,
+                    Treatment.fromtime < self._prevalence_point,
                     or_(
-                        Treatment2.totime > self._prevalence_point,
-                        Treatment2.totime.is_(None),
-                    )
+                        Treatment.totime > self._prevalence_point,
+                        Treatment.totime.is_(None),
+                    ),
                 )
+                .exists()
             )
+            query_ckd_patients = query_ckd_patients.where(exists_filter)
         else:
-            query_ckd_patients = (
-                query_ckd_patients
-                .join(ModalityCodes, ModalityCodes.registry_code == Treatment1.c.admitreasoncode)
-                .where(
-                    Treatment1.c.fromtime < self._prevalence_point,
-                    or_(
-                        Treatment1.c.totime > self._prevalence_point,
-                        Treatment1.c.totime.is_(None),
-                    )
-                )
+            query_ckd_patients = query_ckd_patients.join(
+                ModalityCodes,
+                ModalityCodes.registry_code == Treatment2.c.admitreasoncode,
             )
-
-        query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
+            
+            query_ckd_patients = query_ckd_patients.where(
+                Treatment2.c.fromtime < self._prevalence_point,
+                or_(
+                    Treatment2.c.totime > self._prevalence_point,
+                    Treatment2.c.totime.is_(None),
+                ),
+            )
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
 
