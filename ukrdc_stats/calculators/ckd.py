@@ -77,25 +77,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         pass
 
     def _core_query(self, extract_all: bool = False):
-        treatment_ranked = (
-            select(
-                Treatment.pid,
-                Treatment.admitreasoncode,
-                Treatment.admitreasoncodestd,
-                Treatment.admitreasondesc,
-                Treatment.fromtime,
-                Treatment.totime,
-                func.row_number()
-                .over(
-                    partition_by=(Treatment.pid, Treatment.fromtime),
-                    order_by=Treatment.id,
-                )
-                .label("rn"),
-            )
-            .select_from(Treatment)
-            .subquery()
-        )
-
         # get a single address per patient with a preference for home address
         address_ranked = (
             select(
@@ -112,8 +93,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         ).subquery()
 
         # Create an alias for Treatment to join on itslef later
-        Treatment2 = aliased(treatment_ranked)
-
+        Treatment2 = aliased(Treatment)
+        
         query_ckd_patients = (
             select(
                 PatientRecord.pid,
@@ -121,11 +102,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.sendingfacility,
                 Patient.birthtime,
                 Patient.deathtime,
-                Treatment2.c.admitreasoncode,
-                Treatment2.c.admitreasoncodestd,
-                Treatment2.c.admitreasondesc,
-                Treatment2.c.fromtime,
-                Treatment2.c.totime,
+                Treatment.admitreasoncode,
+                Treatment.admitreasoncodestd,
+                Treatment.admitreasondesc,
+                Treatment.fromtime,
+                Treatment.totime,
                 Patient.gender.label("sex"),
                 address_ranked.c.postcode,
                 address_ranked.c.addressuse,
@@ -134,10 +115,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 CodeMap.destination_code.label("ukkaethnicity"),
                 ModalityCodes.registry_code_type,
             )
-            .join(Treatment2, and_(
-                Treatment2.c.pid == PatientRecord.pid,
-                Treatment2.c.rn == 1
-            ))
+            .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
             .outerjoin(address_ranked, address_ranked.c.pid == PatientRecord.pid)
             .outerjoin(
@@ -165,32 +143,29 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         )
 
         if extract_all:
-            exists_filter = (
-                select(Treatment.id)
+            query_ckd_patients = (
+                query_ckd_patients
+                .join(Treatment2, Treatment2.pid == Treatment.pid)
+                .join(ModalityCodes, ModalityCodes.registry_code == Treatment2.admitreasoncode)
                 .where(
-                    ModalityCodes.registry_code == Treatment.admitreasoncode,
-                    Treatment.pid == PatientRecord.pid,
+                    Treatment2.fromtime < self._prevalence_point,
+                    or_(
+                        Treatment2.totime > self._prevalence_point,
+                        Treatment2.totime.is_(None),
+                    )
+                )
+            )
+        else:
+            query_ckd_patients = (
+                query_ckd_patients
+                .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
+                .where(
                     Treatment.fromtime < self._prevalence_point,
                     or_(
                         Treatment.totime > self._prevalence_point,
                         Treatment.totime.is_(None),
-                    ),
+                    )
                 )
-                .exists()
-            )
-            query_ckd_patients = query_ckd_patients.where(exists_filter)
-        else:
-            query_ckd_patients = query_ckd_patients.join(
-                ModalityCodes,
-                ModalityCodes.registry_code == Treatment2.c.admitreasoncode,
-            )
-            
-            query_ckd_patients = query_ckd_patients.where(
-                Treatment2.c.fromtime < self._prevalence_point,
-                or_(
-                    Treatment2.c.totime > self._prevalence_point,
-                    Treatment2.c.totime.is_(None),
-                ),
             )
 
         query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)

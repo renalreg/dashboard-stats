@@ -262,16 +262,6 @@ def populated_patient(sqlite_session):
                 admitreasoncode="123",
                 admitreasoncodestd="TEST1",
                 admitreasondesc="TEST",
-                fromtime=datetime(2021, 6, 1),
-                totime=None,
-                creation_date=datetime.now(),
-            ),
-            Treatment( # Duplicate of 2
-                id=5,
-                pid=pid,
-                admitreasoncode="900",
-                admitreasoncodestd="UKKID",
-                admitreasondesc="TEST2",
                 fromtime=datetime(2022, 6, 1),
                 totime=None,
                 creation_date=datetime.now(),
@@ -292,13 +282,12 @@ def test_core_query(sqlite_session, populated_patient):
         v5_archive_session=archive_session,
     )
     calculator._ckd_cohort_codes = ["900"]
-    
-    # Unfiltered — should return 4/5 treatments (one got deduplicated)
+
+    # Unfiltered — should return all 3 treatments
     df_all = calculator._core_query(extract_all=True)
-    print(df_all["fromtime"])
     assert len(df_all) == 4
 
-    # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point, 4 has wrong code and 5 got deduplicated
+    # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
     df_filtered = calculator._core_query(extract_all=False)
     assert len(df_filtered) == 2
     assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()
