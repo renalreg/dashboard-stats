@@ -1,9 +1,10 @@
 import pytest
 import pandas as pd
-from datetime import datetime
-from unittest.mock import MagicMock
+from ukrdc_stats.utils import egfr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 from sqlalchemy.types import TypeDecorator, Boolean
 from sqlalchemy.dialects.mysql import BIT as MySQL_BIT
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
@@ -287,9 +288,9 @@ def test_core_query(sqlite_session, populated_patient):
     df_all = calculator._core_query(extract_all=True)
     assert len(df_all) == 4
 
-    # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point
+    # Filtered - should return treatment with id 1, as we are filtering for the last one within prevalence point
     df_filtered = calculator._core_query(extract_all=False)
-    assert len(df_filtered) == 2
+    assert len(df_filtered) == 1
     assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()
 
 
@@ -356,21 +357,14 @@ def test_extract_base_patient_cohort(
     }
     assert expected_cols.issubset(set(cohort.columns))
 
-    assert len(cohort) == 2
+    # Return only treatment
+    assert len(cohort) == 1
     assert (cohort["pid"] == "1").all()
     assert (cohort["admitreasoncode"] == "900").all()
     assert cohort["calculated_egfr"][0] == 90
 
     cohort = calculator._extract_base_patient_cohort(extract_all=True)
     assert len(cohort) == 4
-
-
-import pytest
-import pandas as pd
-from unittest.mock import MagicMock, patch
-from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
-from ukrdc_stats.utils import egfr
-from datetime import datetime, timedelta
 
 
 @pytest.fixture

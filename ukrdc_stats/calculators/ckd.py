@@ -176,6 +176,11 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .reset_index(drop=True)
         )
 
+        if not extract_all:
+            base_cohort = base_cohort.sort_values(
+                ["pid", "fromtime"], ascending=[True, False]
+            ).drop_duplicates("pid", keep="first")
+
         return base_cohort
 
     def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
