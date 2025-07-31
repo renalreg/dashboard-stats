@@ -381,9 +381,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             "fromtime"
         ].shift(-1)
 
-        raw_patients = raw_patients.groupby("ukrdcid", as_index=False).apply(
-            adjust_next_fromtime
-        )
+        raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[
+            raw_patients.columns
+        ].apply(adjust_next_fromtime)
 
         return raw_patients
 

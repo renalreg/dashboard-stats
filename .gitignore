@@ -136,3 +136,6 @@ dmypy.json
 # Places to stash bits that shouldn't be on github
 .do_not_commit
 .qodo
+
+
+test.ipynb
