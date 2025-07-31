@@ -46,7 +46,7 @@ ipywidgets = "^8.0.1"
 kaleido = "0.2.1"
 nbformat = "^5.4.0"
 plotly = "^5.10.0"
-rr-connection-manager = "0.3.0"
+rr-connection-manager = "^0.4.1"
 jupyter = "^1.1.1"
 
 [build-system]
