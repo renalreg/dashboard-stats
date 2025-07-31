@@ -19,6 +19,8 @@ from ukrdc_sqla.ukrdc import (
     PatientRecord,
     Treatment,
     ModalityCodes,
+    CodeMap,
+    RRCodes
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
@@ -314,6 +316,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 Patient.deathtime,
                 Treatment.fromtime,
                 Treatment.totime,
+                CodeMap.destination_code.label("region"),
+                RRCodes.description_1.label("satellite"),
                 # Correlated subquery for chronic treatment check
                 case(
                     (
@@ -337,6 +341,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             .join(
                 ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
             )
+            .join(CodeMap, (CodeMap.source_code == PatientRecord.sendingfacility) &
+                (CodeMap.destination_coding_standard == 'URTS_region'))
+            .join(RRCodes, (RRCodes.rr_code == Treatment.healthcarefacilitycode) &
+                (RRCodes.id == 'RR1'))
             .where(
                 ModalityCodes.registry_code_type.in_(self.registry_code_types),
                 Treatment.fromtime < self.time_window[1] + self.future_cutoff,
@@ -995,6 +1003,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "admitreasoncode",
                     "admitreasoncodestd",
                     "registry_code_type",
+                    'region',
+                    "satellite",
                 ],
                 [cohort, "first_treatment"],
                 include_ni=include_ni,
@@ -1007,6 +1017,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "admitreasoncode",
                     "admitreasoncodestd",
                     "registry_code_type",
+                    'region',
+                    "satellite",
                 ],
                 [cohort, "most_recent"],
                 include_ni=include_ni,
