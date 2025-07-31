@@ -4,7 +4,7 @@ from operator import and_
 import pandas as pd
 import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_, case, func
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, aliased
 
 from ukrdc_sqla.ukrdc import (
     Patient,
@@ -15,6 +15,7 @@ from ukrdc_sqla.ukrdc import (
     ResultItem,
     LabOrder,
     CodeMap,
+    ModalityCodes,
 )
 from ukrdc_sqla.xmlarchive import (
     Patient as XMLPatient,
@@ -70,13 +71,12 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         else:
             self.v5_archive_session = v5_archive_session
 
-        # should probably be a look up against modality codes table
-        self._ckd_cohort_codes = ["900", "901", "902", "903", "92", "93", "94"]
+        self._ckd_not_rrt_codes = ["901", "902", "903"]
 
     def extract_stats(self):
         pass
 
-    def _core_query(self):
+    def _core_query(self, extract_all: bool = False):
         # get a single address per patient with a preference for home address
         address_ranked = (
             select(
@@ -91,6 +91,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 .label("rn"),
             ).where(Address.postcode.is_not(None), func.trim(Address.postcode) != "")
         ).subquery()
+
+        # Create an alias for Treatment to join on itslef later
+        Treatment2 = aliased(Treatment)
 
         query_ckd_patients = (
             select(
@@ -110,6 +113,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 Patient.ethnicgroupcode,
                 Patient.ethnicgroupdesc,
                 CodeMap.destination_code.label("ukkaethnicity"),
+                ModalityCodes.registry_code_type,
             )
             .join(Treatment, Treatment.pid == PatientRecord.pid)
             .join(Patient, Patient.pid == PatientRecord.pid)
@@ -123,26 +127,48 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             )
             .join(PatientNumber, PatientNumber.pid == PatientRecord.pid, isouter=True)
             .where(
-                Treatment.admitreasoncode.in_(self._ckd_cohort_codes),
-                Treatment.fromtime < self._prevalence_point,
-                or_(
-                    Treatment.totime > self._prevalence_point,
-                    Treatment.totime.is_(None),
-                ),
+                ModalityCodes.registry_code_type.in_(["CK", "CN"]),
+                PatientRecord.sendingfacility == self.facility,
+                PatientRecord.sendingextract == "UKRDC",
                 or_(
                     Patient.deathtime > self._prevalence_point,
                     Patient.deathtime.is_(None),
                 ),
-                PatientRecord.sendingfacility == self.facility,
-                PatientRecord.sendingextract == "UKRDC",
                 or_(
                     CodeMap.destination_coding_standard == "URTS_ETHNIC_GROUPING",
                     CodeMap.destination_coding_standard.is_(None),
                 ),
                 address_ranked.c.rn == 1,
             )
-            .order_by(PatientRecord.pid)
         )
+
+        if extract_all:
+            query_ckd_patients = (
+                query_ckd_patients.join(Treatment2, Treatment2.pid == Treatment.pid)
+                .join(
+                    ModalityCodes,
+                    ModalityCodes.registry_code == Treatment2.admitreasoncode,
+                )
+                .where(
+                    Treatment2.fromtime < self._prevalence_point,
+                    or_(
+                        Treatment2.totime > self._prevalence_point,
+                        Treatment2.totime.is_(None),
+                    ),
+                )
+            )
+        else:
+            query_ckd_patients = query_ckd_patients.join(
+                ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode
+            ).where(
+                Treatment.fromtime < self._prevalence_point,
+                or_(
+                    Treatment.totime > self._prevalence_point,
+                    Treatment.totime.is_(None),
+                ),
+            )
+
+        query_ckd_patients = query_ckd_patients.order_by(PatientRecord.pid)
 
         base_cohort = (
             pd.DataFrame(self.session.execute(query_ckd_patients))
@@ -150,32 +176,30 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .reset_index(drop=True)
         )
 
+        if not extract_all:
+            base_cohort = base_cohort.sort_values(
+                ["pid", "fromtime"], ascending=[True, False]
+            ).drop_duplicates("pid", keep="first")
+
         return base_cohort
 
     def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
-        query = (
-            select(
-                PatientNumber.pid,
-                PatientNumber.patientid,
-                PatientNumber.organization,
-                PatientNumber.numbertype,
-            )
-            .distinct(
-                PatientNumber.pid,
-                PatientNumber.patientid,
-                PatientNumber.organization,
-                PatientNumber.numbertype,
-            )
-            .where(
-                PatientNumber.pid.in_(pids),
-            )
+        query = select(
+            PatientNumber.pid,
+            PatientNumber.patientid,
+            PatientNumber.organization,
+            PatientNumber.numbertype,
+        ).where(
+            PatientNumber.pid.in_(pids),
         )
 
-        patients_numbers = pd.DataFrame(self.session.execute(query))
+        patients_numbers = pd.DataFrame(self.session.execute(query)).drop_duplicates()
 
         return patients_numbers.reset_index(drop=True).astype(str)
 
-    def _get_archive_data(self, patient_numbers: pd.DataFrame):
+    def _get_archive_data(
+        self, patient_numbers: pd.DataFrame, extract_all: bool = False
+    ):
         # Break up large queries into chunks to avoid PostgreSQL stack overflow
         BATCH_SIZE = 1000
         all_assessments = []
@@ -241,12 +265,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     XMLTreatment.patientid == XMLPatient.id,
                 )
                 .where(
-                    XMLTreatment.fromtime < self._prevalence_point,
-                    or_(
-                        XMLTreatment.totime > self._prevalence_point,
-                        XMLTreatment.totime.is_(None),
-                    ),
-                    XMLTreatment.admitreasoncode.in_(self._ckd_cohort_codes),
+                    XMLTreatment.admitreasoncode.in_(self._ckd_not_rrt_codes),
                     tuple_(
                         XMLPatient.nationalid,
                         XMLPatient.organization,
@@ -262,6 +281,15 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                     ),
                 )
             )
+
+            if not extract_all:
+                treatments_query = treatments_query.where(
+                    XMLTreatment.fromtime < self._prevalence_point,
+                    or_(
+                        XMLTreatment.totime > self._prevalence_point,
+                        XMLTreatment.totime.is_(None),
+                    ),
+                )
 
             # Execute queries and collect results
             batch_assessments = pd.DataFrame(
@@ -412,9 +440,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return merged_results
 
-    def _extract_base_patient_cohort(self):
+    def _extract_base_patient_cohort(self, extract_all: bool = False):
         # Get main cohort from ukrdc
-        cohort = self._core_query()
+        cohort = self._core_query(extract_all)
 
         if cohort.empty:
             return
@@ -423,7 +451,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         patient_numbers = self._get_patient_numbers(cohort["pid"].tolist())
 
         # Send patient numbers to the archive to extract data from there
-        treatments, assessments = self._get_archive_data(patient_numbers)
+        treatments, assessments = self._get_archive_data(patient_numbers, extract_all)
 
         # correct the treatments using the archive data
         # we assume treatments without corresponding ukrdc record are invalid
@@ -510,6 +538,6 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return cohort
 
-    def extract_patient_cohort(self):
-        self._patient_cohort = self._extract_base_patient_cohort()
+    def extract_patient_cohort(self, extract_all: bool = True):
+        self._patient_cohort = self._extract_base_patient_cohort(extract_all)
         return self._patient_cohort
