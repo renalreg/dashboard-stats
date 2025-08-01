@@ -254,10 +254,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # add column with ages and calculate histogram
-        self._patient_cohort["age"] = self._patient_cohort["birth_time"][
-            pd.isna(self._patient_cohort.death_time)
-        ].apply(lambda dob: age_from_dob(self.end_date, dob))
-
+        #self._patient_cohort["age"] = self._patient_cohort["birth_time"][
+        #    self._patient_cohort.death_time.isna()
+        #].apply(lambda dob: age_from_dob(self.end_date, dob))
+        self._patient_cohort["age"] = self._patient_cohort["birth_time"].apply(lambda dob: age_from_dob(self.end_date, dob))
         age = _calculate_base_patient_histogram(self._patient_cohort, "age")
 
         return Labelled2d(

@@ -1,87 +1,182 @@
 """
-Example of how to extend the dashboard stats functionality using pandas
+Example of how to extend the dashboard stats functionality using pandas to
+produce an extract which is compatible with the tableau visualisations on the
+UKKidney website here:
+https://www.ukkidney.org/audit-research/data-portals
 
-This script demonstrates how to:
-1. Extract incident KRT patient cohort data
-2. Extract demographics for the same patient group
-3. Join the datasets and analyze them together 
-4. Create visualizations of incident KRT patient age distribution
+Hosted here:
+https://public.tableau.com/app/profile/ukkidney/viz/KRTlandingpage/Landingpage
+
+This functionality is still very much in development so it should be treated
+with care yada yada.
 """
 
 import datetime as dt
 import os
 import pandas as pd
-from typing import List
 
-# Use plotly instead of seaborn/matplotlib
-import plotly.express as px
-
-
+from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
-from ukrdc_stats.calculators.demographics import DemographicStatsCalculator
+from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
+from ukrdc_stats.utils import map_codes
 
 # Configuration
-FACILITY = "RJZ"
-START_DATE = dt.datetime(2023, 1, 1)  # One year of data - the Norman conquest was much longer
-END_DATE = dt.datetime(2024, 1, 1)
+YEAR = 2024
 OUTPUT_DIR = ".do_not_commit"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Note this could be replaced with some sort of lookup when the codes are 
+# sorted out
+FACILITIES = [
+    "RAJ",
+    "RAQ01",
+    "RBD01",
+    "RBT20",
+    "RCSLB",
+    "RDEE4",
+    "RFBAK",
+    "RH8",
+    "RHW01",
+    "RJ121",
+    "RJ122",
+    "RJE01",
+    "RJZ",
+    "RK7CC",
+    "RKB01",
+    "RL403",
+    "RLZ01",
+    "RM574",
+    "RNJ00",
+    "RNX02",
+    "RRE01",
+    "RRK02"
+]
+
+def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session):
+    """
+    Function to aggregate data in a tableau digestible way
+    """
+
+    # initialise KRT calculator
+    krt_calculator = KRTStatsCalculator(
+        session=ukrdc_session, 
+        facility=facility, 
+        from_time=start, 
+        to_time=stop
+    )
+
+    # create reports on incident and prevalent patients
+    incident_krt_report = (
+        krt_calculator.generate_cohort_report(
+            cohort="incident"
+        ).table.to_pandas()
+    )
+    incident_krt_report["incidprev"] = "Incident"
+     
+    prevalent_krt_report = (
+        krt_calculator.generate_cohort_report(
+            cohort="prevalent"
+        ).table.to_pandas()
+    )
+    prevalent_krt_report["incidprev"] = "Prevalent"
+    
+    # Mash them together and do some remapping 
+    combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
+    combined_report.rename(
+        columns = {"registry_code_type":"dialtplt",
+        "sendingfacility":"centre",
+        "healthcarefacilitycode":"satellite_code"},
+        inplace=True
+    )
+    combined_report["centre"] = facility
+    # what about home hd?
+    combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
+    combined_report.drop(columns = ["pid", "admitreasoncode", "admitreasoncodestd"], inplace=True)
+
+    # initialise demographics and create report
+    demographics_calculator = DemographicStatsCalculator(
+        session=ukrdc_session,
+        facility=facility,
+        end_date=stop,
+        start_date=start
+    )
+    _, demographics_report = demographics_calculator.produce_report(
+        output_columns=["gender", "age", "ethnic_group_code"]
+    )
+    demographics_report = demographics_report.to_pandas()
+   
+    # Introduce adultpediatric flag
+    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Pediatric"})
+
+    # Aggregate gender
+    gender = pd.merge(combined_report, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
+    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
+    gender.drop(columns = ["gender"], inplace=True)
+    gender.drop_duplicates(inplace=True)
+    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+
+    # Aggregate age 
+    age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
+    age["value"] = age["age"].astype(int)
+    bins = [0, 18, 25, 35, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 999]
+    labels = ['<18', '18-24', '25-34', '35-44', '45-49', '50-54', '55-59', 
+              '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
+    age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
+    age.drop_duplicates(inplace=True)
+    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+
+    # Aggregate ethnicity
+    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
+    ethnicity = pd.merge(combined_report, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
+    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
+    ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
+    ethnicity.drop_duplicates(inplace=True)
+    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+
+    # Combine dataframes together
+    gender["variable2"] = "Gender"
+    ethnicity["variable2"] = "Ethnicity"
+    age["variable2"] = "Age"
+
+    return pd.concat([gender, ethnicity, age])
 
 # Connect to database
 conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
-
-with sessionmaker() as session:
-    # Extract KRT stats within window as pandas dataframe
-    krt_calculator = KRTStatsCalculator(
-        session=session, 
-        facility=FACILITY, 
-        from_time=START_DATE, 
-        to_time=END_DATE
-    )
-    krt_report = krt_calculator.generate_cohort_report(cohort="incident", include_ni=True)
-    incident_krt_df = krt_report.table.to_pandas()
-
-    # Use the demographic calculator to get some demographic information
-    demo_output_columns = ["birth_time", "gender","age", "ethnic_group_code"]
-    demo_calculator = DemographicStatsCalculator(
-        session=session,
-        facility=FACILITY,
-        end_date=END_DATE,
-        start_date=START_DATE
-    )
-    
-    # Use the produce_report function to get the demographic data
-    _, table = demo_calculator.produce_report(
-        output_columns=demo_output_columns,
-        include_ni=True
-    )
-    demo_df = table.to_pandas()
-    
-    # Join data frames on pid (ukrdcid) - a unity the Anglo-Saxons would've wanted
-    merged_df = pd.merge(
-        incident_krt_df,
-        demo_df,
-        on='ukrdcid',
-        how='inner'
-    ).drop_duplicates()
-
-    
-    merged_df = merged_df[~merged_df.age.isna()]
-    merged_df["age"] = merged_df["age"].astype(float)
+single_quarter_cohorts = []
 
 
-    print(f"Gender distribution:\n{merged_df['gender'].value_counts()}")
-    print(f"Average age at KRT start: {merged_df['age'].mean():.1f} years")
-    
-    # create age and gender distribution
-    fig1 = px.histogram(
-        merged_df, 
-        x='age',
-        color='gender',
-        title=f'Age Distribution of survivint Incident KRT Patients in {FACILITY}',
-        labels={'age': 'Age at end of window', 'count': 'Number of Patients'},
-        nbins=20
-    )
-    fig1.write_html(os.path.join(OUTPUT_DIR, "age_distribution.html"))
+with sessionmaker() as session:    
+    # Get some mapping to relation sending facilities to regions
+    region_map = map_codes("RR1", "URTS_region", session)
+    for facility in FACILITIES:
+        for quarter in range(1,5):
+            # calculate start and end from quarter and year
+            quarter_start = dt.datetime(YEAR, quarter*3-2, 1)
+            if quarter < 4:
+                quarter_end = dt.datetime(YEAR, quarter*3 +1, 1) - dt.timedelta(days=1)
+            else:
+                quarter_end = dt.datetime(YEAR, 12, 31) 
+            
+            # Extract data and add additional labels
+            tableau_demog = calculate_tableau_demog(facility, 
+                quarter_start, 
+                quarter_end, 
+                session
+            )
+            tableau_demog["year"] = YEAR
+            tableau_demog["quarter"] = quarter
+            tableau_demog["option"] = "Number"
+            tableau_demog["country"] = "England"
+            tableau_demog["measure"] = "Demography"
+            tableau_demog["region"] = region_map.get(facility, "not in mapping")
+            
+            single_quarter_cohorts.append(tableau_demog)
+
+# Combine smaller cohorts and save to csv, does the order need to be specified?
+pd.concat(single_quarter_cohorts).to_csv(
+    os.path.join(OUTPUT_DIR, "tableau_krt_demog.csv"), 
+    index=False
+)

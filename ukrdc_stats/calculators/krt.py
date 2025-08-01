@@ -381,9 +381,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             "fromtime"
         ].shift(-1)
 
-        raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[raw_patients.columns].apply(
-            adjust_next_fromtime
-        )
+        raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[
+            raw_patients.columns
+        ].apply(adjust_next_fromtime)
 
         return raw_patients
 
@@ -996,19 +996,28 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "admitreasoncodestd",
                     "registry_code_type",
                 ],
-                [cohort, "first_treatment"],
+                [
+                    cohort, 
+                    "first_treatment", 
+                    f"sendingfacility == '{self.facility}'"
+                ],
                 include_ni=include_ni,
             )
         elif cohort == "prevalent":
+            # This needs reviewing since the proper definition of prevalence should be  
             pop, report = self.produce_report(
                 [
                     "pid",
-                    "healcarefacilitycode",
+                    "healthcarefacilitycode",
                     "admitreasoncode",
                     "admitreasoncodestd",
                     "registry_code_type",
                 ],
-                [cohort, "most_recent"],
+                [
+                    cohort, 
+                    "most_recent",
+                    f"sendingfacility == '{self.facility}'"
+                ],
                 include_ni=include_ni,
             )
 
