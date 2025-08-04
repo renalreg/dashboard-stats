@@ -994,6 +994,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "healthcarefacilitycode",
                     "admitreasoncode",
                     "admitreasoncodestd",
+                    "fromtime",
+                    "totime",
                     "registry_code_type",
                 ],
                 [
@@ -1011,6 +1013,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "healthcarefacilitycode",
                     "admitreasoncode",
                     "admitreasoncodestd",
+                    "fromtime",
+                    "totime",
                     "registry_code_type",
                 ],
                 [
