@@ -242,11 +242,14 @@ for facility in facilities:
             with_demographics["satellite"],
         )
 
+        with_demographics.to_csv(os.path.join(OUTPUT_DIR, facility + "_" + str(x) + "_CKDcohort.csv"), index=True)
+
         # Select only relevant columns from the dataset
         jfm3 = with_demographics[
             DATASET_COLUMNS
         ].loc[  # Filter for rows where all of the following is true:
-            (with_demographics["resultvalue_labegfr"] <=15)  # Facility matches
+            (with_demographics["resultvalue_labegfr"] <=15)
+            | (with_demographics["calculated_egfr"] <=15)
         ]
 
         # Group by gender (keeping all the other data)
