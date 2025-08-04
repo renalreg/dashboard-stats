@@ -1,9 +1,10 @@
 import pytest
 import pandas as pd
-from datetime import datetime
-from unittest.mock import MagicMock
+from ukrdc_stats.utils import egfr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 from sqlalchemy.types import TypeDecorator, Boolean
 from sqlalchemy.dialects.mysql import BIT as MySQL_BIT
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
@@ -262,28 +263,8 @@ def populated_patient(sqlite_session):
                 admitreasoncode="123",
                 admitreasoncodestd="TEST1",
                 admitreasondesc="TEST",
-                fromtime=datetime(2021, 6, 1),
-                totime=None,
-                creation_date=datetime.now(),
-            ),
-            Treatment( # Duplicate of 2
-                id=5,
-                pid=pid,
-                admitreasoncode="900",
-                admitreasoncodestd="UKKID",
-                admitreasondesc="TEST2",
                 fromtime=datetime(2022, 6, 1),
                 totime=None,
-                creation_date=datetime.now(),
-            ),
-            Treatment( # Duplicate of 3  (outside of prevalence point)
-                id=6,
-                pid=pid,
-                admitreasoncode="900",
-                admitreasoncodestd="UKKID",
-                admitreasondesc="TEST2",
-                fromtime=datetime(2023, 6, 1),
-                totime=datetime(2024, 6, 1),
                 creation_date=datetime.now(),
             ),
         ]
@@ -302,15 +283,14 @@ def test_core_query(sqlite_session, populated_patient):
         v5_archive_session=archive_session,
     )
     calculator._ckd_cohort_codes = ["900"]
-    
-    # Unfiltered — should return 5/6 treatments (one got deduplicated)
-    df_all = calculator._core_query(extract_all=True)
-    print(df_all["fromtime"])
-    assert len(df_all) == 5
 
-    # Filtered - should return treatments with ids 1 and 2, since 3 is after prevalence point, 4 has wrong code and 5 got deduplicated
+    # Unfiltered — should return all 3 treatments
+    df_all = calculator._core_query(extract_all=True)
+    assert len(df_all) == 4
+
+    # Filtered - should return treatment with id 1, as we are filtering for the last one within prevalence point
     df_filtered = calculator._core_query(extract_all=False)
-    assert len(df_filtered) == 2
+    assert len(df_filtered) == 1
     assert not df_filtered["fromtime"].isin([datetime(2023, 6, 1)]).any()
 
 
@@ -377,21 +357,14 @@ def test_extract_base_patient_cohort(
     }
     assert expected_cols.issubset(set(cohort.columns))
 
-    assert len(cohort) == 2
+    # Return only treatment
+    assert len(cohort) == 1
     assert (cohort["pid"] == "1").all()
     assert (cohort["admitreasoncode"] == "900").all()
     assert cohort["calculated_egfr"][0] == 90
 
     cohort = calculator._extract_base_patient_cohort(extract_all=True)
-    assert len(cohort) == 5
-
-
-import pytest
-import pandas as pd
-from unittest.mock import MagicMock, patch
-from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
-from ukrdc_stats.utils import egfr
-from datetime import datetime, timedelta
+    assert len(cohort) == 4
 
 
 @pytest.fixture
