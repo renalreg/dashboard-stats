@@ -102,6 +102,8 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
                 PatientRecord.sendingfacility,
                 Patient.birthtime,
                 Patient.deathtime,
+                Treatment.healthcarefacilitycode,
+                Treatment.healthcarefacilitydesc,
                 Treatment.admitreasoncode,
                 Treatment.admitreasoncodestd,
                 Treatment.admitreasondesc,

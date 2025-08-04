@@ -9,13 +9,14 @@ import pandas as pd
 
 from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
-from scripts.extract_ckd import prevalence_point
-from ukrdc_stats.calculators.demographics import DemographicStatsCalculator
+from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
+from ukrdc_stats.utils import map_codes
 
 # Configuration
 YEAR = 2024
 OUTPUT_DIR = ".do_not_commit"
+OUTPUT_FILE = "tableau_ckd_demog.csv"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -50,7 +51,7 @@ def calculate_tableau_demog(cohort:pd.DataFrame, facility:str, start:dt.datetime
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(cohort, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -60,15 +61,15 @@ def calculate_tableau_demog(cohort:pd.DataFrame, facility:str, start:dt.datetime
               '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
-    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
+    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
     ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Combine dataframes together
     gender["variable2"] = "Gender"
@@ -83,6 +84,7 @@ def calculate_ckd_demog(facility:str, prevalence_point:dt.datetime, ukrdc_sessio
     """
     Function to aggregate data in a tableau digestible way
     """
+    # Initiate 
     calculator = PrevalentCKDCalculator(
         session=ukrdc_session, 
         facility=facility, 
@@ -90,18 +92,48 @@ def calculate_ckd_demog(facility:str, prevalence_point:dt.datetime, ukrdc_sessio
     )
     calculator.extract_patient_cohort()
     _, ckd_cohort = calculator.produce_report(
-        output_columns=["ukrdcid", "admitreasoncode", "healthcarefacilitydesc","sendingfacility"]
+        output_columns=[
+            "ukrdcid", 
+            "registry_code_type", 
+            "healthcarefacilitycode", 
+            "healthcarefacilitydesc",
+            "sendingfacility"
+        ]
     )
-    ckd_cohort.drop_duplicates(inplace=True)
-    
+    ckd_cohort = ckd_cohort.to_pandas().drop_duplicates()
+    #"satellite_code", "centre", "incidprev", "variable", "adultpaed"
+    ckd_cohort.rename(
+        columns={
+            "sendingfacility": "centre",  
+            "healthcarefacilitycode": "satellite_code",
+            "healthcarefacilitydesc": "satellite", 
+            "registry_code_type":"dialtplt",
+        }, 
+        inplace=True
+    )
+    ckd_cohort["incidprev"] = "Prevalent"
+
     return calculate_tableau_demog(ckd_cohort, facility, prevalence_point, prevalence_point, ukrdc_session)
-
-
 
 
 ukrdc_conn = PostgresConnection(app = SERVER, tunnel = True, via_app = True)
 ukrdc_sessionmaker = ukrdc_conn.session_maker()
 prevalence_point = dt.datetime(YEAR, 12, 31, 23, 59, 59)
+cohorts = []
 with ukrdc_sessionmaker() as ukrdc_session:
+    region_map = map_codes("RR1", "URTS_region", ukrdc_session)
     for facility in FACILITIES:
-        calculate_ckd_demog(facility, prevalence_point, ukrdc_session)
+        # Append various placeholder columns for variables not being swept
+        facility_cohort = calculate_ckd_demog(facility, prevalence_point, ukrdc_session)
+        facility_cohort["year"] = YEAR
+        facility_cohort["quarter"] = 4
+        facility_cohort["option"] = "Number"
+        facility_cohort["country"] = "England"
+        facility_cohort["measure"] = "Demography"
+        facility_cohort["region"] = region_map.get(facility, "not in mapping")
+        cohorts.append(facility_cohort)
+
+pd.concat(cohorts).to_csv(
+    os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
+    index=False
+)

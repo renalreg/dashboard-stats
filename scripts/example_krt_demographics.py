@@ -115,7 +115,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -125,7 +125,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
               '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
@@ -133,7 +133,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed","dialtplt"]).size().reset_index(name="value")
 
     # Combine dataframes together
     gender["variable2"] = "Gender"
