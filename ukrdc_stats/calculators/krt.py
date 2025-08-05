@@ -998,15 +998,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "totime",
                     "registry_code_type",
                 ],
-                [
-                    cohort, 
-                    "first_treatment", 
-                    f"sendingfacility == '{self.facility}'"
-                ],
+                [cohort, "first_treatment", f"sendingfacility == '{self.facility}'"],
                 include_ni=include_ni,
             )
         elif cohort == "prevalent":
-            # This needs reviewing since the proper definition of prevalence should be  
+            # This needs reviewing since the proper definition of prevalence should be
             pop, report = self.produce_report(
                 [
                     "pid",
@@ -1017,11 +1013,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "totime",
                     "registry_code_type",
                 ],
-                [
-                    cohort, 
-                    "most_recent",
-                    f"sendingfacility == '{self.facility}'"
-                ],
+                [cohort, "most_recent", f"sendingfacility == '{self.facility}'"],
                 include_ni=include_ni,
             )
 
