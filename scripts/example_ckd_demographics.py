@@ -1,6 +1,7 @@
 """
 This script attempts to replicate the krt demographics extract with a different
-(more experimental) KRT calculator.
+(more experimental) KRT calculator being used to produce a cohort of patients 
+prior to going on rrt.
 """
 
 import datetime as dt
@@ -84,7 +85,7 @@ def calculate_ckd_demog(facility:str, prevalence_point:dt.datetime, ukrdc_sessio
     """
     Function to aggregate data in a tableau digestible way
     """
-    # Initiate 
+    # Initiate the calculator to produce a granular ckd cohort
     calculator = PrevalentCKDCalculator(
         session=ukrdc_session, 
         facility=facility, 
@@ -101,7 +102,9 @@ def calculate_ckd_demog(facility:str, prevalence_point:dt.datetime, ukrdc_sessio
         ]
     )
     ckd_cohort = ckd_cohort.to_pandas().drop_duplicates()
-    #"satellite_code", "centre", "incidprev", "variable", "adultpaed"
+    
+    # Relabel columns to match extract requirements and set unswept column
+    # incidprev
     ckd_cohort.rename(
         columns={
             "sendingfacility": "centre",  
