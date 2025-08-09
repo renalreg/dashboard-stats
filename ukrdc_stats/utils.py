@@ -3,7 +3,6 @@ Common utility functions useful in multiple statistics
 """
 
 import datetime as dt
-from numpy import geterr
 from ukrdc_sqla.ukrdc import Code
 import pandas as pd
 import fileinput
@@ -138,7 +137,7 @@ def dob_cutoff_from_age(date: dt.datetime, age: int) -> dt.datetime:
 
 
 def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
-    """Use the code map table to return a code mapping set from the ukrdc as a 
+    """Use the code map table to return a code mapping set from the ukrdc as a
     dictionary.
 
     Args:
@@ -149,7 +148,7 @@ def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
     Returns:
         dict: _description_
     """
-    
+
     query = select(CodeMap.source_code, CodeMap.destination_code).where(
         and_(
             CodeMap.source_coding_standard == source_std,
@@ -161,29 +160,33 @@ def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
 
     return dict(zip(codes.source_code, codes.destination_code))
 
-def lookup_codes(coding_standard: str, attribute: str, session: Session) -> Dict[str, str]:
-    """ Get a code set from the ukrdc lookup and return some attribute from it
+
+def lookup_codes(
+    coding_standard: str, attribute: str, session: Session
+) -> Dict[str, str]:
+    """Get a code set from the ukrdc lookup and return some attribute from it
     (most likely the description)
-    
+
     Args:
         coding_standard (str): The coding standard to lookup
         attribute (str): The attribute to return (e.g., 'description')
         session (Session): SQLAlchemy database session
-        
+
     Returns:
         Dict[str, str]: Dictionary mapping code values to the requested attribute
     """
     # Build and execute query properly
     query = select(Code).where(Code.coding_standard == coding_standard)
     result = session.execute(query).scalars().all()
-    
+
     # Handle empty results
     if not result:
         warnings.warn(f"No codes found for coding standard '{coding_standard}'")
         return {}
-        
+
     # Convert to dictionary directly from ORM objects
     return {code.code: getattr(code, attribute, None) for code in result}
+
 
 def strip_whitespace(filepath: str):
     """Run to stop pylint complaining about trailing whitespace"""
