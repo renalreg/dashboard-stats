@@ -19,11 +19,14 @@ from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes
+from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.exceptions import NoCohortError
 
 # Configuration
 YEAR = 2024
 OUTPUT_DIR = ".do_not_commit"
+OUTPUT_FILE = "tableau_krt_demog.csv"
+SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Note this could be replaced with some sort of lookup when the codes are 
@@ -84,12 +87,13 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Mash them together and do some remapping 
     combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
     combined_report.rename(
-        columns = {"registry_code_type":"dialtplt",
-        "sendingfacility":"centre",
-        "healthcarefacilitycode":"satellite_code"},
+        columns = {
+            "registry_code_type":"dialtplt",
+            "healthcarefacilitycode":"satellite_code"
+        },
         inplace=True
     )
-    combined_report["centre"] = facility
+
     # what about home hd?
     combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
     combined_report.drop(columns = ["pid", "admitreasoncode", "admitreasoncodestd"], inplace=True)
@@ -115,7 +119,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -125,7 +129,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
               '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
@@ -133,10 +137,10 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed","dialtplt"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed","dialtplt"]).size().reset_index(name="value")
 
     # Combine dataframes together
-    gender["variable2"] = "Gender"
+    gender["variable2"] = "Sex"
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
 
@@ -151,6 +155,7 @@ single_quarter_cohorts = []
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
     region_map = map_codes("RR1", "URTS_region", session)
+    facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
         for quarter in range(1,5):
             # calculate start and end from quarter and year
@@ -161,22 +166,54 @@ with sessionmaker() as session:
                 quarter_end = dt.datetime(YEAR, 12, 31) 
             
             # Extract data and add additional labels
-            tableau_demog = calculate_tableau_demog(facility, 
-                quarter_start, 
-                quarter_end, 
-                session
-            )
+            try:
+                tableau_demog = calculate_tableau_demog(facility, 
+                    quarter_start, 
+                    quarter_end, 
+                    session
+                )
+            except NoCohortError:
+                continue
+
             tableau_demog["year"] = YEAR
             tableau_demog["quarter"] = quarter
+            tableau_demog["centre_code"] = facility
             tableau_demog["option"] = "Number"
             tableau_demog["country"] = "England"
             tableau_demog["measure"] = "Demography"
             tableau_demog["region"] = region_map.get(facility, "not in mapping")
-            
+            tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
+            tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
+            tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
             single_quarter_cohorts.append(tableau_demog)
 
-# Combine smaller cohorts and save to csv, does the order need to be specified?
-pd.concat(single_quarter_cohorts).to_csv(
-    os.path.join(OUTPUT_DIR, "tableau_krt_demog.csv"), 
-    index=False
-)
+# Export data to csv file
+output_order = [
+    "variable",
+    "centre",
+    "adultpaed",
+    "dialtplt",
+    "country",
+    "variable2",
+    "measure",
+    "centre_code",
+    "satellite_code",
+    "satellite",
+    "year",
+    "option",
+    "incidprev",
+    "quarter",
+    "region",
+    "value"
+]
+
+print("\nWriting to file...")
+combined_cohort = pd.concat(single_quarter_cohorts)
+if not combined_cohort.empty:
+    combined_cohort.to_csv(
+        os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
+        index=False,
+        columns=output_order
+    )
+else:
+    raise ValueError("No data extracted")

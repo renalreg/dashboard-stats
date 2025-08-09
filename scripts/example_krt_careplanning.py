@@ -19,7 +19,7 @@ from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes
+from ukrdc_stats.utils import map_codes, lookup_codes
 from sqlalchemy import select
 from ukrdc_sqla.xmlarchive import Assessment, Patient
 from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
@@ -121,11 +121,10 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
     combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
     combined_report.rename(
         columns = {"registry_code_type":"dialtplt",
-        "sendingfacility":"centre",
+        "sendingfacility":"centre_code",
         "healthcarefacilitycode":"satellite_code"},
         inplace=True
     )
-    combined_report["centre"] = facility
     combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
    
     # Now we get the most recent assessment prior to the treatment start
@@ -162,7 +161,7 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(cohort, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -172,7 +171,7 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
               '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
@@ -180,10 +179,10 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "centre", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Combine dataframes together
-    gender["variable2"] = "Gender"
+    gender["variable2"] = "Sex"
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
 
@@ -200,6 +199,7 @@ single_quarter_cohorts = []
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
     region_map = map_codes("RR1", "URTS_region", session)
+    facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
         assessments = get_facility_assessments(session, facility)
         for quarter in range(1,5):
@@ -213,9 +213,29 @@ with sessionmaker() as session:
             cohort["country"] = "England"
             cohort["measure"] = "Demography"
             cohort["region"] = region_map.get(facility, "not in mapping")
-            
+            cohort["centre_code"] = facility
+            cohort["centre"] = facility_names.get(facility, "not in mapping")
             single_quarter_cohorts.append(cohort)
 
+output_order = [
+    "variable",
+    "centre",
+    "adultpaed",
+    "dialtplt",
+    "country",
+    "variable2",
+    "measure",
+    "centre_code",
+    "satellite_code",
+    "satellite",
+    "year",
+    "option",
+    "incidprev",
+    "quarter",
+    "region",
+    "assessmentoutcomecode",
+    "value",
+]
 
 
 
