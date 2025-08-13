@@ -14,7 +14,7 @@ from sqlalchemy import select
 # Configuration
 YEAR = 2024
 OUTPUT_DIR = ".do_not_commit"
-OUTPUT_FILE = "tableau_krt_demog.csv"
+OUTPUT_FILE = "tableau_krt_demog_va.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -116,6 +116,9 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # We get the vascular access in the first recorded dialysis session and
     # drop any results after prevalence point and left join onto cohort
     vascular_access = query_vascular_access(session, combined_report.pid)
+    if vascular_access.empty:
+        return None
+    print(vascular_access.head(5))
     vascular_access = vascular_access[vascular_access.procedure_time <= stop]
     vascular_access.rename(columns={"qhd20":"vascularaccess"}, inplace=True)
     combined_report = pd.merge(combined_report, vascular_access[["pid", "vascularaccess"]], on="pid", how="left")
@@ -136,8 +139,9 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     demographics_report = demographics_report.to_pandas()
    
     # Introduce adultpediatric flag
-    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Pediatric"})
+#    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+#    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
+    demographics_report["adultpaed"] = 'Adult'
 
     # Aggregate gender
     gender = pd.merge(combined_report, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
@@ -149,9 +153,8 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Aggregate age 
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
     age["value"] = age["age"].astype(int)
-    bins = [0, 18, 25, 35, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 999]
-    labels = ['<18', '18-24', '25-34', '35-44', '45-49', '50-54', '55-59', 
-              '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
+    bins = [18, 25, 35, 45, 55, 65, 75, 85, 150]
+    labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
     age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt",  "vascularaccess"]).size().reset_index(name="value")
@@ -172,7 +175,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     return pd.concat([gender, ethnicity, age])
 
 # Connect to database
-conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
+conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
 single_quarter_cohorts = []
 
@@ -200,17 +203,20 @@ with sessionmaker() as session:
             except NoCohortError:
                 continue
 
-            tableau_demog["year"] = YEAR
-            tableau_demog["quarter"] = quarter
-            tableau_demog["centre_code"] = facility
-            tableau_demog["option"] = "Number"
-            tableau_demog["country"] = "England"
-            tableau_demog["measure"] = "Demography"
-            tableau_demog["region"] = region_map.get(facility, "not in mapping")
-            tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
-            tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
-            tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
-            single_quarter_cohorts.append(tableau_demog)
+            if tableau_demog is None:
+                continue
+            else:
+                tableau_demog["year"] = YEAR
+                tableau_demog["quarter"] = quarter
+                tableau_demog["centre_code"] = facility
+                tableau_demog["option"] = "Number"
+                tableau_demog["country"] = "England"
+                tableau_demog["measure"] = "Demography"
+                tableau_demog["region"] = region_map.get(facility, "not in mapping")
+                tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
+                tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
+                tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
+                single_quarter_cohorts.append(tableau_demog)
 
 # Export data to csv file
 output_order = [

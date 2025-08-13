@@ -506,6 +506,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         base_cohort["timeline_length"] = (
             base_cohort["timeline_stop"] - base_cohort["timeline_start"]
         )
+        # JM Set deathtime to NaT if not a datetime (appears as a ndarray, presumably number in at least one place in UKRDC)
+        base_cohort["deathtime"] = pd.to_datetime(base_cohort["deathtime"], errors="coerce")
         base_cohort["life_length"] = (
             base_cohort["deathtime"] - base_cohort["timeline_start"]
         )

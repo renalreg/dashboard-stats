@@ -111,8 +111,9 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     demographics_report = demographics_report.to_pandas()
    
     # Introduce adultpediatric flag
-    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Pediatric"})
+#    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+#    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
+    demographics_report["adultpaed"] = 'Adult'
 
     # Aggregate gender
     gender = pd.merge(combined_report, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
@@ -124,9 +125,8 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Aggregate age 
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
     age["value"] = age["age"].astype(int)
-    bins = [0, 18, 25, 35, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 999]
-    labels = ['<18', '18-24', '25-34', '35-44', '45-49', '50-54', '55-59', 
-              '60-64', '65-69', '70-74', '75-79', '80-84', '85-89', '90+']
+    bins = [18, 25, 35, 45, 55, 65, 75, 85, 150]
+    labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
     age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
