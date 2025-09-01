@@ -1003,12 +1003,13 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             pop, report = self.produce_report(
                 [
                     "pid",
-                    "healcarefacilitycode",
+                    "healthcarefacilitycode",
                     "admitreasoncode",
                     "admitreasoncodestd",
                     "registry_code_type",
                 ],
                 [cohort, "most_recent"],
+                # [cohort, "first_treatment"],
                 include_ni=include_ni,
             )
 
