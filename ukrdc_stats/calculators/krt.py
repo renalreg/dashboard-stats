@@ -117,7 +117,7 @@ def calculate_therapy_types(
     ] = ""
     patient_cohort.loc[
         (patient_cohort.registry_code_type == "HD")
-        & (patient_cohort.qbl05.isna() | patient_cohort.qbl05 == ""),
+        & (patient_cohort.qbl05.isna() | (patient_cohort.qbl05 == "")),
         "qbl05",
     ] = "Unknown/Incomplete"
     patient_cohort.loc[:, "qbl05"] = patient_cohort["qbl05"].replace(mappings)
@@ -354,8 +354,35 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if limit_to_ukrdc:
             query = query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # Execute query
-        base_cohort = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+        # Execute query and explicitly define the datatypes of columns
+        base_cohort = pd.read_sql(
+            query,
+            self.session.bind,
+            dtype={
+                "pid": "string",
+                "ukrdcid": "string",
+                "sendingfacility": "string",
+                "healthcarefacilitycode": "string",
+                "admitreasoncode": "string",
+                "admitreasoncodestd": "string",
+                "admissionsourcecode": "string",
+                "admissionsourcecodestd": "string",
+                "qbl05": "string",
+                "hdp04": "string",
+                "dischargereasoncode": "string",
+                "dischargereasoncodestd": "string",
+                "dischargelocationcode": "string",
+                "dischargelocationcodestd": "string",
+                "registry_code_type": "string",
+                "deathtime": "datetime64[ns]",
+                "fromtime": "datetime64[ns]",
+                "totime": "datetime64[ns]",
+                "is_chronic": "bool",
+                "historic_tx": "bool",
+            },
+        )
+
+        # base_cohort = pd.DataFrame(self.session.execute(query)).drop_duplicates()
         if base_cohort.empty:
             raise NoCohortError(
                 f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
@@ -507,7 +534,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             base_cohort["timeline_stop"] - base_cohort["timeline_start"]
         )
         # JM Set deathtime to NaT if not a datetime (appears as a ndarray, presumably number in at least one place in UKRDC)
-        base_cohort["deathtime"] = pd.to_datetime(base_cohort["deathtime"], errors="coerce")
+        # base_cohort["deathtime"] = pd.to_datetime(
+        #    base_cohort["deathtime"], errors="coerce"
+        # )
         base_cohort["life_length"] = (
             base_cohort["deathtime"] - base_cohort["timeline_start"]
         )

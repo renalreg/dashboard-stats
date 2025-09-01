@@ -15,6 +15,7 @@ import datetime as dt
 import os
 import pandas as pd
 
+from pathlib import Path
 from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
@@ -24,7 +25,7 @@ from ukrdc_stats.exceptions import NoCohortError
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = ".do_not_commit"
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
 OUTPUT_FILE = "tableau_krt_demog.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)

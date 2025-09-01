@@ -2,6 +2,7 @@ import datetime as dt
 import os
 import pandas as pd
 
+from pathlib import Path
 from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
@@ -13,7 +14,7 @@ from sqlalchemy import select
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = ".do_not_commit"
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
 OUTPUT_FILE = "tableau_krt_demog_va.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -118,7 +119,6 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     vascular_access = query_vascular_access(session, combined_report.pid)
     if vascular_access.empty:
         return None
-    print(vascular_access.head(5))
     vascular_access = vascular_access[vascular_access.procedure_time <= stop]
     vascular_access.rename(columns={"qhd20":"vascularaccess"}, inplace=True)
     combined_report = pd.merge(combined_report, vascular_access[["pid", "vascularaccess"]], on="pid", how="left")
@@ -179,12 +179,13 @@ conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
 single_quarter_cohorts = []
 
-
+print("Extracting data from facility:")
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
     region_map = map_codes("RR1", "URTS_region", session)
     facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
+        print(facility)
         for quarter in range(1,5):
             # calculate start and end from quarter and year
             quarter_start = dt.datetime(YEAR, quarter*3-2, 1)

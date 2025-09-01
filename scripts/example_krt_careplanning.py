@@ -14,6 +14,7 @@ with care yada yada.
 import datetime as dt
 import os
 import pandas as pd
+from pathlib import Path
 
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
@@ -27,7 +28,7 @@ from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = ".do_not_commit"
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
 OUTPUT_FILE = "tableau_krt_care_planning.csv"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)

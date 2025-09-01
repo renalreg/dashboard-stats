@@ -8,6 +8,7 @@ import datetime as dt
 import os
 import pandas as pd
 
+from pathlib import Path
 from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
@@ -18,7 +19,7 @@ from ukrdc_stats.exceptions import NoCohortError
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = ".do_not_commit"
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
 OUTPUT_FILE = "tableau_ckd_demog.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -50,15 +51,15 @@ FACILITIES = [
     # every sending facility therefore the center is more properly defined as
     # the main unit which maps to the healthcarefacility 
     # "BHLY", 
-    "RFBAK",
-    "RJE01"
+    #"RFBAK",
+    #"RJE01"
 ]
 
 # TEST PARAMS
-#FACILITIES = [
-#    "RH8",
-#    "RTD01",
-#]
+FACILITIES = [
+    "RH8",
+    "RTD01",
+]
 
 def calculate_tableau_demog(
     cohort:pd.DataFrame, 
@@ -205,7 +206,8 @@ with ukrdc_sessionmaker() as ukrdc_session:
     facility_names = lookup_codes("RR1+", "description", ukrdc_session)
     print("Extracting cohort for facility: ")
     for facility in FACILITIES:
-        print(f"{facility}", end = ",")
+        #print(f"{facility}", end = ",")
+        print(facility)
         for quarter in range(1,5):
             # Append various placeholder columns for variables not being swept
             try:
