@@ -7,6 +7,7 @@ import datetime as dt
 from pathlib import Path
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
+from ukrdc_stats.utils import map_codes
 
 # connection to the database
 server = "ukrdc_live"
@@ -17,12 +18,14 @@ FULL_EXTRACT = False
 
 # set parameters
 facilities = ["RCSLB", "RAQ01"]  #"RAL01", "RAE05", "RFPFG"
+#facilities = []
 prevalence_point = dt.datetime(2025, 6, 30,0,0,0)
 #prevalence_point = dt.datetime(2023, 12, 31,0,0,0)
-report_file_path = Path(r"Q:\UKRDC\Assessments\Phil_extracts\2025_07_15")
+#report_file_path = Path(r"Q:\UKRDC\Assessments\Phil_extracts\2025_07_15")
 #report_file_path = Path(".do_not_commit")
 
 with ukrdc_sessionmaker() as ukrdc_session:
+    region_map = map_codes("RR1", "URTS_region", ukrdc_session)
     for facility in facilities:
         # initialise the required calculator and extract the cohort from the
         # database

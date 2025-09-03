@@ -1,16 +1,3 @@
-"""
-Example of how to extend the dashboard stats functionality using pandas to
-produce an extract which is compatible with the tableau visualisations on the
-UKKidney website here:
-https://www.ukkidney.org/audit-research/data-portals
-
-Hosted here:
-https://public.tableau.com/app/profile/ukkidney/viz/KRTlandingpage/Landingpage
-
-This functionality is still very much in development so it should be treated
-with care yada yada.
-"""
-
 import datetime as dt
 import os
 import pandas as pd
@@ -22,11 +9,13 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.utils import map_codes, lookup_codes
 from ukrdc_stats.exceptions import NoCohortError
+from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
+from sqlalchemy import select
 
 # Configuration
 YEAR = 2024
 OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
-OUTPUT_FILE = "tableau_krt_demog.csv"
+OUTPUT_FILE = "tableau_krt_demog_va.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -56,6 +45,33 @@ FACILITIES = [
     "RRE01",
     "RRK02"
 ]
+
+def query_vascular_access(session:Session, patient_list:pd.Series):
+    """ Customised version of the _query_vascular_access function which doesn't
+    aggregate the results. We may wish to adapt this to get the most recent va
+    to a given date.
+
+    Args:
+        session (Session): Database session
+        patient_list (pd.Series): List of pids defining a cohort.
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    
+    query = (
+        select(
+            PatientRecord.pid,
+            DialysisSession.procedure_time,
+            DialysisSession.qhd20
+        )
+        .distinct(PatientRecord.pid)
+        .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+        .where(PatientRecord.pid.in_(patient_list))
+        .order_by(PatientRecord.pid, DialysisSession.procedure_time)
+    )
+
+    return pd.DataFrame(session.execute(query))
 
 def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session):
     """
@@ -95,9 +111,20 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         inplace=True
     )
 
-    # what about home hd?
-    combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
+    # drop TX and PD patients 
+    combined_report = combined_report[combined_report.dialtplt == "HD"]
+
+    # We get the vascular access in the first recorded dialysis session and
+    # drop any results after prevalence point and left join onto cohort
+    vascular_access = query_vascular_access(session, combined_report.pid)
+    if vascular_access.empty:
+        return None
+    vascular_access = vascular_access[vascular_access.procedure_time <= stop]
+    vascular_access.rename(columns={"qhd20":"vascularaccess"}, inplace=True)
+    combined_report = pd.merge(combined_report, vascular_access[["pid", "vascularaccess"]], on="pid", how="left")
+    combined_report["vascularaccess"] = combined_report["vascularaccess"].fillna("Uncoded")
     combined_report.drop(columns = ["pid", "admitreasoncode", "admitreasoncodestd"], inplace=True)
+
 
     # initialise demographics and create report
     demographics_calculator = DemographicStatsCalculator(
@@ -121,7 +148,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt",  "vascularaccess"]).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -130,7 +157,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt",  "vascularaccess"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
@@ -138,7 +165,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed","dialtplt"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed","dialtplt", "vascularaccess"]).size().reset_index(name="value")
 
     # Combine dataframes together
     gender["variable2"] = "Sex"
@@ -148,16 +175,17 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     return pd.concat([gender, ethnicity, age])
 
 # Connect to database
-conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
+conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
 single_quarter_cohorts = []
 
-
+print("Extracting data from facility:")
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
     region_map = map_codes("RR1", "URTS_region", session)
     facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
+        print(facility)
         for quarter in range(1,5):
             # calculate start and end from quarter and year
             quarter_start = dt.datetime(YEAR, quarter*3-2, 1)
@@ -176,17 +204,20 @@ with sessionmaker() as session:
             except NoCohortError:
                 continue
 
-            tableau_demog["year"] = YEAR
-            tableau_demog["quarter"] = quarter
-            tableau_demog["centre_code"] = facility
-            tableau_demog["option"] = "Number"
-            tableau_demog["country"] = "England"
-            tableau_demog["measure"] = "Demography"
-            tableau_demog["region"] = region_map.get(facility, "not in mapping")
-            tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
-            tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
-            tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
-            single_quarter_cohorts.append(tableau_demog)
+            if tableau_demog is None:
+                continue
+            else:
+                tableau_demog["year"] = YEAR
+                tableau_demog["quarter"] = quarter
+                tableau_demog["centre_code"] = facility
+                tableau_demog["option"] = "Number"
+                tableau_demog["country"] = "England"
+                tableau_demog["measure"] = "Demography"
+                tableau_demog["region"] = region_map.get(facility, "not in mapping")
+                tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
+                tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
+                tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
+                single_quarter_cohorts.append(tableau_demog)
 
 # Export data to csv file
 output_order = [
@@ -205,6 +236,7 @@ output_order = [
     "incidprev",
     "quarter",
     "region",
+    "vascularaccess",
     "value"
 ]
 
