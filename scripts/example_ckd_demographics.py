@@ -19,7 +19,8 @@ from ukrdc_stats.exceptions import NoCohortError
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
+#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
+OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "tableau_ckd_demog.csv"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -88,6 +89,12 @@ def calculate_tableau_demog(
 #    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
     demographics_report["adultpaed"] = 'Adult'
 
+    # Total head count 
+    total =  pd.merge(cohort, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
+    total["variable"] = total["dialtplt"]
+    total.drop_duplicates(inplace=True)
+    total = total.groupby(group_by_columns).size().reset_index(name="value")
+
     # Aggregate gender
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
@@ -117,7 +124,7 @@ def calculate_tableau_demog(
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
 
-    return pd.concat([gender, ethnicity, age])
+    return pd.concat([total, gender, ethnicity, age])
 
 
 
