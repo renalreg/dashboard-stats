@@ -13,7 +13,9 @@ with care yada yada.
 
 import datetime as dt
 import os
+import warnings
 import pandas as pd
+
 
 from pathlib import Path
 from sqlalchemy.orm import Session
@@ -24,11 +26,14 @@ from ukrdc_stats.utils import map_codes, lookup_codes
 from ukrdc_stats.exceptions import NoCohortError
 
 # Configuration
-YEAR = 2024
+YEAR = 2023
 OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
-OUTPUT_FILE = "tableau_krt_demog.csv"
+#OUTPUT_DIR = Path(".do_not_commit")
+OUTPUT_FILE = "tableau_demog"
 SERVER =  "ukrdc_staging"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
 
 # Note this could be replaced with some sort of lookup when the codes are 
 # sorted out
@@ -57,7 +62,7 @@ FACILITIES = [
     "RRK02"
 ]
 
-def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session):
+def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session, aggregated = True):
     """
     Function to aggregate data in a tableau digestible way
     """
@@ -87,6 +92,9 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     
     # Mash them together and do some remapping 
     combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
+    if len(combined_report) == 0:
+        raise NoCohortError("No cohort found for facility skipping: {}".format(facility))
+
     combined_report.rename(
         columns = {
             "registry_code_type":"dialtplt",
@@ -95,9 +103,11 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         inplace=True
     )
 
+
+
     # what about home hd?
     combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
-    combined_report.drop(columns = ["pid", "admitreasoncode", "admitreasoncodestd"], inplace=True)
+    combined_report.drop(columns = ["admitreasoncode", "admitreasoncodestd", "fromtime", "totime"], inplace=True)
 
     # initialise demographics and create report
     demographics_calculator = DemographicStatsCalculator(
@@ -111,41 +121,78 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     )
     demographics_report = demographics_report.to_pandas()
    
-    # Introduce adultpediatric flag
-#    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-#    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
-    demographics_report["adultpaed"] = 'Adult'
+    # Introduce adultpediatric flag (age threshold)
+    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
 
-    # Aggregate gender
+    # Total headcount
+    total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
+    total["variable"] = total["dialtplt"]
+
+    # Limit rest of demogs to adults only 
+    demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
+    
+    if len(demographics_report) == 0:
+        raise NoCohortError(f"No Adults in facility {facility}")
+
+    # link data on gender
     gender = pd.merge(combined_report, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
-    gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
 
-    # Aggregate age 
+    # link data on age label into fixed bins
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
-    age["value"] = age["age"].astype(int)
-    bins = [18, 25, 35, 45, 55, 65, 75, 85, 150]
-    labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
-    age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
-    age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code",  "incidprev", "variable", "adultpaed", "dialtplt"]).size().reset_index(name="value")
+    age["age"] = age["age"].astype(int)
+    bins = [18, 35, 55, 75, 150]
+    labels = ["18-34", "35-54", "55-74", ">=75"]
+    for i in range(len(labels)):
+        age.loc[(bins[i+1] > age["age"]) & (bins[i] <= age["age"]), "variable"] = labels[i]
 
-    # Aggregate ethnicity
-    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
+    # link data on ethnicity
+    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
     ethnicity = pd.merge(combined_report, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
-    ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed","dialtplt"]).size().reset_index(name="value")
 
-    # Combine dataframes together
+    # label each dataframe with the type of data it is calculating
     gender["variable2"] = "Sex"
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
+    total["variable2"] = "KRT Type"
+    demog_combined = pd.concat([total, gender, ethnicity, age])
+    demog_combined.drop_duplicates(inplace = True)
 
-    return pd.concat([gender, ethnicity, age])
+    # At this point the data should basically be a bunch of labelled ids
+    # We can check that they sum to the same value
+    n_gender = demog_combined[demog_combined["variable2"]=="Sex"].pid.nunique()
+    n_ethnicity = demog_combined[demog_combined["variable2"]=="Ethnicity"].pid.nunique()
+    n_age = demog_combined[demog_combined["variable2"]=="Age"].pid.nunique()
+    n_krt = demog_combined[demog_combined["variable2"]=="KRT Type"].pid.nunique()
+
+    if n_gender != n_ethnicity or n_gender !=n_age or n_gender !=n_krt:
+        warnings.warn("Number of patients does not match across all demographics")
+
+    if aggregated:
+        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"]).size().reset_index(name="value")
+
+    return demog_combined
+
+def remap_paed_centres(cohort:pd.DataFrame):
+    """Currently this is under discussion. For now we will only map patients
+    under 18 who are sent by main centers known to share a feed with a Paed
+    centre.
+    """
+
+    PAED_MAP = {
+        "RCSLB" : "99RCSLB", # Nottingham
+        "RM574" : "RW3RM", # Birmingham
+        "RJ122" : "RJ122" # Evelina 
+    }
+
+    paed_mask = cohort["adultpaed"] == "Paediatric"
+    cohort.loc[paed_mask, "centre_code"] = cohort.loc[paed_mask, "centre_code"].map(PAED_MAP)
+    
+    return cohort
 
 # Connect to database
 conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
@@ -154,9 +201,6 @@ single_quarter_cohorts = []
 
 
 with sessionmaker() as session:    
-    # Get some mapping to relation sending facilities to regions
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
         for quarter in range(1,5):
             # calculate start and end from quarter and year
@@ -168,7 +212,8 @@ with sessionmaker() as session:
             
             # Extract data and add additional labels
             try:
-                tableau_demog = calculate_tableau_demog(facility, 
+                tableau_demog = calculate_tableau_demog(
+                    facility, 
                     quarter_start, 
                     quarter_end, 
                     session
@@ -176,17 +221,26 @@ with sessionmaker() as session:
             except NoCohortError:
                 continue
 
-            tableau_demog["year"] = YEAR
             tableau_demog["quarter"] = quarter
             tableau_demog["centre_code"] = facility
-            tableau_demog["option"] = "Number"
-            tableau_demog["country"] = "England"
-            tableau_demog["measure"] = "Demography"
-            tableau_demog["region"] = region_map.get(facility, "not in mapping")
-            tableau_demog["centre"] = facility_names.get(facility, "not in mapping")
-            tableau_demog["satellite"] = tableau_demog["satellite_code"].map(facility_names)
-            tableau_demog.loc[tableau_demog["satellite"].isna(), "satellite"] = "not in mapping"
             single_quarter_cohorts.append(tableau_demog)
+
+    # remap Paeds and add centre names and regions
+    combined_cohort = pd.concat(single_quarter_cohorts)
+    combined_cohort = remap_paed_centres(combined_cohort)
+    region_map = map_codes("RR1", "URTS_region", session)
+    facility_names = lookup_codes("RR1+", "description", session)
+    combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
+    combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
+    combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
+
+# Finally some hard coded bits
+combined_cohort["year"] = YEAR
+combined_cohort["option"] = "Number"
+combined_cohort["country"] = "England"
+combined_cohort["measure"] = "Demography"
+
+print("\nWriting to file...")
 
 # Export data to csv file
 output_order = [
@@ -207,10 +261,8 @@ output_order = [
     "region",
     "value"
 ]
-
-print("\nWriting to file...")
-combined_cohort = pd.concat(single_quarter_cohorts)
 if not combined_cohort.empty:
+
     combined_cohort.to_csv(
         os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
         index=False,
