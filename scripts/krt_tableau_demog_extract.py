@@ -1,0 +1,340 @@
+"""
+Example of how to extend the dashboard stats functionality using pandas to
+produce an extract which is compatible with the tableau visualisations on the
+UKKidney website here:
+https://www.ukkidney.org/audit-research/data-portals
+
+Hosted here:
+https://public.tableau.com/app/profile/ukkidney/viz/KRTlandingpage/Landingpage
+
+In this script the following is calculated:
+total head count for adult and paeds
+age breakdown for adults krt patients
+sex breakdown for adults krt patients
+ethnicity breakdown for adults krt patients
+gender breakdown for adults krt patients
+vascular access for hd patients
+"""
+
+import datetime as dt
+import os
+import warnings
+import pandas as pd
+
+
+from pathlib import Path
+from sqlalchemy.orm import Session
+from rr_connection_manager import PostgresConnection
+from ukrdc_stats.calculators.krt import KRTStatsCalculator
+from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
+from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.exceptions import NoCohortError
+from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
+from sqlalchemy import select
+
+# Configuration
+YEAR = 2023
+#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_09_25")
+
+OUTPUT_DIR = Path(".do_not_commit")
+OUTPUT_FILE = "tableau_demog"
+SERVER =  "ukrdc_staging"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
+
+# Note this could be replaced with some sort of lookup when the codes are 
+# sorted out
+FACILITIES = [
+    "RAJ",
+    "RAQ01",
+    "RBD01",
+    "RBT20",
+    "RCSLB",
+    "RDEE4",
+    "RFBAK",
+    "RH8",
+    "RHW01",
+    "RJ121",
+    "RJ122",
+    "RJE01",
+    "RJZ",
+    "RK7CC",
+    "RKB01",
+    "RL403",
+    "RLZ01",
+    "RM574",
+    "RNJ00",
+    "RNX02",
+    "RRE01",
+    "RRK02"
+]
+
+#FACILITIES = ["RAJ"]
+
+def query_vascular_access(session:Session, patient_list:pd.Series):
+    """ Customised version of the _query_vascular_access function which doesn't
+    aggregate the results. We may wish to adapt this to get the most recent va
+    to a given date.
+
+    Args:
+        session (Session): Database session
+        patient_list (pd.Series): List of pids defining a cohort.
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    VASCULAR_MAPPING = {
+        "AVF":"AVF/AVG",
+        "AVFUO":"AVF/AVG",
+        "AVG":"AVF/AVG",
+        "TLN":"TL",
+        "NLN":"NTL",
+        "HER":"NTL",
+        "PDC":"NTL",
+        "PDE":"NTL",
+        "PDT":"NTL",
+        "VLP":"NTL",
+        "DOESNOTCONTAIN":"NTL"
+    }
+
+
+    query = (
+        select(
+            PatientRecord.pid,
+            DialysisSession.procedure_time,
+            DialysisSession.qhd20
+        )
+        .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+        .where(PatientRecord.pid.in_(patient_list))
+        .order_by(PatientRecord.pid, DialysisSession.procedure_time)
+    )
+
+    vascular_access = pd.DataFrame(session.execute(query))
+    if vascular_access.empty:
+        vascular_access = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+
+    vascular_access["qhd20"] = vascular_access["qhd20"].map(VASCULAR_MAPPING)
+     
+    # deduplicate if multiple va per pid on most recent
+    vascular_access = vascular_access.sort_values(by="procedure_time", ascending=False).drop_duplicates(subset="pid", keep="first")
+    
+    return vascular_access.rename(columns={"qhd20":"variable"})
+
+def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session, aggregated = True):
+    """
+    Function to aggregate data in a tableau digestible way
+    """
+
+    # initialise KRT calculator
+    krt_calculator = KRTStatsCalculator(
+        session=ukrdc_session, 
+        facility=facility, 
+        from_time=start, 
+        to_time=stop
+    )
+
+    # create reports on incident and prevalent patients
+    incident_krt_report = (
+        krt_calculator.generate_cohort_report(
+            cohort="incident"
+        ).table.to_pandas()
+    )
+    incident_krt_report["incidprev"] = "Incident"
+     
+    prevalent_krt_report = (
+        krt_calculator.generate_cohort_report(
+            cohort="prevalent"
+        ).table.to_pandas()
+    )
+    prevalent_krt_report["incidprev"] = "Prevalent"
+    
+    # Mash them together and do some remapping 
+    combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
+    if len(combined_report) == 0:
+        raise NoCohortError("No cohort found for facility skipping: {}".format(facility))
+
+    combined_report.rename(
+        columns = {
+            "registry_code_type":"dialtplt",
+            "healthcarefacilitycode":"satellite_code"
+        },
+        inplace=True
+    )
+
+    # what about home hd?
+    combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
+    combined_report.drop(columns = ["admitreasoncode", "admitreasoncodestd", "fromtime", "totime"], inplace=True)
+
+    # initialise demographics and create report
+    demographics_calculator = DemographicStatsCalculator(
+        session=ukrdc_session,
+        facility=facility,
+        end_date=stop,
+        start_date=start
+    )
+    _, demographics_report = demographics_calculator.produce_report(
+        output_columns=["gender", "age", "ethnic_group_code"]
+    )
+    demographics_report = demographics_report.to_pandas()
+   
+    # Introduce adultpediatric flag (age threshold)
+    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
+
+    # Total headcount
+    total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
+    total["variable"] = total["dialtplt"]
+
+    # Limit rest of demogs to adults only 
+    demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
+    
+    if len(demographics_report) == 0:
+        raise NoCohortError(f"No Adults in facility {facility}")
+
+    # link data on gender
+    gender = pd.merge(combined_report, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
+    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
+    gender.drop(columns = ["gender"], inplace=True)
+
+    # link data on age label into fixed bins
+    age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
+    age["age"] = age["age"].astype(int)
+    bins = [18, 35, 55, 75, 150]
+    labels = ["18-34", "35-54", "55-74", ">=75"]
+    for i in range(len(labels)):
+        age.loc[(bins[i+1] > age["age"]) & (bins[i] <= age["age"]), "variable"] = labels[i]
+
+    # Link data on ethnicity
+    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
+    ethnicity = pd.merge(combined_report, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
+    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
+    ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
+
+    # Extract first vascular access for HD patients
+    hd_access = combined_report[combined_report["dialtplt"] == "HD"]
+    hd_pids = hd_access.pid.drop_duplicates()
+    vascular_access = query_vascular_access(ukrdc_session, hd_pids) 
+    vascular_access = vascular_access[vascular_access.procedure_time <= stop]
+    hd_access = pd.merge(hd_access, vascular_access, on="pid", how="left")
+    hd_access["adultpaed"] = "X"
+    hd_access.drop(columns = ["procedure_time"], inplace=True)
+    hd_access.fillna("NTL", inplace=True)
+
+    # label each dataframe with the type of data it is calculating
+    gender["variable2"] = "Sex"
+    ethnicity["variable2"] = "Ethnicity"
+    age["variable2"] = "Age"
+    total["variable2"] = "KRT Type"
+    demog_combined = pd.concat([total, gender, ethnicity, age, hd_access])
+    demog_combined.drop_duplicates(inplace = True)
+
+    # At this point the data should basically be a bunch of labelled ids
+    # We can check that they sum to the same value
+    n_gender = demog_combined[demog_combined["variable2"]=="Sex"].pid.nunique()
+    n_ethnicity = demog_combined[demog_combined["variable2"]=="Ethnicity"].pid.nunique()
+    n_age = demog_combined[demog_combined["variable2"]=="Age"].pid.nunique()
+    n_krt = demog_combined[demog_combined["variable2"]=="KRT Type"].pid.nunique()
+
+    if n_gender != n_ethnicity or n_gender !=n_age or n_gender !=n_krt:
+        warnings.warn("Number of patients does not match across all demographics")
+
+    if aggregated:
+        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"]).size().reset_index(name="value")
+
+    return demog_combined
+
+def remap_paed_centres(cohort:pd.DataFrame):
+    """Currently this is under discussion. For now we will only map patients
+    under 18 who are sent by main centers known to share a feed with a Paed
+    centre.
+    """
+
+    PAED_MAP = {
+        "RCSLB" : "99RCSLB", # Nottingham
+        "RM574" : "RW3RM", # Birmingham
+        "RJ122" : "RJ122" # Evelina 
+    }
+
+    paed_mask = cohort["adultpaed"] == "Paediatric"
+    cohort.loc[paed_mask, "centre_code"] = cohort.loc[
+        paed_mask, "centre_code"
+    ].map(PAED_MAP).fillna("unknown")
+    
+    return cohort
+
+# Connect to database
+conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
+sessionmaker = conn.session_maker()
+single_quarter_cohorts = []
+
+
+with sessionmaker() as session:    
+    for facility in FACILITIES:
+        for quarter in range(1,5):
+            # calculate start and end from quarter and year
+            quarter_start = dt.datetime(YEAR, quarter*3-2, 1)
+            if quarter < 4:
+                quarter_end = dt.datetime(YEAR, quarter*3 +1, 1) - dt.timedelta(days=1)
+            else:
+                quarter_end = dt.datetime(YEAR, 12, 31) 
+            
+            # Extract data and add additional labels
+            try:
+                tableau_demog = calculate_tableau_demog(
+                    facility, 
+                    quarter_start, 
+                    quarter_end, 
+                    session
+                )
+            except NoCohortError:
+                continue
+
+            tableau_demog["quarter"] = quarter
+            tableau_demog["centre_code"] = facility
+            single_quarter_cohorts.append(tableau_demog)
+
+    # remap Paeds and add centre names and regions
+    combined_cohort = pd.concat(single_quarter_cohorts)
+    combined_cohort = remap_paed_centres(combined_cohort)
+    region_map = map_codes("RR1", "URTS_region", session)
+    facility_names = lookup_codes("RR1+", "description", session)
+    combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
+    combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
+    combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
+
+# Finally some hard coded bits
+combined_cohort["year"] = YEAR
+combined_cohort["option"] = "Number"
+combined_cohort["country"] = "England"
+combined_cohort["measure"] = "Demography"
+
+print("\nWriting to file...")
+
+# Export data to csv file
+output_order = [
+    "variable",
+    "centre",
+    "adultpaed",
+    "dialtplt",
+    "country",
+    "variable2",
+    "measure",
+    "centre_code",
+    "satellite_code",
+    "satellite",
+    "year",
+    "option",
+    "incidprev",
+    "quarter",
+    "region",
+    "value"
+]
+if not combined_cohort.empty:
+    combined_cohort.to_csv(
+        os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
+        index=False,
+        columns=output_order
+    )
+else:
+    raise ValueError("No data extracted")
