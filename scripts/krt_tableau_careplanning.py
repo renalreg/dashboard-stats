@@ -28,7 +28,8 @@ from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 
 # Configuration
 YEAR = 2024
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
+#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
+OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "tableau_krt_care_planning.csv"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -59,7 +60,9 @@ def get_facility_assessments(ukrdc_session, facility):
     ).join(
         Patient, Assessment.patientid == Patient.id
     ).where(
-        Patient.sendingfacility == facility
+        Patient.sendingfacility == facility, 
+        Assessment.assessmentoutcomecode.in_(["1", "2", "3"]),
+        Assessment.assessmenttypecode == "TPLTassess"
     )
     assessments = pd.DataFrame(archive_session.execute(query))
 
@@ -83,6 +86,8 @@ def get_facility_assessments(ukrdc_session, facility):
     # link assessments to pids
     assessments = pd.merge(assessments, pids, on=["nationalid", "organization"], how="left")
     assessments.drop(columns=["organization", "nationalid"], inplace=True)
+
+    assessments["assessmentoutcomecode"] = assessments["assessmentoutcomecode"].map({"1":"Unsuitable", "2":"In-progress", "3":"Suitable"})
 
     return assessments.drop_duplicates()
 
@@ -111,31 +116,28 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
     )
     incident_krt_report["incidprev"] = "Incident"
      
-    prevalent_krt_report = (
-        krt_calculator.generate_cohort_report(
-            cohort="prevalent"
-        ).table.to_pandas()
-    )
-    prevalent_krt_report["incidprev"] = "Prevalent"
-    
+
     # Mash them together and do some remapping 
-    combined_report = pd.concat([incident_krt_report, prevalent_krt_report])
-    combined_report.rename(
+    incident_krt_report.rename(
         columns = {"registry_code_type":"dialtplt",
         "sendingfacility":"centre_code",
         "healthcarefacilitycode":"satellite_code"},
         inplace=True
     )
-    combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
-   
-    # Now we get the most recent assessment prior to the treatment start
-    combined_report = pd.merge(combined_report, assessments, on="pid", how="left")
-    combined_report = combined_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
-    combined_report = combined_report.drop_duplicates(subset=['pid'], keep='first')
-    combined_report.drop(columns = ["pid", "assessmentstart","assessmentend","admitreasoncode","admitreasoncodestd"], inplace=True)
-    combined_report.fillna("Uncoded", inplace=True)
+    incident_krt_report["dialtplt"] = incident_krt_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
 
-    return combined_report
+
+    # Now we get the most recent assessment prior to the treatment start
+    incident_krt_report = pd.merge(incident_krt_report, assessments, on="pid", how="left")
+    incident_krt_report = incident_krt_report[incident_krt_report.assessmentstart < incident_krt_report.fromtime]
+
+    incident_krt_report = incident_krt_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
+    incident_krt_report = incident_krt_report.drop_duplicates(subset=['pid'], keep='first')
+
+    incident_krt_report.drop(columns = ["pid", "assessmentstart","assessmentend","admitreasoncode","admitreasoncodestd"], inplace=True)
+    incident_krt_report.fillna("No assessment", inplace=True)
+    
+    return incident_krt_report
 
 def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     """

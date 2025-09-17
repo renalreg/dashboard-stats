@@ -8,58 +8,57 @@ import datetime as dt
 import os
 import pandas as pd
 
+from dotenv import dotenv_values
 from pathlib import Path
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_stats.utils import map_codes, lookup_codes
-
+from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
+
 # Configuration
-YEAR = 2024
+YEAR = 2023
 #OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
 OUTPUT_DIR = Path(".do_not_commit")
-OUTPUT_FILE = "tableau_ckd_demog.csv"
-SERVER =  "ukrdc_staging"
+OUTPUT_FILE = "ckd_demog"
+SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+env_file = dotenv_values(".env")
+UKRDC_URL = env_file.get("ukrdc_url")
+
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
 
 # dump of facilities in staging removed_xml_archive
 FACILITIES = [
-    "RH8",
-    "RTD01",
-    "RKB01",
-    "RDEE4",
-    "RBT20",
-    "REE01",
-    "RLZ01",
-    "RVVKC",
-    "RHW01",
-    "RJZ",
-    "RJ121",
+    "RAJ",
+    "RNJ00",
     "RAQ01",
-    "RRK02",
-    "RJ122",
-    "RNX02",
-    "RL403",
-    "RRE01",
-    "RBD01",
+    #"RBD01",
+    #"RBT20",
     "RCSLB",
-    "RFPFG",
-    "RK7CC",
-    # TODO: in the future there will not necessarily be a single centre for
-    # every sending facility therefore the center is more properly defined as
-    # the main unit which maps to the healthcarefacility 
-    # "BHLY", 
+    #"RDEE4",
     #"RFBAK",
-    #"RJE01"
-]
-
-# TEST PARAMS
-FACILITIES = [
     "RH8",
-    "RTD01",
+    #"RHW01",
+    #"RJ121",
+    #"RJ122",
+    #"RJE01",
+    "RJZ",
+    "RK7CC",
+    "RNJ00",
+    #"RKB01",
+    #"RL403",
+    #"RLZ01",
+    #"RM574",
+    "RNJ00",
+    #"RNX02",
+    #"RRE01",
+    #"RRK02"
 ]
 
 def calculate_tableau_demog(
@@ -85,15 +84,17 @@ def calculate_tableau_demog(
     )
     demographics_report = demographics_report.to_pandas()
    
-#    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-#    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
-    demographics_report["adultpaed"] = 'Adult'
+    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
+    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
 
     # Total head count 
     total =  pd.merge(cohort, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
     total = total.groupby(group_by_columns).size().reset_index(name="value")
+
+    # Remove Paeds from the demogs
+    demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
 
     # Aggregate gender
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
@@ -123,9 +124,9 @@ def calculate_tableau_demog(
     gender["variable2"] = "Sex"
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
+    total["variable2"] = "Clinic Type"
 
     return pd.concat([total, gender, ethnicity, age])
-
 
 
 def calculate_ckd_demog(facility:str, year:int, quarter:int, ukrdc_session:Session):
@@ -204,34 +205,59 @@ def calculate_ckd_demog(facility:str, year:int, quarter:int, ukrdc_session:Sessi
 
     return calculate_tableau_demog(ckd_cohort, facility, prevalence_point, prevalence_point, group_by_columns, ukrdc_session)
 
+def remap_paed_centres(cohort:pd.DataFrame):
+    """Currently this is under discussion. For now we will only map patients
+    under 18 who are sent by main centers known to share a feed with a Paed
+    centre.
+    """
 
-ukrdc_conn = PostgresConnection(app = SERVER, tunnel = True, via_app = True)
-ukrdc_sessionmaker = ukrdc_conn.session_maker()
+    PAED_MAP = {
+        "RCSLB" : "99RCSLB", # Nottingham
+        "RM574" : "RW3RM", # Birmingham
+        "RJ122" : "RJ122" # Evelina 
+    }
+
+    paed_mask = cohort["adultpaed"] == "Paediatric"
+    cohort.loc[paed_mask, "centre_code"] = cohort.loc[
+        paed_mask, "centre_code"
+    ].map(PAED_MAP).fillna("unknown")
+    
+    return cohort
+
+if UKRDC_URL:
+    ukrdc_session = sessionmaker(create_engine(UKRDC_URL))()
+else:
+    ukrdc_conn = PostgresConnection(app = SERVER, tunnel = True, via_app = True)
+    ukrdc_sessionmaker = ukrdc_conn.session_maker()
+    ukrdc_session = ukrdc_sessionmaker()
+
 cohorts = []
-with ukrdc_sessionmaker() as ukrdc_session:
-    region_map = map_codes("RR1", "URTS_region", ukrdc_session)
-    facility_names = lookup_codes("RR1+", "description", ukrdc_session)
-    print("Extracting cohort for facility: ")
-    for facility in FACILITIES:
-        #print(f"{facility}", end = ",")
-        print(facility)
-        for quarter in range(1,5):
-            # Append various placeholder columns for variables not being swept
-            try:
-                facility_cohort = calculate_ckd_demog(facility, YEAR, quarter, ukrdc_session)
-            except NoCohortError:
-                continue
+region_map = map_codes("RR1", "URTS_region", ukrdc_session)
+facility_names = lookup_codes("RR1+", "description", ukrdc_session)
+print("Extracting cohort for facility: ")
+for facility in FACILITIES:
+    #print(f"{facility}", end = ",")
+    print(facility)
+    for quarter in range(1,5):
+        # Append various placeholder columns for variables not being swept
+        try:
+            facility_cohort = calculate_ckd_demog(facility, YEAR, quarter, ukrdc_session)
+        except NoCohortError:
+            continue
 
-            facility_cohort["year"] = YEAR
-            facility_cohort["quarter"] = quarter
-            facility_cohort["option"] = "Number"
-            facility_cohort["country"] = "England"
-            facility_cohort["measure"] = "Demography"
-            facility_cohort["incidprev"] = "Prevalent"
-            facility_cohort["region"] = region_map.get(facility, "not in mapping")
-            facility_cohort["centre"] = facility_names.get(facility, "not in mapping")
-            cohorts.append(facility_cohort)
+        facility_cohort["quarter"] = quarter
 
+        facility_cohort["region"] = region_map.get(facility, "not in mapping")
+        facility_cohort["centre"] = facility_names.get(facility, "not in mapping")
+        cohorts.append(facility_cohort)
+
+    
+facility_cohort = remap_paed_centres(facility_cohort)
+facility_cohort["year"] = YEAR
+facility_cohort["option"] = "Number"
+facility_cohort["country"] = "England"
+facility_cohort["measure"] = "Demography"
+facility_cohort["incidprev"] = "Prevalent"
 
 # Export data to csv file
 output_order = [
@@ -253,8 +279,10 @@ output_order = [
     "value"
 ]
 
-print("\nWriting to file...")
 combined_cohort = pd.concat(cohorts)
+print("\nWriting to file...")
+# Filter any empty rows (can remove small numbers here too)
+combined_cohort = combined_cohort[combined_cohort["value"] > 0]
 if not combined_cohort.empty:
     combined_cohort.to_csv(
         os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
@@ -263,3 +291,5 @@ if not combined_cohort.empty:
     )
 else:
     raise ValueError("No data extracted")
+
+ukrdc_session.close()
