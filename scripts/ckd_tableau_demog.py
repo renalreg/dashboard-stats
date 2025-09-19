@@ -279,7 +279,7 @@ combined_cohort = pd.concat(cohorts)
 print("\nWriting to file...")
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
-    
+combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)    
 combined_cohort = remap_paed_centres(combined_cohort)
 combined_cohort["year"] = YEAR
 combined_cohort["option"] = "Number"

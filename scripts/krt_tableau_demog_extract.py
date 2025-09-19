@@ -40,8 +40,6 @@ OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "krt_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-env_file = dotenv_values(".env")
-UKRDC_URL = env_file["ukrdc_url"] 
 
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
 
@@ -74,7 +72,7 @@ FACILITIES = [
     #"RRK02"
 ]
 
-#FACILITIES = ["RAJ"]
+FACILITIES = ["RAJ"]
 
 def query_vascular_access(session:Session, patient_list:pd.Series):
     """ Customised version of the _query_vascular_access function which doesn't
@@ -190,6 +188,8 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
 
+    child_pids = total[total["adultpaed"] == "Paediatric"].pid.drop_duplicates()
+
     # Limit rest of demogs to adults only 
     demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
     
@@ -218,10 +218,12 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Extract first vascular access for HD patients
     hd_access = combined_report[combined_report["dialtplt"] == "HD"]
     hd_pids = hd_access.pid.drop_duplicates()
+    hd_pids = hd_pids[~hd_pids.isin(child_pids)]
+
     vascular_access = query_vascular_access(ukrdc_session, hd_pids) 
     vascular_access = vascular_access[vascular_access.procedure_time <= stop]
     hd_access = pd.merge(hd_access, vascular_access, on="pid", how="left")
-    hd_access["adultpaed"] = "X"
+    hd_access["adultpaed"] = "Adult"
     hd_access.drop(columns = ["procedure_time"], inplace=True)
     hd_access.fillna("NTL", inplace=True)
 
