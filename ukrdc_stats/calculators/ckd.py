@@ -184,18 +184,32 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             ).drop_duplicates("pid", keep="first")
 
         return base_cohort
-
     def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
-        query = select(
-            PatientNumber.pid,
-            PatientNumber.patientid,
-            PatientNumber.organization,
-            PatientNumber.numbertype,
-        ).where(
-            PatientNumber.pid.in_(pids),
-        )
+        CHUNK_SIZE = 100
+        all_patient_numbers = []
+        
+        # Process PIDs in specified chunks
+        for i in range(0, len(pids), CHUNK_SIZE):
+            chunk_pids = pids[i:i + CHUNK_SIZE]
+            
+            query = select(
+                PatientNumber.pid,
+                PatientNumber.patientid,
+                PatientNumber.organization,
+                PatientNumber.numbertype,
+            ).where(
+                PatientNumber.pid.in_(chunk_pids),
+            )
 
-        patients_numbers = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+            chunk_results = pd.DataFrame(self.session.execute(query)).drop_duplicates()
+            if not chunk_results.empty:
+                all_patient_numbers.append(chunk_results)
+        
+        # Combine all chunks
+        if all_patient_numbers:
+            patients_numbers = pd.concat(all_patient_numbers, ignore_index=True)
+        else:
+            patients_numbers = pd.DataFrame(columns=['pid', 'patientid', 'organization', 'numbertype'])
 
         return patients_numbers.reset_index(drop=True).astype(str)
 
@@ -203,7 +217,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
         self, patient_numbers: pd.DataFrame, extract_all: bool = False
     ):
         # Break up large queries into chunks to avoid PostgreSQL stack overflow
-        BATCH_SIZE = 1000
+        BATCH_SIZE = 100
         all_assessments = []
         all_treatments = []
 

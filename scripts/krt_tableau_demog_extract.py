@@ -37,8 +37,8 @@ YEAR = 2023
 #OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_09_25")
 
 OUTPUT_DIR = Path(".do_not_commit")
-OUTPUT_FILE = "tableau_demog"
-SERVER =  "ukrdc_staging"
+OUTPUT_FILE = "krt_demog"
+SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
@@ -47,30 +47,32 @@ OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
 # sorted out
 FACILITIES = [
     "RAJ",
+    "RNJ00",
     "RAQ01",
-    "RBD01",
-    "RBT20",
+    #"RBD01",
+    #"RBT20",
     "RCSLB",
-    "RDEE4",
-    "RFBAK",
+    #"RDEE4",
+    #"RFBAK",
     "RH8",
-    "RHW01",
-    "RJ121",
-    "RJ122",
-    "RJE01",
+    #"RHW01",
+    #"RJ121",
+    #"RJ122",
+    #"RJE01",
     "RJZ",
     "RK7CC",
-    "RKB01",
-    "RL403",
-    "RLZ01",
-    "RM574",
-    "RNJ00",
-    "RNX02",
-    "RRE01",
-    "RRK02"
+    #"RNJ00",
+    #"RKB01",
+    #"RL403",
+    #"RLZ01",
+    #"RM574",
+    #"RNJ00",
+    #"RNX02",
+    #"RRE01",
+    #"RRK02"
 ]
 
-#FACILITIES = ["RAJ"]
+FACILITIES = ["RAJ"]
 
 def query_vascular_access(session:Session, patient_list:pd.Series):
     """ Customised version of the _query_vascular_access function which doesn't
@@ -116,8 +118,8 @@ def query_vascular_access(session:Session, patient_list:pd.Series):
 
     vascular_access["qhd20"] = vascular_access["qhd20"].map(VASCULAR_MAPPING)
      
-    # deduplicate if multiple va per pid on most recent
-    vascular_access = vascular_access.sort_values(by="procedure_time", ascending=False).drop_duplicates(subset="pid", keep="first")
+    # deduplicate on first value
+    vascular_access = vascular_access.sort_values(by="procedure_time").drop_duplicates(subset="pid", keep="first")
     
     return vascular_access.rename(columns={"qhd20":"variable"})
 
@@ -186,6 +188,8 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
 
+    child_pids = total[total["adultpaed"] == "Paediatric"].pid.drop_duplicates()
+
     # Limit rest of demogs to adults only 
     demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
     
@@ -214,10 +218,12 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Extract first vascular access for HD patients
     hd_access = combined_report[combined_report["dialtplt"] == "HD"]
     hd_pids = hd_access.pid.drop_duplicates()
+    hd_pids = hd_pids[~hd_pids.isin(child_pids)]
+
     vascular_access = query_vascular_access(ukrdc_session, hd_pids) 
     vascular_access = vascular_access[vascular_access.procedure_time <= stop]
     hd_access = pd.merge(hd_access, vascular_access, on="pid", how="left")
-    hd_access["adultpaed"] = "X"
+    hd_access["adultpaed"] = "Adult"
     hd_access.drop(columns = ["procedure_time"], inplace=True)
     hd_access.fillna("NTL", inplace=True)
 
@@ -226,6 +232,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
     total["variable2"] = "KRT Type"
+    hd_access["variable2"] = "Vascular Access"
     demog_combined = pd.concat([total, gender, ethnicity, age, hd_access])
     demog_combined.drop_duplicates(inplace = True)
 
@@ -308,6 +315,9 @@ combined_cohort["year"] = YEAR
 combined_cohort["option"] = "Number"
 combined_cohort["country"] = "England"
 combined_cohort["measure"] = "Demography"
+
+# Filter any empty rows (can remove small numbers here too)
+combined_cohort = combined_cohort[combined_cohort["value"] > 0]
 
 print("\nWriting to file...")
 
