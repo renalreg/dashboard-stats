@@ -1,7 +1,11 @@
 """
 This script attempts to replicate the krt demographics extract with a different
-(more experimental) KRT calculator being used to produce a cohort of patients 
+(more experimental) CKD calculator being used to produce a cohort of patients 
 prior to going on rrt.
+
+Note: As of 19/09/25 some bizarre socket error appears if you use connection
+manager. Not sure exactly what is going on here but the current work around is
+to use a url passed in an .env file and set up a manual ssh tunnel 
 """
 
 import datetime as dt
@@ -55,7 +59,6 @@ FACILITIES = [
     #"RL403",
     #"RLZ01",
     #"RM574",
-    "RNJ00",
     #"RNX02",
     #"RRE01",
     #"RRK02"
@@ -220,7 +223,7 @@ def remap_paed_centres(cohort:pd.DataFrame):
     paed_mask = cohort["adultpaed"] == "Paediatric"
     cohort.loc[paed_mask, "centre_code"] = cohort.loc[
         paed_mask, "centre_code"
-    ].map(PAED_MAP).fillna("unknown")
+    ].map(PAED_MAP).fillna("Other")
     
     return cohort
 
@@ -251,13 +254,6 @@ for facility in FACILITIES:
         facility_cohort["centre"] = facility_names.get(facility, "not in mapping")
         cohorts.append(facility_cohort)
 
-    
-facility_cohort = remap_paed_centres(facility_cohort)
-facility_cohort["year"] = YEAR
-facility_cohort["option"] = "Number"
-facility_cohort["country"] = "England"
-facility_cohort["measure"] = "Demography"
-facility_cohort["incidprev"] = "Prevalent"
 
 # Export data to csv file
 output_order = [
@@ -283,6 +279,14 @@ combined_cohort = pd.concat(cohorts)
 print("\nWriting to file...")
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
+    
+combined_cohort = remap_paed_centres(combined_cohort)
+combined_cohort["year"] = YEAR
+combined_cohort["option"] = "Number"
+combined_cohort["country"] = "England"
+combined_cohort["measure"] = "Demography"
+combined_cohort["incidprev"] = "Prevalent"
+
 if not combined_cohort.empty:
     combined_cohort.to_csv(
         os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
