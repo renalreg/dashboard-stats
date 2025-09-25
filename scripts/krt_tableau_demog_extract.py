@@ -33,46 +33,33 @@ from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
 from sqlalchemy import select
 
 # Configuration
-YEAR = 2023
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_09_25")
+YEAR_START = 2024
+QUARTER_START = 3
+NO_OF_QUARTERS = 4
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
 
-OUTPUT_DIR = Path(".do_not_commit")
+#OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "krt_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
 # Note this could be replaced with some sort of lookup when the codes are 
-# sorted out
+# sorted out also RNJ00 has broken data which will break the extract 
 FACILITIES = [
     "RAJ",
-    "RNJ00",
     "RAQ01",
-    #"RBD01",
-    #"RBT20",
     "RCSLB",
-    #"RDEE4",
-    #"RFBAK",
     "RH8",
-    #"RHW01",
-    #"RJ121",
-    #"RJ122",
-    #"RJE01",
+    "RHW01",
     "RJZ",
     "RK7CC",
-    #"RNJ00",
-    #"RKB01",
-    #"RL403",
-    #"RLZ01",
-    #"RM574",
-    #"RNJ00",
-    #"RNX02",
-    #"RRE01",
-    #"RRK02"
+    "RL403", 
+    #"RNJ00", 
 ]
 
-FACILITIES = ["RAJ"]
+#FACILITIES = ["RAJ"]
 
 def query_vascular_access(session:Session, patient_list:pd.Series):
     """ Customised version of the _query_vascular_access function which doesn't
@@ -278,13 +265,15 @@ single_quarter_cohorts = []
 
 with sessionmaker() as session:    
     for facility in FACILITIES:
-        for quarter in range(1,5):
-            # calculate start and end from quarter and year
-            quarter_start = dt.datetime(YEAR, quarter*3-2, 1)
-            if quarter < 4:
-                quarter_end = dt.datetime(YEAR, quarter*3 +1, 1) - dt.timedelta(days=1)
+        for quarter in range(QUARTER_START-1, QUARTER_START + NO_OF_QUARTERS -1):
+            # calculate year, quarter, and dates that bound it 
+            current_quarter = (quarter % 4) + 1
+            current_year = YEAR_START + quarter // 4    
+            quarter_start = dt.datetime(current_year, current_quarter*3-2, 1)
+            if current_quarter < 4:
+                quarter_end = dt.datetime(current_year, current_quarter*3 +1, 1) - dt.timedelta(days=1)
             else:
-                quarter_end = dt.datetime(YEAR, 12, 31) 
+                quarter_end = dt.datetime(current_year, 12, 31) 
             
             # Extract data and add additional labels
             try:
@@ -297,7 +286,8 @@ with sessionmaker() as session:
             except NoCohortError:
                 continue
 
-            tableau_demog["quarter"] = quarter
+            tableau_demog["quarter"] = current_quarter
+            tableau_demog["year"] = current_year
             tableau_demog["centre_code"] = facility
             single_quarter_cohorts.append(tableau_demog)
 
@@ -311,10 +301,8 @@ with sessionmaker() as session:
     combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
 
 # Finally some hard coded bits
-combined_cohort["year"] = YEAR
-combined_cohort["option"] = "Number"
 combined_cohort["country"] = "England"
-combined_cohort["measure"] = "Demography"
+
 
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
@@ -329,12 +317,10 @@ output_order = [
     "dialtplt",
     "country",
     "variable2",
-    "measure",
     "centre_code",
     "satellite_code",
     "satellite",
     "year",
-    "option",
     "incidprev",
     "quarter",
     "region",

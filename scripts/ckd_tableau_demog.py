@@ -25,9 +25,11 @@ from ukrdc_stats.exceptions import NoCohortError
 
 
 # Configuration
-YEAR = 2023
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
-OUTPUT_DIR = Path(".do_not_commit")
+YEAR_START = 2024
+QUARTER_START = 3
+NO_OF_QUARTERS = 4
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
+#OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "ckd_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -35,7 +37,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 env_file = dotenv_values(".env")
 UKRDC_URL = env_file.get("ukrdc_url")
 
-OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
 # dump of facilities in staging removed_xml_archive
 FACILITIES = [
@@ -153,8 +155,7 @@ def calculate_ckd_demog(facility:str, year:int, quarter:int, ukrdc_session:Sessi
         output_columns=[
             "ukrdcid", 
             "admitreasoncode",
-            "healthcarefacilitycode", 
-            "healthcarefacilitydesc",
+            "healthcarefacilitycode",
             "sendingfacility",
             "resultvalue_labegfr",
             "calculated_egfr"
@@ -176,7 +177,6 @@ def calculate_ckd_demog(facility:str, year:int, quarter:int, ukrdc_session:Sessi
         columns={
             "sendingfacility": "centre_code",  
             "healthcarefacilitycode": "satellite_code",
-            "healthcarefacilitydesc": "satellite", 
             "admitreasoncode":"dialtplt",
         }, 
         inplace=True
@@ -199,7 +199,6 @@ def calculate_ckd_demog(facility:str, year:int, quarter:int, ukrdc_session:Sessi
     # Columns which will remain in the aggregated data
     group_by_columns = [
         "satellite_code", 
-        "satellite", 
         "centre_code", 
         "variable", 
         "adultpaed", 
@@ -216,7 +215,9 @@ def remap_paed_centres(cohort:pd.DataFrame):
 
     PAED_MAP = {
         "RCSLB" : "99RCSLB", # Nottingham
+        "99RCSLB":"99RCSLB",
         "RM574" : "RW3RM", # Birmingham
+        "RW3RM":"RW3RM",
         "RJ122" : "RJ122" # Evelina 
     }
 
@@ -225,6 +226,14 @@ def remap_paed_centres(cohort:pd.DataFrame):
         paed_mask, "centre_code"
     ].map(PAED_MAP).fillna("Other")
     
+
+    paed_mask = cohort["adultpaed"] == "Paediatric"
+    cohort.loc[paed_mask, "satellite_code"] = cohort.loc[
+        paed_mask, "satellite_code"
+    ].map(PAED_MAP).fillna("Other")
+
+    # TODO: Same mapping in reverse?
+
     return cohort
 
 if UKRDC_URL:
@@ -241,17 +250,17 @@ print("Extracting cohort for facility: ")
 for facility in FACILITIES:
     #print(f"{facility}", end = ",")
     print(facility)
-    for quarter in range(1,5):
-        # Append various placeholder columns for variables not being swept
+    for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
+        current_quarter = (q_offset % 4) + 1
+        current_year = YEAR_START + q_offset // 4
         try:
-            facility_cohort = calculate_ckd_demog(facility, YEAR, quarter, ukrdc_session)
+            facility_cohort = calculate_ckd_demog(facility, current_year, current_quarter, ukrdc_session)
         except NoCohortError:
             continue
 
-        facility_cohort["quarter"] = quarter
-
+        facility_cohort["quarter"] = current_quarter
+        facility_cohort["year"] = current_year
         facility_cohort["region"] = region_map.get(facility, "not in mapping")
-        facility_cohort["centre"] = facility_names.get(facility, "not in mapping")
         cohorts.append(facility_cohort)
 
 
@@ -263,13 +272,10 @@ output_order = [
     "dialtplt",
     "country",
     "variable2",
-    "measure",
     "centre_code",
     "satellite_code",
     "satellite",
     "year",
-    "option",
-    "incidprev",
     "quarter",
     "region",
     "value"
@@ -279,13 +285,10 @@ combined_cohort = pd.concat(cohorts)
 print("\nWriting to file...")
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
-combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)    
 combined_cohort = remap_paed_centres(combined_cohort)
-combined_cohort["year"] = YEAR
-combined_cohort["option"] = "Number"
+combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)    
+combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
 combined_cohort["country"] = "England"
-combined_cohort["measure"] = "Demography"
-combined_cohort["incidprev"] = "Prevalent"
 
 if not combined_cohort.empty:
     combined_cohort.to_csv(
