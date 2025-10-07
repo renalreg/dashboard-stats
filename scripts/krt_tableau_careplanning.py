@@ -18,6 +18,7 @@ from pathlib import Path
 
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
+from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
 from ukrdc_stats.utils import map_codes, lookup_codes
@@ -30,21 +31,24 @@ from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 YEAR_START = 2024
 QUARTER_START = 3
 NO_OF_QUARTERS = 4
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
-#OUTPUT_DIR = Path(".do_not_commit")
+#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
+OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "krt_care_planning"
 SERVER =  "ukrdc_live"
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-#FACILITIES = [
-#    "RCSLB"    
-#]
 
 FACILITIES = [
+    "RNJ00",
+    "RAJ",
+    "RK7CC",
     "RCSLB",
+    "RHW01",
+    "RAQ01",
+    "RH8",
     "RL403",
-    "RK7CC"
+    "RBD01"
 ]
 
 
@@ -93,6 +97,9 @@ def get_facility_assessments(ukrdc_session, facility):
     pids = pd.DataFrame(ukrdc_session.execute(query))
     pids.rename(columns={"patientid":"nationalid"}, inplace=True)
 
+    if pids.empty or assessments.empty:
+        return pd.DataFrame(columns=["pid","nationalid", "organization", "assessmentstart", "assessmentend", "assessmentoutcomecode"])
+
     # link assessments to pids
     assessments = pd.merge(assessments, pids, on=["nationalid", "organization"], how="left")
     assessments.drop(columns=["organization", "nationalid"], inplace=True)
@@ -138,9 +145,13 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
     incident_krt_report["dialtplt"] = incident_krt_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
 
 
-    # Now we get the most recent assessment prior to the treatment start
+    # merge and drop rows where there is an outcomecode but the assessment start > treatment start
     incident_krt_report = pd.merge(incident_krt_report, assessments, on="pid", how="left")
-    incident_krt_report = incident_krt_report[incident_krt_report.assessmentstart < incident_krt_report.fromtime]
+    incident_krt_report = incident_krt_report[
+        ~((incident_krt_report.assessmentstart > incident_krt_report.fromtime)
+        & ~incident_krt_report.assessmentoutcomecode.isna())
+    ]
+
 
     incident_krt_report = incident_krt_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
     incident_krt_report = incident_krt_report.drop_duplicates(subset=['pid'], keep='first')
@@ -161,9 +172,13 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
         facility=facility,
         date = date
     )
-    _, demographics_report = demographics_calculator.produce_report(
-        output_columns=["gender", "age", "ethnic_group_code"]
-    )
+
+    try:
+        _, demographics_report = demographics_calculator.produce_report(
+            output_columns=["gender", "age", "ethnic_group_code"]
+        )
+    except NoCohortError:
+        return pd.DataFrame(columns=["satellite_code", "variable", "dialtplt", "assessmentoutcomecode", "value"])
     demographics_report = demographics_report.to_pandas()
     demographics_report = demographics_report[demographics_report["age"].astype(int) > 18]
 
@@ -229,10 +244,13 @@ with sessionmaker() as session:
             else:
                 quarter_end = dt.datetime(current_year, 12, 31)
             cohort = apply_demographic_aggregation(granular_cohort, session, facility, quarter_end)
-            cohort = cohort[cohort.value > 0] 
+
+
             cohort["year"] = current_year
             cohort["quarter"] = current_quarter
             cohort["country"] = "England"
+            
+            # Not the region mapping is incomplete but could easily be expanded
             cohort["region"] = region_map.get(facility, "not in mapping")
             cohort["centre_code"] = facility
             cohort["centre"] = facility_names.get(facility, "not in mapping")
@@ -254,8 +272,6 @@ output_order = [
     "assessmentoutcome",
     "value",
 ]
-
-
 
 pd.concat(single_quarter_cohorts).to_csv(
     os.path.join(OUTPUT_DIR, OUTPUT_FILE), 

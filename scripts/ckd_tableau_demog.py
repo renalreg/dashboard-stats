@@ -28,8 +28,8 @@ from ukrdc_stats.exceptions import NoCohortError
 YEAR_START = 2024
 QUARTER_START = 3
 NO_OF_QUARTERS = 4
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
-#OUTPUT_DIR = Path(".do_not_commit")
+#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
+OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "ckd_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -40,31 +40,21 @@ UKRDC_URL = env_file.get("ukrdc_url")
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
 # dump of facilities in staging removed_xml_archive
+"""
 FACILITIES = [
-    "RAJ",
-    "RNJ00",
-    "RAQ01",
-    #"RBD01",
-    #"RBT20",
-    "RCSLB",
-    #"RDEE4",
-    #"RFBAK",
-    "RH8",
-    #"RHW01",
-    #"RJ121",
-    #"RJ122",
-    #"RJE01",
-    "RJZ",
-    "RK7CC",
-    "RNJ00",
-    #"RKB01",
-    #"RL403",
-    #"RLZ01",
-    #"RM574",
-    #"RNX02",
-    #"RRE01",
-    #"RRK02"
+"RNJ00
+"RAJ
+RK7CC
+RCSLB 
+RHW01
+RAQ01
+RH8
+RL403    
+RBD01 
 ]
+"""
+FACILITIES = ["RH8"]
+
 
 def calculate_tableau_demog(
     cohort:pd.DataFrame, 
