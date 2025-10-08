@@ -15,6 +15,9 @@ ethnicity breakdown for adults krt patients
 gender breakdown for adults krt patients
 vascular access for hd patients
 """
+# James M 08-10-25 I have removed DOESNOTCONTAIN, PDC etc from the mapping for vascular access to precipitate it filling with NA as these are not valid entries
+#                   I have commented out line 217 as we need to count the NA (and not convert to NTL)
+#                   Line 239 I have added 'dropna=False' to the group function to force count of NA
 
 import datetime as dt
 import os
@@ -36,7 +39,7 @@ from sqlalchemy import select
 YEAR_START = 2024
 QUARTER_START = 3
 NO_OF_QUARTERS = 4
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_10_25")
 
 #OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "krt_demog"
@@ -53,10 +56,10 @@ FACILITIES = [
     "RCSLB",
     "RH8",
     "RHW01",
-    "RJZ",
+#    "RJZ", Kings
     "RK7CC",
     "RL403", 
-    #"RNJ00", 
+    #"RNJ00", Barts and the dialysis session date out of range crashes this
 ]
 
 #FACILITIES = ["RAJ"]
@@ -79,12 +82,12 @@ def query_vascular_access(session:Session, patient_list:pd.Series):
         "AVG":"AVF/AVG",
         "TLN":"TL",
         "NLN":"NTL",
-        "HER":"NTL",
-        "PDC":"NTL",
-        "PDE":"NTL",
-        "PDT":"NTL",
-        "VLP":"NTL",
-        "DOESNOTCONTAIN":"NTL"
+        "HER":"AVF/AVG"
+#        "PDC":"NTL",
+#        "PDE":"NTL",
+#        "PDT":"NTL",
+#        "VLP":"NTL",
+#        "DOESNOTCONTAIN":"NTL"
     }
 
 
@@ -212,7 +215,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     hd_access = pd.merge(hd_access, vascular_access, on="pid", how="left")
     hd_access["adultpaed"] = "Adult"
     hd_access.drop(columns = ["procedure_time"], inplace=True)
-    hd_access.fillna("NTL", inplace=True)
+#    hd_access.fillna("NTL", inplace=True)
 
     # label each dataframe with the type of data it is calculating
     gender["variable2"] = "Sex"
@@ -234,7 +237,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         warnings.warn("Number of patients does not match across all demographics")
 
     if aggregated:
-        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"]).size().reset_index(name="value")
+        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"], dropna=False).size().reset_index(name="value")
 
     return demog_combined
 

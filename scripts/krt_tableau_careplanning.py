@@ -10,6 +10,7 @@ https://public.tableau.com/app/profile/ukkidney/viz/KRTlandingpage/Landingpage
 This functionality is still very much in development so it should be treated
 with care yada yada.
 """
+#   James M 08-Oct-25   I have altered line 150 to only exclude assessments which happened after KRT start, but leave in the blanks
 
 import datetime as dt
 import os
@@ -31,26 +32,24 @@ from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 YEAR_START = 2024
 QUARTER_START = 3
 NO_OF_QUARTERS = 4
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
-OUTPUT_DIR = Path(".do_not_commit")
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_10_25")
+# OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "krt_care_planning"
 SERVER =  "ukrdc_live"
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
 FACILITIES = [
-    "RNJ00",
     "RAJ",
-    "RK7CC",
-    "RCSLB",
-    "RHW01",
     "RAQ01",
+    "RCSLB",
     "RH8",
-    "RL403",
-    "RBD01"
+    "RHW01",
+#    "RJZ", Kings
+    "RK7CC",
+    "RL403", 
+    "RNJ00",
 ]
-
 
 def get_facility_assessments(ukrdc_session, facility):
     """Get all assessments for a facility and link to the ukrdc patient records
@@ -149,7 +148,8 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
     incident_krt_report = pd.merge(incident_krt_report, assessments, on="pid", how="left")
     incident_krt_report = incident_krt_report[
         ~((incident_krt_report.assessmentstart > incident_krt_report.fromtime)
-        & ~incident_krt_report.assessmentoutcomecode.isna())
+    #    & ~incident_krt_report.assessmentoutcomecode.isna()
+        )
     ]
 
 

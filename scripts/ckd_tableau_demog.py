@@ -28,8 +28,8 @@ from ukrdc_stats.exceptions import NoCohortError
 YEAR_START = 2024
 QUARTER_START = 3
 NO_OF_QUARTERS = 4
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("25_09_25")
-OUTPUT_DIR = Path(".do_not_commit")
+OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_10_25")
+# OUTPUT_DIR = Path(".do_not_commit")
 OUTPUT_FILE = "ckd_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -39,21 +39,19 @@ UKRDC_URL = env_file.get("ukrdc_url")
 
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
-# dump of facilities in staging removed_xml_archive
-"""
+# unified list even if centres are not sending careplanning
 FACILITIES = [
-"RNJ00
-"RAJ
-RK7CC
-RCSLB 
-RHW01
-RAQ01
-RH8
-RL403    
-RBD01 
+    "RAJ",
+    "RAQ01",
+    "RCSLB",
+    "RH8",
+    "RHW01",
+#    "RJZ", Kings
+    "RK7CC",
+    "RL403", 
+    "RNJ00",
 ]
-"""
-FACILITIES = ["RH8"]
+# FACILITIES = ["RH8"]
 
 
 def calculate_tableau_demog(
