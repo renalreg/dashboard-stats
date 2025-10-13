@@ -57,11 +57,6 @@ def egfr(
     else:
         return
 
-    if ethnicity and ethnicity == "Black":
-        ethnicity_multiplier = 1.159
-    else:
-        ethnicity_multiplier = 1.0
-
     if sex == "2":
         kappa = 0.7
         alpha = -0.329
@@ -77,7 +72,7 @@ def egfr(
     else:
         multiplier = multiplier * (scr_frac**alpha)
 
-    egfr = round(141 * multiplier * (0.993**age) * ethnicity_multiplier)
+    egfr = round(141 * multiplier * (0.993**age))
 
     return egfr
 
@@ -281,8 +276,8 @@ def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
     return session.execute(query).scalars().all()
 
 
-def check_headcounts(cohort: pd.DataFrame, groupby_attributes=None):
-    """Used in the scripts to ensure headcounts remain consistent and patients 
+def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
+    """Used in the scripts to ensure headcounts remain consistent and patients
     aren't being dropped
 
     Args:
@@ -292,12 +287,13 @@ def check_headcounts(cohort: pd.DataFrame, groupby_attributes=None):
     Raises:
         Warning: _description_
     """
-    
-    if groupby_attributes is None:
+
+    if not groupby_attributes:
         groupby_attributes = ["satellite_code", "centre_code", "variable2"]
 
     # remove paeds to keep things simple
-    cohort = cohort[cohort["adultpaed"] == "Adult"]
+    if "adultpaed" in cohort.columns:
+        cohort = cohort[cohort["adultpaed"] == "Adult"]
 
     # aggregate over specified columns
     head_count = (
@@ -322,8 +318,10 @@ def check_headcounts(cohort: pd.DataFrame, groupby_attributes=None):
 
         if labels == previous_labels:
             if value != previous_value:
-                msg = f"Headcount id variable accross categories\n"
-                mask = (head_count[label_columns] == pd.Series(labels, index=label_columns)).all(axis=1)
+                msg = "Headcount id variable across categories\n"
+                mask = (
+                    head_count[label_columns] == pd.Series(labels, index=label_columns)
+                ).all(axis=1)
                 msg += head_count[mask].to_string(index=False) + "\n"
         else:
             previous_labels = labels

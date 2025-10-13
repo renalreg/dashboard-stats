@@ -12,8 +12,10 @@ with care yada yada.
 """
 #   James M 08-Oct-25   I have altered line 150 to only exclude assessments which happened after KRT start, but leave in the blanks
 
-import datetime as dt
+
 import os
+import argparse
+import datetime as dt
 import pandas as pd
 from pathlib import Path
 
@@ -22,18 +24,28 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
 from sqlalchemy import select
 from ukrdc_sqla.xmlarchive import Assessment, Patient
 from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 
 
+# Get arguments from command line
+parser = argparse.ArgumentParser(description='Extract CKD demographics data')
+parser.add_argument('--year-start', type=int, default=2024, help='Starting year for extraction (default: 2024)')
+parser.add_argument('--quarter-start', type=int, default=3, help='Starting quarter (1-4) for extraction (default: 3)')
+parser.add_argument('--no-of-quarters', type=int, default=4, help='Number of quarters to extract (default: 4)')
+parser.add_argument('--output-dir', type=str, default='.do_not_commit', help='Output directory for CSV file (default: .do_not_commit)')
+args = parser.parse_args()
+
+
+
 # Configuration
-YEAR_START = 2024
-QUARTER_START = 3
-NO_OF_QUARTERS = 4
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_10_25")
-# OUTPUT_DIR = Path(".do_not_commit")
+YEAR_START = args.year_start
+QUARTER_START = args.quarter_start
+NO_OF_QUARTERS = args.no_of_quarters
+OUTPUT_DIR = Path(args.output_dir)
+
 OUTPUT_FILE = "krt_care_planning"
 SERVER =  "ukrdc_live"
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
@@ -147,10 +159,11 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
     # merge and drop rows where there is an outcomecode but the assessment start > treatment start
     incident_krt_report = pd.merge(incident_krt_report, assessments, on="pid", how="left")
     incident_krt_report = incident_krt_report[
-        ~((incident_krt_report.assessmentstart > incident_krt_report.fromtime)
-    #    & ~incident_krt_report.assessmentoutcomecode.isna()
-        )
+        (incident_krt_report.assessmentstart < incident_krt_report.fromtime)
+        | (incident_krt_report.assessmentstart.isna())
     ]
+
+    print(":)")
 
 
     incident_krt_report = incident_krt_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
@@ -179,6 +192,7 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
         )
     except NoCohortError:
         return pd.DataFrame(columns=["satellite_code", "variable", "dialtplt", "assessmentoutcomecode", "value"])
+    
     demographics_report = demographics_report.to_pandas()
     demographics_report = demographics_report[demographics_report["age"].astype(int) > 18]
 
@@ -221,7 +235,6 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     return pd.concat([gender, ethnicity, age, total])
 
 
-
 # Connect to database
 conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
@@ -243,8 +256,10 @@ with sessionmaker() as session:
                 quarter_end = dt.datetime(current_year, current_quarter*3 + 1, 1) - dt.timedelta(days=1)
             else:
                 quarter_end = dt.datetime(current_year, 12, 31)
-            cohort = apply_demographic_aggregation(granular_cohort, session, facility, quarter_end)
 
+            
+            cohort = apply_demographic_aggregation(granular_cohort, session, facility, quarter_end)
+            
 
             cohort["year"] = current_year
             cohort["quarter"] = current_quarter
@@ -256,6 +271,11 @@ with sessionmaker() as session:
             cohort["centre"] = facility_names.get(facility, "not in mapping")
             cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
             single_quarter_cohorts.append(cohort)
+            try:
+                if not cohort.empty:
+                    check_headcounts(cohort[["satellite_code", "centre_code","variable", "assessmentoutcome", "quarter", "variable2", "value"]].drop_duplicates())
+            except Warning as e:
+                print(e)
 
 output_order = [
     "variable",
