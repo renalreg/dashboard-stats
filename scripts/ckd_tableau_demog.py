@@ -8,9 +8,11 @@ manager. Not sure exactly what is going on here but the current work around is
 to use a url passed in an .env file and set up a manual ssh tunnel 
 """
 
-import datetime as dt
+
 import os
+import argparse
 import pandas as pd
+import datetime as dt
 
 from dotenv import dotenv_values
 from pathlib import Path
@@ -18,18 +20,28 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from rr_connection_manager import PostgresConnection
+
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
 
+# Get arguments from command line
+parser = argparse.ArgumentParser(description='Extract CKD demographics data')
+parser.add_argument('--year-start', type=int, default=2024, help='Starting year for extraction (default: 2024)')
+parser.add_argument('--quarter-start', type=int, default=3, help='Starting quarter (1-4) for extraction (default: 3)')
+parser.add_argument('--no-of-quarters', type=int, default=4, help='Number of quarters to extract (default: 4)')
+parser.add_argument('--output-dir', type=str, default='.do_not_commit', help='Output directory for CSV file (default: .do_not_commit)')
+args = parser.parse_args()
+
+
+
 # Configuration
-YEAR_START = 2024
-QUARTER_START = 3
-NO_OF_QUARTERS = 4
-OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_10_25")
-# OUTPUT_DIR = Path(".do_not_commit")
+YEAR_START = args.year_start
+QUARTER_START = args.quarter_start
+NO_OF_QUARTERS = args.no_of_quarters
+OUTPUT_DIR = Path(args.output_dir)
 OUTPUT_FILE = "ckd_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -40,6 +52,7 @@ UKRDC_URL = env_file.get("ukrdc_url")
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
 # unified list even if centres are not sending careplanning
+# TODO: RAQ01 headcount still not quite right
 FACILITIES = [
     "RAJ",
     "RAQ01",
@@ -51,8 +64,6 @@ FACILITIES = [
     "RL403", 
     "RNJ00",
 ]
-# FACILITIES = ["RH8"]
-
 
 def calculate_tableau_demog(
     cohort:pd.DataFrame, 
@@ -108,8 +119,9 @@ def calculate_tableau_demog(
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
     ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
-    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
-    ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
+    # This fill missing ethnicities with missing (as distinct to coded as unknown) 
+    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map).fillna("Missing")
+    ethnicity.drop(columns = ["ethnic_group_code"], inplace=True)
     ethnicity.drop_duplicates(inplace=True)
     ethnicity = ethnicity.groupby(group_by_columns).size().reset_index(name="value")
  
@@ -224,6 +236,7 @@ def remap_paed_centres(cohort:pd.DataFrame):
 
     return cohort
 
+# create a session to connect to the database
 if UKRDC_URL:
     ukrdc_session = sessionmaker(create_engine(UKRDC_URL))()
 else:
@@ -231,12 +244,14 @@ else:
     ukrdc_sessionmaker = ukrdc_conn.session_maker()
     ukrdc_session = ukrdc_sessionmaker()
 
+
+# loop through the facilities calculating the stats for each of the facilities
+# defined at the beginning of the file 
 cohorts = []
 region_map = map_codes("RR1", "URTS_region", ukrdc_session)
 facility_names = lookup_codes("RR1+", "description", ukrdc_session)
 print("Extracting cohort for facility: ")
 for facility in FACILITIES:
-    #print(f"{facility}", end = ",")
     print(facility)
     for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
         current_quarter = (q_offset % 4) + 1
@@ -244,6 +259,13 @@ for facility in FACILITIES:
         try:
             facility_cohort = calculate_ckd_demog(facility, current_year, current_quarter, ukrdc_session)
         except NoCohortError:
+            continue
+        
+        # check basic headcounts for consistancy
+        try:
+            check_headcounts(facility_cohort)
+        except Warning as e:
+            print(e)
             continue
 
         facility_cohort["quarter"] = current_quarter

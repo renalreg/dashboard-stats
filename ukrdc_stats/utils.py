@@ -279,3 +279,57 @@ def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
         SatelliteMap.main_unit_code == facility_code
     )
     return session.execute(query).scalars().all()
+
+
+def check_headcounts(cohort: pd.DataFrame, groupby_attributes=None):
+    """Used in the scripts to ensure headcounts remain consistent and patients 
+    aren't being dropped
+
+    Args:
+        cohort (pd.DataFrame): dataframe with coumns group_byattributes + value
+        groupby_attributes (_type_, optional): columns to label data e.g centre
+
+    Raises:
+        Warning: _description_
+    """
+    
+    if groupby_attributes is None:
+        groupby_attributes = ["satellite_code", "centre_code", "variable2"]
+
+    # remove paeds to keep things simple
+    cohort = cohort[cohort["adultpaed"] == "Adult"]
+
+    # aggregate over specified columns
+    head_count = (
+        cohort.groupby(groupby_attributes)
+        .sum(numeric_only=True)
+        .reset_index()[groupby_attributes + ["value"]]
+    )
+
+    # intialise some bits for use later
+    label_columns = groupby_attributes.copy()
+    if "variable2" in label_columns:
+        label_columns.remove("variable2")
+
+    previous_labels = None
+    previous_value = None
+    msg = None
+
+    # cross check rows for consistency
+    for _, row in head_count.iterrows():
+        labels = row[label_columns].to_list()
+        value = row["value"]
+
+        if labels == previous_labels:
+            if value != previous_value:
+                msg = f"Headcount id variable accross categories\n"
+                mask = (head_count[label_columns] == pd.Series(labels, index=label_columns)).all(axis=1)
+                msg += head_count[mask].to_string(index=False) + "\n"
+        else:
+            previous_labels = labels
+            previous_value = value
+
+    if msg:
+        raise Warning(msg)
+
+    return
