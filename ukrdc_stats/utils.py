@@ -279,3 +279,12 @@ def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
         SatelliteMap.main_unit_code == facility_code
     )
     return session.execute(query).scalars().all()
+
+df = pd.read_csv('unit_full_names.csv')
+facility_names = dict(zip(df['code'], df['name']))
+
+df = pd.read_csv('main_unit_short_names.csv')
+short_names = dict(zip(df['code'], df['short']))
+
+df = pd.read_csv('main_unit_region.csv')
+region_map = dict(zip(df['code'], df['region']))
