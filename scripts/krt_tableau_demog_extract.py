@@ -69,10 +69,8 @@ FACILITIES = [
 #    "RJZ", Kings
     "RK7CC",
     "RL403", 
-    #"RNJ00", Barts and the dialysis session date out of range crashes this
+    "RNJ00"
 ]
-
-#FACILITIES = ["RAJ"]
 
 def query_vascular_access(session:Session, patient_list:pd.Series):
     """ Customised version of the _query_vascular_access function which doesn't
@@ -93,11 +91,6 @@ def query_vascular_access(session:Session, patient_list:pd.Series):
         "TLN":"TL",
         "NLN":"NTL",
         "HER":"AVF/AVG"
-#        "PDC":"NTL",
-#        "PDE":"NTL",
-#        "PDT":"NTL",
-#        "VLP":"NTL",
-#        "DOESNOTCONTAIN":"NTL"
     }
 
 
@@ -187,8 +180,6 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Total headcount
     total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
-
-    child_pids = total[total["adultpaed"] == "Paediatric"].pid.drop_duplicates()
 
     # Limit rest of demogs to adults only 
     demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]

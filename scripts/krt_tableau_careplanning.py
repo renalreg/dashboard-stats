@@ -163,9 +163,6 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
         | (incident_krt_report.assessmentstart.isna())
     ]
 
-    print(":)")
-
-
     incident_krt_report = incident_krt_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
     incident_krt_report = incident_krt_report.drop_duplicates(subset=['pid'], keep='first')
 
@@ -198,7 +195,7 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
 
     # Modality total headcount 
     total = pd.merge(cohort, demographics_report[["ukrdcid"]], on="ukrdcid")
-    total["variable"] = cohort["dialtplt"]
+    total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
     total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
