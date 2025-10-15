@@ -497,21 +497,10 @@ def test_extract_patient_cohort_returns_expected_columns(
     assert "calculated_egfr" in result.columns
 
     assert set(result["externalid"]) == {"1234567890", "9876543210"}
-    assert set(result["calculated_egfr"]) == {68, 90}
+    assert set(result["calculated_egfr"]) == {59, 90}
 
 
 def test_egfr():
-    result = egfr(
-        scr=100,
-        scr_unit="umol/L",
-        scr_date=datetime.now(),
-        dob=datetime.now() - timedelta(days=365 * 40),
-        sex=1,
-        ethnicity="Black",
-    )
-
-    assert isinstance(result, int)
-    assert result == 94
 
     result = egfr(
         scr=0.03,  # in g/L

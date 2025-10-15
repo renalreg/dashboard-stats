@@ -3,14 +3,19 @@
 """
 
 
-from ukrdc.database import Connection
+from rr_connection_manager import PostgresConnection
 
 import pandas as pd
 import glob
 
-engine = Connection.get_engine_from_file(key="ukrdc_live")
+SERVER = 'ukrdc_staging'
 
-paths = glob.glob("mappings/*.csv")
+conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
+
+
+engine = conn.engine()
+
+paths = glob.glob("scripts/codes/mappings/*.csv")
 print(paths)
 
 

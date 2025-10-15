@@ -57,11 +57,6 @@ def egfr(
     else:
         return
 
-    if ethnicity and ethnicity == "Black":
-        ethnicity_multiplier = 1.159
-    else:
-        ethnicity_multiplier = 1.0
-
     if sex == "2":
         kappa = 0.7
         alpha = -0.329
@@ -77,7 +72,7 @@ def egfr(
     else:
         multiplier = multiplier * (scr_frac**alpha)
 
-    egfr = round(141 * multiplier * (0.993**age) * ethnicity_multiplier)
+    egfr = round(141 * multiplier * (0.993**age))
 
     return egfr
 
@@ -288,3 +283,59 @@ short_names = dict(zip(df['code'], df['short']))
 
 df = pd.read_csv('main_unit_region.csv')
 region_map = dict(zip(df['code'], df['region']))
+
+def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
+    """Used in the scripts to ensure headcounts remain consistent and patients
+    aren't being dropped
+
+    Args:
+        cohort (pd.DataFrame): dataframe with coumns group_byattributes + value
+        groupby_attributes (_type_, optional): columns to label data e.g centre
+
+    Raises:
+        Warning: _description_
+    """
+
+    if not groupby_attributes:
+        groupby_attributes = ["satellite_code", "centre_code", "variable2"]
+
+    # remove paeds to keep things simple
+    if "adultpaed" in cohort.columns:
+        cohort = cohort[cohort["adultpaed"] == "Adult"]
+
+    # aggregate over specified columns
+    head_count = (
+        cohort.groupby(groupby_attributes)
+        .sum(numeric_only=True)
+        .reset_index()[groupby_attributes + ["value"]]
+    )
+
+    # intialise some bits for use later
+    label_columns = groupby_attributes.copy()
+    if "variable2" in label_columns:
+        label_columns.remove("variable2")
+
+    previous_labels = None
+    previous_value = None
+    msg = None
+
+    # cross check rows for consistency
+    for _, row in head_count.iterrows():
+        labels = row[label_columns].to_list()
+        value = row["value"]
+
+        if labels == previous_labels:
+            if value != previous_value:
+                msg = "Headcount id variable across categories\n"
+                mask = (
+                    head_count[label_columns] == pd.Series(labels, index=label_columns)
+                ).all(axis=1)
+                msg += head_count[mask].to_string(index=False) + "\n"
+        else:
+            previous_labels = labels
+            previous_value = value
+
+    if msg:
+        raise Warning(msg)
+
+    return
