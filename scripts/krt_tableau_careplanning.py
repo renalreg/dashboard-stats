@@ -24,7 +24,7 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, facility_names, region_map, short_names
 from sqlalchemy import select
 from ukrdc_sqla.xmlarchive import Assessment, Patient
 from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
@@ -198,6 +198,7 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
     total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    total["satellite"] = total["satellite_code"].map(facility_names)
 
     # Aggregate gender
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], on="ukrdcid")
@@ -235,13 +236,14 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
 # Connect to database
 conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
+
 single_quarter_cohorts = []
 
 
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
+    #region_map = map_codes("RR1", "URTS_region", session)
+    #facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
         assessments = get_facility_assessments(session, facility)
         for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
@@ -265,7 +267,7 @@ with sessionmaker() as session:
             # Not the region mapping is incomplete but could easily be expanded
             cohort["region"] = region_map.get(facility, "not in mapping")
             cohort["centre_code"] = facility
-            cohort["centre"] = facility_names.get(facility, "not in mapping")
+            cohort["centre"] = short_names.get(facility, "not in mapping")
             cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
             single_quarter_cohorts.append(cohort)
             try:
