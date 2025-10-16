@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
+from ukrdc_stats.utils import map_codes, lookup_codes, facility_names, short_names, region_map, check_headcounts
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
 from sqlalchemy import select
@@ -321,14 +321,25 @@ with sessionmaker() as session:
     # remap Paeds and add centre names and regions
     combined_cohort = pd.concat(single_quarter_cohorts)
     combined_cohort = remap_paed_centres(combined_cohort)
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
-    combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
+    #region_map = map_codes("RR1", "URTS_region", session)
+    #facility_names = lookup_codes("RR1+", "description", session)
+    combined_cohort["centre"] = combined_cohort["centre_code"].map(short_names)
     combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
     combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
 
+region_to_country = {
+    'Scotland': 'Scotland',
+    'N Ireland': 'Northern Ireland',
+    'Wales': 'Wales'
+}
+
+combined_cohort["country"] = combined_cohort["region"].map(region_to_country)
+
+# Fill only where 'region' is not null
+combined_cohort["country"]  = combined_cohort["country"].mask(combined_cohort["region"].notna(), combined_cohort["country"].fillna('England'))
+
 # Finally some hard coded bits
-combined_cohort["country"] = "England"
+#combined_cohort["country"] = "England"
 
 
 # Filter any empty rows (can remove small numbers here too)

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from rr_connection_manager import PostgresConnection
 
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, short_names, facility_names, region_map
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_stats.exceptions import NoCohortError
 
@@ -248,8 +248,8 @@ else:
 # loop through the facilities calculating the stats for each of the facilities
 # defined at the beginning of the file 
 cohorts = []
-region_map = map_codes("RR1", "URTS_region", ukrdc_session)
-facility_names = lookup_codes("RR1+", "description", ukrdc_session)
+#region_map = map_codes("RR1", "URTS_region", ukrdc_session)
+#facility_names = lookup_codes("RR1+", "description", ukrdc_session)
 print("Extracting cohort for facility: ")
 for facility in FACILITIES:
     print(facility)
@@ -270,7 +270,7 @@ for facility in FACILITIES:
 
         facility_cohort["quarter"] = current_quarter
         facility_cohort["year"] = current_year
-        facility_cohort["region"] = region_map.get(facility, "not in mapping")
+        #facility_cohort["region"] = region_map.get(facility, "not in mapping")
         cohorts.append(facility_cohort)
 
 
@@ -296,9 +296,14 @@ print("\nWriting to file...")
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
 combined_cohort = remap_paed_centres(combined_cohort)
-combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)    
-combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
+#combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)    
+#combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
 combined_cohort["country"] = "England"
+
+combined_cohort["centre"] = combined_cohort["centre_code"].map(short_names)
+combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
+combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
+
 
 if not combined_cohort.empty:
     combined_cohort.to_csv(
