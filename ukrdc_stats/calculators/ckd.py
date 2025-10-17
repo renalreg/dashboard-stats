@@ -6,6 +6,9 @@ import datetime as dt
 from sqlalchemy import select, or_, create_engine, tuple_, case, func
 from sqlalchemy.orm import Session, sessionmaker, aliased
 
+# https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy  pandas 2.3.3 affects making creatinine values numeric at live 447ish JM
+pd.options.mode.copy_on_write = True
+
 from ukrdc_sqla.ukrdc import (
     Patient,
     PatientRecord,

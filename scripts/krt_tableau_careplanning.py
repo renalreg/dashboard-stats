@@ -19,6 +19,10 @@ import datetime as dt
 import pandas as pd
 from pathlib import Path
 
+from dotenv import dotenv_values
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
@@ -50,6 +54,9 @@ OUTPUT_FILE = "krt_care_planning"
 SERVER =  "ukrdc_live"
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+env_file = dotenv_values(".env")
+UKRDC_URL = env_file.get("ukrdc_url")
 
 FACILITIES = [
     "RAJ",
@@ -197,14 +204,14 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     total = pd.merge(cohort, demographics_report[["ukrdcid"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
-    total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
-    # Aggregate gender
+    # Aggregate sex
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], on="ukrdcid")
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(cohort, demographics_report[["ukrdcid","age"]], on="ukrdcid")
@@ -213,15 +220,15 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     labels = ["18-34", "35-54", "55-74", ">=75"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
     ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code"]], on="ukrdcid")
-    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
+    ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map).fillna("Missing")
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
     # Combine dataframes together
     gender["variable2"] = "Sex"
@@ -233,46 +240,49 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
 
 
 # Connect to database
-conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
-sessionmaker = conn.session_maker()
+if UKRDC_URL:
+    ukrdc_session = sessionmaker(create_engine(UKRDC_URL))()
+else:
+    ukrdc_conn = PostgresConnection(app = SERVER, tunnel = True, via_app = True)
+    ukrdc_sessionmaker = ukrdc_conn.session_maker()
+    ukrdc_session = ukrdc_sessionmaker()
+
 single_quarter_cohorts = []
 
+# Get some mapping to relation sending facilities to regions
+region_map = map_codes("RR1", "URTS_region", ukrdc_session)
+facility_names = lookup_codes("RR1+", "description", ukrdc_session)
+for facility in FACILITIES:
+    assessments = get_facility_assessments(ukrdc_session, facility)
+    for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
+        current_quarter = (q_offset % 4) + 1
+        current_year = YEAR_START + q_offset // 4
+        granular_cohort =  krt_care_planning_cohort(assessments, ukrdc_session, facility, current_year, current_quarter)
+        # Set demographics snapshot to quarter end, matching cohort timing
+        if current_quarter < 4:
+            quarter_end = dt.datetime(current_year, current_quarter*3 + 1, 1) - dt.timedelta(days=1)
+        else:
+            quarter_end = dt.datetime(current_year, 12, 31)
 
-with sessionmaker() as session:    
-    # Get some mapping to relation sending facilities to regions
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
-    for facility in FACILITIES:
-        assessments = get_facility_assessments(session, facility)
-        for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
-            current_quarter = (q_offset % 4) + 1
-            current_year = YEAR_START + q_offset // 4
-            granular_cohort =  krt_care_planning_cohort(assessments, session, facility, current_year, current_quarter)
-            # Set demographics snapshot to quarter end, matching cohort timing
-            if current_quarter < 4:
-                quarter_end = dt.datetime(current_year, current_quarter*3 + 1, 1) - dt.timedelta(days=1)
-            else:
-                quarter_end = dt.datetime(current_year, 12, 31)
+        
+        cohort = apply_demographic_aggregation(granular_cohort, ukrdc_session, facility, quarter_end)
+        
 
-            
-            cohort = apply_demographic_aggregation(granular_cohort, session, facility, quarter_end)
-            
-
-            cohort["year"] = current_year
-            cohort["quarter"] = current_quarter
-            cohort["country"] = "England"
-            
-            # Not the region mapping is incomplete but could easily be expanded
-            cohort["region"] = region_map.get(facility, "not in mapping")
-            cohort["centre_code"] = facility
-            cohort["centre"] = facility_names.get(facility, "not in mapping")
-            cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
-            single_quarter_cohorts.append(cohort)
-            try:
-                if not cohort.empty:
-                    check_headcounts(cohort[["satellite_code", "centre_code","variable", "assessmentoutcome", "quarter", "variable2", "value"]].drop_duplicates())
-            except Warning as e:
-                print(e)
+        cohort["year"] = current_year
+        cohort["quarter"] = current_quarter
+        cohort["country"] = "England"
+        
+        # Not the region mapping is incomplete but could easily be expanded
+        cohort["region"] = region_map.get(facility, "not in mapping")
+        cohort["centre_code"] = facility
+        cohort["centre"] = facility_names.get(facility, "not in mapping")
+        cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
+        single_quarter_cohorts.append(cohort)
+        try:
+            if not cohort.empty:
+                check_headcounts(cohort[["satellite_code", "centre_code","variable", "assessmentoutcome", "quarter", "variable2", "value"]].drop_duplicates())
+        except Warning as e:
+            print(e)
 
 output_order = [
     "variable",

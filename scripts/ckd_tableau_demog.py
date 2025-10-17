@@ -8,7 +8,7 @@ manager. Not sure exactly what is going on here but the current work around is
 to use a url passed in an .env file and set up a manual ssh tunnel 
 """
 
-
+# JM 15-Oct-25  pandas groupby on categoricals default changes - so added 'observed=True' at line 100 onwards 
 import os
 import argparse
 import pandas as pd
@@ -65,6 +65,8 @@ FACILITIES = [
     "RNJ00",
 ]
 
+# FACILITIES = ["RAQ01"]
+
 def calculate_tableau_demog(
     cohort:pd.DataFrame, 
     facility:str, 
@@ -95,17 +97,17 @@ def calculate_tableau_demog(
     total =  pd.merge(cohort, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
-    total = total.groupby(group_by_columns).size().reset_index(name="value")
+    total = total.groupby(group_by_columns, observed=True).size().reset_index(name="value")
 
     # Remove Paeds from the demogs
     demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
 
-    # Aggregate gender
+    # Aggregate sex
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(group_by_columns).size().reset_index(name="value")
+    gender = gender.groupby(group_by_columns, observed=True).size().reset_index(name="value")
 
     # Aggregate age 
     age = pd.merge(cohort, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
@@ -114,7 +116,7 @@ def calculate_tableau_demog(
     labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(group_by_columns).size().reset_index(name="value")
+    age = age.groupby(group_by_columns, observed=True).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
@@ -123,7 +125,7 @@ def calculate_tableau_demog(
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map).fillna("Missing")
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True)
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(group_by_columns).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(group_by_columns, observed=True).size().reset_index(name="value")
  
     # Combine dataframes together
     gender["variable2"] = "Sex"

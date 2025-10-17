@@ -25,9 +25,10 @@ import warnings
 import pandas as pd
 import datetime as dt
 
-
+from dotenv import dotenv_values
 from pathlib import Path
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
@@ -55,6 +56,9 @@ OUTPUT_DIR = Path(args.output_dir)
 OUTPUT_FILE = "krt_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+env_file = dotenv_values(".env")
+UKRDC_URL = env_file.get("ukrdc_url")
 
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
@@ -272,57 +276,63 @@ def remap_paed_centres(cohort:pd.DataFrame):
     return cohort
 
 # Connect to database
-conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
-sessionmaker = conn.session_maker()
+if UKRDC_URL:
+    ukrdc_session = sessionmaker(create_engine(UKRDC_URL))()
+else:
+    ukrdc_conn = PostgresConnection(app = SERVER, tunnel = True, via_app = True)
+    ukrdc_sessionmaker = ukrdc_conn.session_maker()
+    ukrdc_session = ukrdc_sessionmaker()
+
+# conn = PostgresConnection(app="ukrdc_staging", tunnel=True, via_app=True)
+# sessionmaker = conn.session_maker()
 single_quarter_cohorts = []
 
 
-with sessionmaker() as session:    
-    for facility in FACILITIES:
-        for quarter in range(QUARTER_START-1, QUARTER_START + NO_OF_QUARTERS -1):
-            # calculate year, quarter, and dates that bound it 
-            current_quarter = (quarter % 4) + 1
-            current_year = YEAR_START + quarter // 4    
-            quarter_start = dt.datetime(current_year, current_quarter*3-2, 1)
-            if current_quarter < 4:
-                quarter_end = dt.datetime(current_year, current_quarter*3 +1, 1) - dt.timedelta(days=1)
-            else:
-                quarter_end = dt.datetime(current_year, 12, 31) 
-            
-            # Extract data and add additional labels
-            try:
-                tableau_demog = calculate_tableau_demog(
-                    facility, 
-                    quarter_start, 
-                    quarter_end, 
-                    session
-                )
-            except NoCohortError:
-                continue
+for facility in FACILITIES:
+    for quarter in range(QUARTER_START-1, QUARTER_START + NO_OF_QUARTERS -1):
+        # calculate year, quarter, and dates that bound it 
+        current_quarter = (quarter % 4) + 1
+        current_year = YEAR_START + quarter // 4    
+        quarter_start = dt.datetime(current_year, current_quarter*3-2, 1)
+        if current_quarter < 4:
+            quarter_end = dt.datetime(current_year, current_quarter*3 +1, 1) - dt.timedelta(days=1)
+        else:
+            quarter_end = dt.datetime(current_year, 12, 31) 
+        
+        # Extract data and add additional labels
+        try:
+            tableau_demog = calculate_tableau_demog(
+                facility, 
+                quarter_start, 
+                quarter_end, 
+                ukrdc_session
+            )
+        except NoCohortError:
+            continue
 
-            tableau_demog["quarter"] = current_quarter
-            tableau_demog["year"] = current_year
-            tableau_demog["centre_code"] = facility
-            try:
-                check_headcounts(
-                    tableau_demog[tableau_demog["dialtplt" ]=="HD"],
-                    [
-                        "centre_code",
-                        "incidprev", 
-                        "variable2"
-                    ]
-                )
-            except Warning as e:
-                print(e)
+        tableau_demog["quarter"] = current_quarter
+        tableau_demog["year"] = current_year
+        tableau_demog["centre_code"] = facility
+        try:
+            check_headcounts(
+                tableau_demog[tableau_demog["dialtplt" ]=="HD"],
+                [
+                    "centre_code",
+                    "incidprev", 
+                    "variable2"
+                ]
+            )
+        except Warning as e:
+            print(e)
 
-            single_quarter_cohorts.append(tableau_demog)
-            
+        single_quarter_cohorts.append(tableau_demog)
+        
 
     # remap Paeds and add centre names and regions
     combined_cohort = pd.concat(single_quarter_cohorts)
     combined_cohort = remap_paed_centres(combined_cohort)
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
+    region_map = map_codes("RR1", "URTS_region", ukrdc_session)
+    facility_names = lookup_codes("RR1+", "description", ukrdc_session)
     combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
     combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
     combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
