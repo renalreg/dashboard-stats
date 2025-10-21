@@ -201,30 +201,40 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     demographics_report = demographics_report[demographics_report["age"].astype(int) > 18]
 
     # Modality total headcount 
-    total = pd.merge(cohort, demographics_report[["ukrdcid"]], on="ukrdcid")
+    total = pd.merge(cohort, demographics_report[["ukrdcid"]], how='left', on="ukrdcid") # 18Oct25 JM left so matches KRTdemographics
+    # Make assessmentoutcome = 'Transplant' when someone was pre-emptively transplanted as this is best of all
+    total.loc[total['dialtplt'].eq('Transplant'), ['assessmentoutcomecode','assessmentoutcome']] = ['Transplant','Transplant']
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
     total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
     # Aggregate sex
-    gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], on="ukrdcid")
-    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
+    gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], how='left', on="ukrdcid") # 18Oct25 JM left so matches KRTdemographics
+    # Make assessmentoutcome = 'Transplant' when someone was pre-emptively transplanted as this is best of all
+    gender.loc[gender['dialtplt'].eq('Transplant'), ['assessmentoutcomecode','assessmentoutcome']] = ['Transplant','Transplant']
+    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP).fillna("Missing")
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
     gender = gender.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
-    # Aggregate age 
-    age = pd.merge(cohort, demographics_report[["ukrdcid","age"]], on="ukrdcid")
+    # Aggregate age
+    # 18-Oct-25 James M.  Need to make a 'missing' category otherwise does not add up (having first ensured removed people really < 18 we make NAs = zero)
+    age = pd.merge(cohort, demographics_report[["ukrdcid","age"]], how='left', on="ukrdcid") # 18Oct25 JM left so matches KRTdemographics
+    # Make assessmentoutcome = 'Transplant' when someone was pre-emptively transplanted as this is best of all
+    age.loc[age['dialtplt'].eq('Transplant'), ['assessmentoutcomecode','assessmentoutcome']] = ['Transplant','Transplant']
+    age["age"] = age["age"].replace(pd.NA, '0')
     age["value"] = age["age"].astype(int)
-    bins = [18, 35, 55, 75, 150]
-    labels = ["18-34", "35-54", "55-74", ">=75"]
+    bins = [0, 18, 35, 55, 75, 150]
+    labels = ["Missing","18-34", "35-54", "55-74", ">=75"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
     age = age.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"], observed=False).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
-    ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code"]], on="ukrdcid")
+    ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code"]], how='left', on="ukrdcid") # 18Oct25 JM left so matches KRTdemographics
+    # Make assessmentoutcome = 'Transplant' when someone was pre-emptively transplanted as this is best of all
+    ethnicity.loc[ethnicity['dialtplt'].eq('Transplant'), ['assessmentoutcomecode','assessmentoutcome']] = ['Transplant','Transplant']
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map).fillna("Missing")
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)

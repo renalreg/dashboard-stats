@@ -65,7 +65,7 @@ FACILITIES = [
     "RNJ00",
 ]
 
-# FACILITIES = ["RAQ01"]
+FACILITIES = ["RAQ01"]
 
 def calculate_tableau_demog(
     cohort:pd.DataFrame, 
@@ -104,7 +104,7 @@ def calculate_tableau_demog(
 
     # Aggregate sex
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
-    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
+    gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP).fillna("Missing")
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
     gender = gender.groupby(group_by_columns, observed=True).size().reset_index(name="value")
