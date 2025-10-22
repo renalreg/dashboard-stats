@@ -28,11 +28,11 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, age_from_dob
 from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_sqla.xmlarchive import Assessment, Patient
-from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord, DialysisSession
+from ukrdc_sqla.ukrdc import Patient, PatientNumber, PatientRecord, DialysisSession
 
 ### Get arguments from command line
 parser = argparse.ArgumentParser(description='Extract CKD demographics data')
@@ -163,21 +163,26 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     combined_report["dialtplt"] = combined_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"}).fillna("Missing")
     combined_report.drop(columns = ["admitreasoncode", "admitreasoncodestd", "fromtime", "totime"], inplace=True)
 
-    # initialise demographics and create report
-    demographics_calculator = DemographicStatsCalculator(
-        session=ukrdc_session,
-        facility=facility,
-        end_date=stop,
-        start_date=start,
+# JM 22-Oct-25 Simpler demographics df on everyone from sendingfacility to reduce risk of missing data
+    query = (
+    select(
+        PatientRecord.ukrdcid,
+        Patient.gender,
+        Patient.birthtime,
+        Patient.ethnic_group_code
     )
-    _, demographics_report = demographics_calculator.produce_report(
-        output_columns=["gender", "age", "ethnic_group_code"]
-    )
-    demographics_report = demographics_report.to_pandas()
-   
+    .join(Patient, Patient.pid == PatientRecord.pid)
+    .where(PatientRecord.sendingfacility == facility)
+)
+
+    demographics_report = pd.DataFrame(ukrdc_session.execute(query))
+    demographics_report["birthtime"] = pd.to_datetime(demographics_report["birthtime"])
+    demographics_report['age'] = (start - demographics_report['birthtime']) / 365.25
+    demographics_report.drop(columns = ["birthtime"], inplace=True)
+
     # Introduce adultpediatric flag (age threshold)
-    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
+    demographics_report["adultpaed"] = demographics_report["age"].astype('int64') > 18 
+    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"}).fillna("Adult")
 
     # Total headcount
     total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid", how="left")
@@ -198,7 +203,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # 21-Oct-25 James M.  Need to make a 'missing' category otherwise does not add up (having first ensured removed people really < 18 we make NAs = zero)
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid", how="left")
     age["age"] = age["age"].replace(pd.NA, '0')
-    age["age"] = age["age"].astype(int)
+    age["age"] = age["age"].astype('int64')
     bins = [0, 18, 35, 55, 75, 150]
     labels = ["Missing","18-34", "35-54", "55-74", ">=75"]
     for i in range(len(labels)):
