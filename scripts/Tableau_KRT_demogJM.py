@@ -21,7 +21,7 @@ from pathlib import Path
 
 from rr_connection_manager import PostgresConnection
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, and_
 from sqlalchemy.orm import Session, sessionmaker
 
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
@@ -48,8 +48,9 @@ QUARTER_START = args.quarter_start
 NO_OF_QUARTERS = args.no_of_quarters
 OUTPUT_DIR = Path(args.output_dir)
 
-OUTPUT_FILE = "krt_care_planning"
+OUTPUT_FILE = "krt_demog"
 SERVER =  "ukrdc_live"
+# SERVER =  "ukrdc_staging"
 OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -68,7 +69,7 @@ FACILITIES = [
     "RNJ00",
 ]
 
-# FACILITIES = ["RL403"]
+# FACILITIES = ["RFBAK"]
 
 ### Start of Cohort generating and then aggregating functions
 def query_vascular_access(session:Session, patient_list:pd.Series):
@@ -172,16 +173,16 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         Patient.ethnic_group_code
     )
     .join(Patient, Patient.pid == PatientRecord.pid)
-    .where(PatientRecord.sendingfacility == facility)
+    .where(and_(PatientRecord.sendingfacility == facility), PatientRecord.sendingextract == "UKRDC")
 )
 
     demographics_report = pd.DataFrame(ukrdc_session.execute(query))
     demographics_report["birthtime"] = pd.to_datetime(demographics_report["birthtime"])
-    demographics_report['age'] = (start - demographics_report['birthtime']) / 365.25
+    demographics_report['age'] = (start - demographics_report['birthtime']).dt.days / 365.25
     demographics_report.drop(columns = ["birthtime"], inplace=True)
 
     # Introduce adultpediatric flag (age threshold)
-    demographics_report["adultpaed"] = demographics_report["age"].astype('int64') > 18 
+    demographics_report["adultpaed"] = demographics_report["age"] > 18 
     demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"}).fillna("Adult")
 
     # Total headcount
@@ -203,7 +204,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # 21-Oct-25 James M.  Need to make a 'missing' category otherwise does not add up (having first ensured removed people really < 18 we make NAs = zero)
     age = pd.merge(combined_report, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid", how="left")
     age["age"] = age["age"].replace(pd.NA, '0')
-    age["age"] = age["age"].astype('int64')
+#    age["age"] = age["age"].astype('int64')
     bins = [0, 18, 35, 55, 75, 150]
     labels = ["Missing","18-34", "35-54", "55-74", ">=75"]
     for i in range(len(labels)):
@@ -350,7 +351,7 @@ combined_cohort = combined_cohort[combined_cohort["value"] > 0]
 
 print("\nWriting to file...")
 # Export headcount checks to csv file
-headcount_cohort.to_csv(os.path.join(OUTPUT_DIR, f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}_headcounts.csv"))
+headcount_cohort.to_csv(os.path.join(OUTPUT_DIR, f"krt_demog_{SERVER}_{YEAR_START}_headcounts.csv"))
 
 # Export data to csv file
 output_order = [
