@@ -12,7 +12,6 @@ from ukrdc_sqla.ukrdc import CodeMap, SatelliteMap
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
 from typing import Optional, Dict, List
-from pathlib import Path
 
 
 def egfr(
@@ -276,15 +275,6 @@ def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
     )
     return session.execute(query).scalars().all()
 
-path_to_codes = Path.cwd()/"scripts"/"codes"/"mappings"
-df = pd.read_csv(path_to_codes/"unit_full_names.csv")
-facility_names = dict(zip(df['code'], df['name']))
-
-df = pd.read_csv(path_to_codes/"main_unit_short_names.csv")
-short_names = dict(zip(df['code'], df['short']))
-
-df = pd.read_csv(path_to_codes/"main_unit_region.csv")
-region_map = dict(zip(df['code'], df['region']))
 
 def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
     """Used in the scripts to ensure headcounts remain consistent and patients

@@ -24,7 +24,7 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, facility_names, region_map, short_names
+from ukrdc_stats.utils import map_codes, check_headcounts
 from sqlalchemy import select
 from ukrdc_sqla.xmlarchive import Assessment, Patient
 from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
@@ -198,7 +198,6 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
     total["variable"] = total["dialtplt"]
     total.drop_duplicates(inplace=True)
     total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
-    total["satellite"] = total["satellite_code"].map(facility_names)
 
     # Aggregate gender
     gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], on="ukrdcid")
@@ -264,10 +263,7 @@ with sessionmaker() as session:
             cohort["quarter"] = current_quarter
             cohort["country"] = "England"
             
-            # Not the region mapping is incomplete but could easily be expanded
-            cohort["region"] = region_map.get(facility, "not in mapping")
             cohort["centre_code"] = facility
-            cohort["centre"] = short_names.get(facility, "not in mapping")
             cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
             single_quarter_cohorts.append(cohort)
             try:
@@ -278,16 +274,13 @@ with sessionmaker() as session:
 
 output_order = [
     "variable",
-    "centre",
     "dialtplt",
     "country",
     "variable2",
     "centre_code",
     "satellite_code",
-    "satellite",
     "year",
     "quarter",
-    "region",
     "assessmentoutcome",
     "value",
 ]
