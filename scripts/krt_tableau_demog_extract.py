@@ -15,11 +15,15 @@ ethnicity breakdown for adults krt patients
 gender breakdown for adults krt patients
 vascular access for hd patients
 """
+# James M 08-10-25 I have removed DOESNOTCONTAIN, PDC etc from the mapping for vascular access to precipitate it filling with NA as these are not valid entries
+#                   I have commented out line 217 as we need to count the NA (and not convert to NTL)
+#                   Line 239 I have added 'dropna=False' to the group function to force count of NA
 
-import datetime as dt
 import os
+import argparse
 import warnings
 import pandas as pd
+import datetime as dt
 
 
 from pathlib import Path
@@ -27,52 +31,46 @@ from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.utils import map_codes, lookup_codes, facility_names, short_names, region_map, check_headcounts
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
 from sqlalchemy import select
 
-# Configuration
-YEAR = 2023
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard") / Path("08_09_25")
 
-OUTPUT_DIR = Path(".do_not_commit")
+# Get arguments from command line
+parser = argparse.ArgumentParser(description='Extract CKD demographics data')
+parser.add_argument('--year-start', type=int, default=2024, help='Starting year for extraction (default: 2024)')
+parser.add_argument('--quarter-start', type=int, default=3, help='Starting quarter (1-4) for extraction (default: 3)')
+parser.add_argument('--no-of-quarters', type=int, default=4, help='Number of quarters to extract (default: 4)')
+parser.add_argument('--output-dir', type=str, default='.do_not_commit', help='Output directory for CSV file (default: .do_not_commit)')
+args = parser.parse_args()
+
+
+# Configuration
+YEAR_START = args.year_start
+QUARTER_START = args.quarter_start
+NO_OF_QUARTERS = args.no_of_quarters
+OUTPUT_DIR = Path(args.output_dir)
+
 OUTPUT_FILE = "krt_demog"
 SERVER =  "ukrdc_live"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR}.csv"
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 
 # Note this could be replaced with some sort of lookup when the codes are 
-# sorted out
+# sorted out also RNJ00 has broken data which will break the extract 
 FACILITIES = [
     "RAJ",
-    "RNJ00",
     "RAQ01",
-    #"RBD01",
-    #"RBT20",
     "RCSLB",
-    #"RDEE4",
-    #"RFBAK",
     "RH8",
-    #"RHW01",
-    #"RJ121",
-    #"RJ122",
-    #"RJE01",
-    "RJZ",
+    "RHW01",
+#    "RJZ", Kings
     "RK7CC",
-    #"RNJ00",
-    #"RKB01",
-    #"RL403",
-    #"RLZ01",
-    #"RM574",
-    #"RNJ00",
-    #"RNX02",
-    #"RRE01",
-    #"RRK02"
+    "RL403", 
+    "RNJ00"
 ]
-
-FACILITIES = ["RAJ"]
 
 def query_vascular_access(session:Session, patient_list:pd.Series):
     """ Customised version of the _query_vascular_access function which doesn't
@@ -92,12 +90,7 @@ def query_vascular_access(session:Session, patient_list:pd.Series):
         "AVG":"AVF/AVG",
         "TLN":"TL",
         "NLN":"NTL",
-        "HER":"NTL",
-        "PDC":"NTL",
-        "PDE":"NTL",
-        "PDT":"NTL",
-        "VLP":"NTL",
-        "DOESNOTCONTAIN":"NTL"
+        "HER":"AVF/AVG"
     }
 
 
@@ -173,7 +166,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         session=ukrdc_session,
         facility=facility,
         end_date=stop,
-        start_date=start
+        start_date=start,
     )
     _, demographics_report = demographics_calculator.produce_report(
         output_columns=["gender", "age", "ethnic_group_code"]
@@ -187,8 +180,6 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     # Total headcount
     total = pd.merge(combined_report, demographics_report[["ukrdcid","adultpaed"]], on="ukrdcid")
     total["variable"] = total["dialtplt"]
-
-    child_pids = total[total["adultpaed"] == "Paediatric"].pid.drop_duplicates()
 
     # Limit rest of demogs to adults only 
     demographics_report = demographics_report[demographics_report["adultpaed"] == "Adult"]
@@ -208,6 +199,7 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     labels = ["18-34", "35-54", "55-74", ">=75"]
     for i in range(len(labels)):
         age.loc[(bins[i+1] > age["age"]) & (bins[i] <= age["age"]), "variable"] = labels[i]
+    age.drop(columns = ["age"], inplace=True)
 
     # Link data on ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
@@ -215,17 +207,18 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
 
-    # Extract first vascular access for HD patients
-    hd_access = combined_report[combined_report["dialtplt"] == "HD"]
-    hd_pids = hd_access.pid.drop_duplicates()
-    hd_pids = hd_pids[~hd_pids.isin(child_pids)]
+    # Extract first vascular access for adult HD patients
+    #hd_patients = combined_report[(combined_report["dialtplt"] == "HD") & ~combined_report.pid.isin(child_pids)]
+    hd_patients = total[
+        (total["adultpaed"] == "Adult")
+        & (total["dialtplt"] == "HD")
+    ].drop_duplicates()
 
-    vascular_access = query_vascular_access(ukrdc_session, hd_pids) 
+    vascular_access = query_vascular_access(ukrdc_session, hd_patients.pid) 
     vascular_access = vascular_access[vascular_access.procedure_time <= stop]
-    hd_access = pd.merge(hd_access, vascular_access, on="pid", how="left")
-    hd_access["adultpaed"] = "Adult"
+    hd_access = pd.merge(hd_patients, vascular_access, on="pid", how="left")
     hd_access.drop(columns = ["procedure_time"], inplace=True)
-    hd_access.fillna("NTL", inplace=True)
+#    hd_access.fillna("NTL", inplace=True)
 
     # label each dataframe with the type of data it is calculating
     gender["variable2"] = "Sex"
@@ -246,8 +239,16 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
     if n_gender != n_ethnicity or n_gender !=n_age or n_gender !=n_krt:
         warnings.warn("Number of patients does not match across all demographics")
 
+
+    # debug 
+    debug_demog = demog_combined[
+        (demog_combined["variable2"] == "Vascular Access")
+        & ~demog_combined["pid"].isin(age.pid.to_list())
+    ]
+
     if aggregated:
-        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"]).size().reset_index(name="value")
+        demog_combined = demog_combined.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "variable2"], dropna=False).size().reset_index(name="value")
+    
 
     return demog_combined
 
@@ -278,13 +279,15 @@ single_quarter_cohorts = []
 
 with sessionmaker() as session:    
     for facility in FACILITIES:
-        for quarter in range(1,5):
-            # calculate start and end from quarter and year
-            quarter_start = dt.datetime(YEAR, quarter*3-2, 1)
-            if quarter < 4:
-                quarter_end = dt.datetime(YEAR, quarter*3 +1, 1) - dt.timedelta(days=1)
+        for quarter in range(QUARTER_START-1, QUARTER_START + NO_OF_QUARTERS -1):
+            # calculate year, quarter, and dates that bound it 
+            current_quarter = (quarter % 4) + 1
+            current_year = YEAR_START + quarter // 4    
+            quarter_start = dt.datetime(current_year, current_quarter*3-2, 1)
+            if current_quarter < 4:
+                quarter_end = dt.datetime(current_year, current_quarter*3 +1, 1) - dt.timedelta(days=1)
             else:
-                quarter_end = dt.datetime(YEAR, 12, 31) 
+                quarter_end = dt.datetime(current_year, 12, 31) 
             
             # Extract data and add additional labels
             try:
@@ -297,24 +300,47 @@ with sessionmaker() as session:
             except NoCohortError:
                 continue
 
-            tableau_demog["quarter"] = quarter
+            tableau_demog["quarter"] = current_quarter
+            tableau_demog["year"] = current_year
             tableau_demog["centre_code"] = facility
+            try:
+                check_headcounts(
+                    tableau_demog[tableau_demog["dialtplt" ]=="HD"],
+                    [
+                        "centre_code",
+                        "incidprev", 
+                        "variable2"
+                    ]
+                )
+            except Warning as e:
+                print(e)
+
             single_quarter_cohorts.append(tableau_demog)
+            
 
     # remap Paeds and add centre names and regions
     combined_cohort = pd.concat(single_quarter_cohorts)
     combined_cohort = remap_paed_centres(combined_cohort)
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
-    combined_cohort["centre"] = combined_cohort["centre_code"].map(facility_names)
+    #region_map = map_codes("RR1", "URTS_region", session)
+    #facility_names = lookup_codes("RR1+", "description", session)
+    combined_cohort["centre"] = combined_cohort["centre_code"].map(short_names)
     combined_cohort["region"] = combined_cohort["centre_code"].map(region_map)
     combined_cohort["satellite"] = combined_cohort["satellite_code"].map(facility_names)
 
+region_to_country = {
+    'Scotland': 'Scotland',
+    'N Ireland': 'Northern Ireland',
+    'Wales': 'Wales'
+}
+
+combined_cohort["country"] = combined_cohort["region"].map(region_to_country)
+
+# Fill only where 'region' is not null
+combined_cohort["country"]  = combined_cohort["country"].mask(combined_cohort["region"].notna(), combined_cohort["country"].fillna('England'))
+
 # Finally some hard coded bits
-combined_cohort["year"] = YEAR
-combined_cohort["option"] = "Number"
-combined_cohort["country"] = "England"
-combined_cohort["measure"] = "Demography"
+#combined_cohort["country"] = "England"
+
 
 # Filter any empty rows (can remove small numbers here too)
 combined_cohort = combined_cohort[combined_cohort["value"] > 0]
@@ -329,12 +355,10 @@ output_order = [
     "dialtplt",
     "country",
     "variable2",
-    "measure",
     "centre_code",
     "satellite_code",
     "satellite",
     "year",
-    "option",
     "incidprev",
     "quarter",
     "region",

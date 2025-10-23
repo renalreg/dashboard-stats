@@ -184,14 +184,15 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             ).drop_duplicates("pid", keep="first")
 
         return base_cohort
+
     def _get_patient_numbers(self, pids: list[str]) -> pd.DataFrame:
         CHUNK_SIZE = 100
         all_patient_numbers = []
-        
+
         # Process PIDs in specified chunks
         for i in range(0, len(pids), CHUNK_SIZE):
-            chunk_pids = pids[i:i + CHUNK_SIZE]
-            
+            chunk_pids = pids[i : i + CHUNK_SIZE]
+
             query = select(
                 PatientNumber.pid,
                 PatientNumber.patientid,
@@ -204,12 +205,14 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             chunk_results = pd.DataFrame(self.session.execute(query)).drop_duplicates()
             if not chunk_results.empty:
                 all_patient_numbers.append(chunk_results)
-        
+
         # Combine all chunks
         if all_patient_numbers:
             patients_numbers = pd.concat(all_patient_numbers, ignore_index=True)
         else:
-            patients_numbers = pd.DataFrame(columns=['pid', 'patientid', 'organization', 'numbertype'])
+            patients_numbers = pd.DataFrame(
+                columns=["pid", "patientid", "organization", "numbertype"]
+            )
 
         return patients_numbers.reset_index(drop=True).astype(str)
 

@@ -18,5 +18,8 @@ with sessionmaker() as session:
     calculator = KRTStatsCalculator(
         session=session, 
         facility=facility, from_time=start, to_time=end)
+
+    calculator.extract_stats()
     report = calculator.generate_cohort_report(cohort="incident", include_ni=True)
+
     report.table.to_csv("report.csv")

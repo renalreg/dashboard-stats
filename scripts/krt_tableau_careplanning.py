@@ -10,32 +10,57 @@ https://public.tableau.com/app/profile/ukkidney/viz/KRTlandingpage/Landingpage
 This functionality is still very much in development so it should be treated
 with care yada yada.
 """
+#   James M 08-Oct-25   I have altered line 150 to only exclude assessments which happened after KRT start, but leave in the blanks
 
-import datetime as dt
+
 import os
+import argparse
+import datetime as dt
 import pandas as pd
 from pathlib import Path
 
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
+from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.calculators.ckd import get_archive_session
-from ukrdc_stats.utils import map_codes, lookup_codes
+from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, facility_names, region_map, short_names
 from sqlalchemy import select
 from ukrdc_sqla.xmlarchive import Assessment, Patient
 from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
 
 
+# Get arguments from command line
+parser = argparse.ArgumentParser(description='Extract CKD demographics data')
+parser.add_argument('--year-start', type=int, default=2024, help='Starting year for extraction (default: 2024)')
+parser.add_argument('--quarter-start', type=int, default=3, help='Starting quarter (1-4) for extraction (default: 3)')
+parser.add_argument('--no-of-quarters', type=int, default=4, help='Number of quarters to extract (default: 4)')
+parser.add_argument('--output-dir', type=str, default='.do_not_commit', help='Output directory for CSV file (default: .do_not_commit)')
+args = parser.parse_args()
+
+
+
 # Configuration
-YEAR = 2024
-#OUTPUT_DIR = Path("Q:") / Path("UKRDC") / Path("UKRDC_Dashboard")
-OUTPUT_DIR = Path(".do_not_commit")
-OUTPUT_FILE = "tableau_krt_care_planning.csv"
+YEAR_START = args.year_start
+QUARTER_START = args.quarter_start
+NO_OF_QUARTERS = args.no_of_quarters
+OUTPUT_DIR = Path(args.output_dir)
+
+OUTPUT_FILE = "krt_care_planning"
 SERVER =  "ukrdc_live"
+OUTPUT_FILE = f"{OUTPUT_FILE}_{SERVER}_{YEAR_START}.csv"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 FACILITIES = [
-    "RCSLB"    
+    "RAJ",
+    "RAQ01",
+    "RCSLB",
+    "RH8",
+    "RHW01",
+#    "RJZ", Kings
+    "RK7CC",
+    "RL403", 
+    "RNJ00",
 ]
 
 def get_facility_assessments(ukrdc_session, facility):
@@ -83,6 +108,9 @@ def get_facility_assessments(ukrdc_session, facility):
     pids = pd.DataFrame(ukrdc_session.execute(query))
     pids.rename(columns={"patientid":"nationalid"}, inplace=True)
 
+    if pids.empty or assessments.empty:
+        return pd.DataFrame(columns=["pid","nationalid", "organization", "assessmentstart", "assessmentend", "assessmentoutcomecode"])
+
     # link assessments to pids
     assessments = pd.merge(assessments, pids, on=["nationalid", "organization"], how="left")
     assessments.drop(columns=["organization", "nationalid"], inplace=True)
@@ -114,22 +142,26 @@ def krt_care_planning_cohort(assessments, ukrdc_session, facility, year, quarter
             cohort="incident"
         ).table.to_pandas()
     )
-    incident_krt_report["incidprev"] = "Incident"
      
 
     # Mash them together and do some remapping 
     incident_krt_report.rename(
-        columns = {"registry_code_type":"dialtplt",
-        "sendingfacility":"centre_code",
-        "healthcarefacilitycode":"satellite_code"},
+        columns = {
+            "registry_code_type":"dialtplt",
+            "sendingfacility":"centre_code",
+            "healthcarefacilitycode":"satellite_code"
+        },
         inplace=True
     )
     incident_krt_report["dialtplt"] = incident_krt_report["dialtplt"].map({"PD":"PD","TX":"Transplant","HD":"HD"})
 
 
-    # Now we get the most recent assessment prior to the treatment start
+    # merge and drop rows where there is an outcomecode but the assessment start > treatment start
     incident_krt_report = pd.merge(incident_krt_report, assessments, on="pid", how="left")
-    incident_krt_report = incident_krt_report[incident_krt_report.assessmentstart < incident_krt_report.fromtime]
+    incident_krt_report = incident_krt_report[
+        (incident_krt_report.assessmentstart < incident_krt_report.fromtime)
+        | (incident_krt_report.assessmentstart.isna())
+    ]
 
     incident_krt_report = incident_krt_report.sort_values(by=['pid', 'assessmentstart'], ascending=[True, False])
     incident_krt_report = incident_krt_report.drop_duplicates(subset=['pid'], keep='first')
@@ -150,96 +182,115 @@ def apply_demographic_aggregation(cohort,ukrdc_session,facility,date):
         facility=facility,
         date = date
     )
-    _, demographics_report = demographics_calculator.produce_report(
-        output_columns=["gender", "age", "ethnic_group_code"]
-    )
+
+    try:
+        _, demographics_report = demographics_calculator.produce_report(
+            output_columns=["gender", "age", "ethnic_group_code"]
+        )
+    except NoCohortError:
+        return pd.DataFrame(columns=["satellite_code", "variable", "dialtplt", "assessmentoutcomecode", "value"])
+    
     demographics_report = demographics_report.to_pandas()
-   
-#    demographics_report["adultpaed"] = demographics_report["age"].astype(int) > 18 
-#    demographics_report["adultpaed"] = demographics_report["adultpaed"].map({True: "Adult", False: "Paediatric"})
-    demographics_report["adultpaed"] = 'Adult'
+    demographics_report = demographics_report[demographics_report["age"].astype(int) > 18]
+
+    # Modality total headcount 
+    total = pd.merge(cohort, demographics_report[["ukrdcid"]], on="ukrdcid")
+    total["variable"] = total["dialtplt"]
+    total.drop_duplicates(inplace=True)
+    total = total.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    total["satellite"] = total["satellite_code"].map(facility_names)
 
     # Aggregate gender
-    gender = pd.merge(cohort, demographics_report[["ukrdcid","gender", "adultpaed"]], on="ukrdcid")
+    gender = pd.merge(cohort, demographics_report[["ukrdcid","gender"]], on="ukrdcid")
     gender["variable"] = gender["gender"].map(GENDER_GROUP_MAP)
     gender.drop(columns = ["gender"], inplace=True)
     gender.drop_duplicates(inplace=True)
-    gender = gender.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    gender = gender.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Aggregate age 
-    age = pd.merge(cohort, demographics_report[["ukrdcid","age", "adultpaed"]], on="ukrdcid")
+    age = pd.merge(cohort, demographics_report[["ukrdcid","age"]], on="ukrdcid")
     age["value"] = age["age"].astype(int)
-    bins = [18, 25, 35, 45, 55, 65, 75, 85, 150]
-    labels = ["18-24", "25-34", "35-44", "45-54", "55-64", "65-74", "75-84", ">=85"]
+    bins = [18, 35, 55, 75, 150]
+    labels = ["18-34", "35-54", "55-74", ">=75"]
     age["variable"] = pd.cut(age["value"], bins=bins, labels=labels, right=False)
     age.drop_duplicates(inplace=True)
-    age = age.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    age = age.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Aggregate ethnicity
     ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", ukrdc_session)
-    ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code", "adultpaed"]], on="ukrdcid")
+    ethnicity = pd.merge(cohort, demographics_report[["ukrdcid","ethnic_group_code"]], on="ukrdcid")
     ethnicity["variable"] = ethnicity["ethnic_group_code"].map(ethnic_group_map)
     ethnicity.drop(columns = ["ethnic_group_code"], inplace=True )
     ethnicity.drop_duplicates(inplace=True)
-    ethnicity = ethnicity.groupby(["satellite_code", "incidprev", "variable", "adultpaed", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
+    ethnicity = ethnicity.groupby(["satellite_code", "variable", "dialtplt", "assessmentoutcomecode"]).size().reset_index(name="value")
 
     # Combine dataframes together
     gender["variable2"] = "Sex"
     ethnicity["variable2"] = "Ethnicity"
     age["variable2"] = "Age"
+    total["variable2"] = "KRT Type"
 
-    return pd.concat([gender, ethnicity, age])
-
+    return pd.concat([gender, ethnicity, age, total])
 
 
 # Connect to database
 conn = PostgresConnection(app=SERVER, tunnel=True, via_app=True)
 sessionmaker = conn.session_maker()
+
 single_quarter_cohorts = []
 
 
 with sessionmaker() as session:    
     # Get some mapping to relation sending facilities to regions
-    region_map = map_codes("RR1", "URTS_region", session)
-    facility_names = lookup_codes("RR1+", "description", session)
+    #region_map = map_codes("RR1", "URTS_region", session)
+    #facility_names = lookup_codes("RR1+", "description", session)
     for facility in FACILITIES:
         assessments = get_facility_assessments(session, facility)
-        for quarter in range(1,5):
-            # calculate start and end from quarter and year
-            granular_cohort =  krt_care_planning_cohort(assessments, session, facility, YEAR, quarter)
-            cohort = apply_demographic_aggregation(granular_cohort, session, facility, dt.datetime(YEAR, 12, 31, 23, 59, 59))
+        for q_offset in range(QUARTER_START - 1, QUARTER_START + NO_OF_QUARTERS - 1):
+            current_quarter = (q_offset % 4) + 1
+            current_year = YEAR_START + q_offset // 4
+            granular_cohort =  krt_care_planning_cohort(assessments, session, facility, current_year, current_quarter)
+            # Set demographics snapshot to quarter end, matching cohort timing
+            if current_quarter < 4:
+                quarter_end = dt.datetime(current_year, current_quarter*3 + 1, 1) - dt.timedelta(days=1)
+            else:
+                quarter_end = dt.datetime(current_year, 12, 31)
+
             
-            cohort["year"] = YEAR
-            cohort["quarter"] = quarter
-            cohort["option"] = "Number"
+            cohort = apply_demographic_aggregation(granular_cohort, session, facility, quarter_end)
+            
+
+            cohort["year"] = current_year
+            cohort["quarter"] = current_quarter
             cohort["country"] = "England"
-            cohort["measure"] = "Demography"
+            
+            # Not the region mapping is incomplete but could easily be expanded
             cohort["region"] = region_map.get(facility, "not in mapping")
             cohort["centre_code"] = facility
-            cohort["centre"] = facility_names.get(facility, "not in mapping")
+            cohort["centre"] = short_names.get(facility, "not in mapping")
+            cohort.rename(columns={"assessmentoutcomecode":"assessmentoutcome"}, inplace=True)
             single_quarter_cohorts.append(cohort)
+            try:
+                if not cohort.empty:
+                    check_headcounts(cohort[["satellite_code", "centre_code","variable", "assessmentoutcome", "quarter", "variable2", "value"]].drop_duplicates())
+            except Warning as e:
+                print(e)
 
 output_order = [
     "variable",
     "centre",
-    "adultpaed",
     "dialtplt",
     "country",
     "variable2",
-    "measure",
     "centre_code",
     "satellite_code",
     "satellite",
     "year",
-    "option",
-    "incidprev",
     "quarter",
     "region",
-    "assessmentoutcomecode",
+    "assessmentoutcome",
     "value",
 ]
-
-
 
 pd.concat(single_quarter_cohorts).to_csv(
     os.path.join(OUTPUT_DIR, OUTPUT_FILE), 
