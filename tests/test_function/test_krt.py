@@ -177,6 +177,8 @@ def test_add_helper_columns(mock_extract_base_patient_cohort):
     })
     mock_base_cohort["sendingfacility"] = "RFDOG"
     mock_base_cohort["pid"] = mock_base_cohort["ukrdcid"] 
+    mock_base_cohort["deathtime"] = pd.NaT
+
     mock_extract_base_patient_cohort.return_value = mock_base_cohort
 
     # Initialize the calculator

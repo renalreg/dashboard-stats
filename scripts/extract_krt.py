@@ -8,11 +8,16 @@ sessionmaker = conn.session_maker()
 
 
 
-#facility = "RCSLB"
-facility = "RJZ"
-start = dt.datetime(2024, 1, 1)
-end = dt.datetime.now()
+facility = "RKB01"
+#facility = "RNJ00"
+#start = dt.datetime(2025, 7, 26)
+#start = dt.datetime(2025,1,1)
+#end = start + dt.timedelta(days = 90)
 
+
+
+end = dt.datetime.now()
+start = end - dt.timedelta(days = 90)
 
 with sessionmaker() as session:
     calculator = KRTStatsCalculator(
@@ -20,6 +25,6 @@ with sessionmaker() as session:
         facility=facility, from_time=start, to_time=end)
 
     calculator.extract_stats()
-    report = calculator.generate_cohort_report(cohort="incident", include_ni=True)
+    report = calculator.generate_cohort_report(cohort="incident", include_ni=False)
 
-    report.table.to_csv("report.csv")
+    report.table.to_csv(".do_not_commit/report.csv")

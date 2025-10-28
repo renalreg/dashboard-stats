@@ -202,28 +202,26 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         self,
         session: Session,
         facility: str,
-        from_time: dt.datetime,
-        to_time: dt.datetime,
+        from_time: dt.datetime = None,
+        to_time: dt.datetime = None,
     ):
+        super().__init__(session, facility)
+
         if to_time > dt.datetime.now() - dt.timedelta(days=90):
             warnings.warn(
                 "Stats calculated for times within the last 90 days may have their accuracy reduced",
             )
 
-        super().__init__(session, facility)
+        self.recovery_window = 90  # days around the window to look at treatments
 
-        recovery_window = 90  # days around the window to look at treatments
+        if not to_time:
+            to_time = dt.datetime.now()
+
+        if not from_time:
+            from_time = to_time - dt.timedelta(days=365)
 
         # Create a precisely 2 element time window tuple
         self.time_window: Tuple[dt.datetime, dt.datetime] = (from_time, to_time)
-
-        # Create a future cutoff time
-        # this means we can aproximate the
-        time_since_end = dt.datetime.now() - to_time
-        if time_since_end < dt.timedelta(days=recovery_window):
-            self.future_cutoff = time_since_end
-        else:
-            self.future_cutoff = dt.timedelta(days=90)
 
         # defines encoding of KRT treatment types
         self.registry_code_types: List[str] = ["HD", "PD", "TX"]
@@ -339,7 +337,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
             .where(
                 ModalityCodes.registry_code_type.in_(self.registry_code_types),
-                Treatment.fromtime < self.time_window[1] + self.future_cutoff,
                 or_(
                     Treatment.totime > self.time_window[0] - dt.timedelta(days=90),
                     Treatment.totime.is_(None),
@@ -351,10 +348,17 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
+        if dt.datetime.now() - self.time_window[1] > dt.timedelta(
+            days=self.recovery_window
+        ):
+            query = query.where(
+                Treatment.fromtime < self.time_window[1] + self.recovery_window
+            )
+
         if limit_to_ukrdc:
             query = query.where(PatientRecord.sendingextract == "UKRDC")
 
-        # Execute query and explicitly define the datatypes of columns
+        # Execute query and explicitly specify the datatypes of columns
         base_cohort = pd.read_sql(
             query,
             self.session.bind,
@@ -382,7 +386,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             },
         )
 
-        # base_cohort = pd.DataFrame(self.session.execute(query)).drop_duplicates()
         if base_cohort.empty:
             raise NoCohortError(
                 f"No patient cohort has been extracted. Facility {self.facility} may not have a UKRDC feed."
@@ -391,6 +394,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # pandas by default tries to be helpful and create compound keys
         # this is more overly helpful so we drop them
         base_cohort = base_cohort.reset_index(drop=True)
+
+        # DEBUG
+        debug_cohort = base_cohort[base_cohort.fromtime > self.time_window[0]]
 
         return base_cohort
 
@@ -488,15 +494,39 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         base_cohort = base_cohort.merge(
             most_recent, on=["ukrdcid"], how="left", suffixes=("", "_max")
         )
+
+        # Mark beginning and end of treatment timeline
+        base_cohort["timeline_start"] = base_cohort.groupby("ukrdcid", as_index=False)[
+            "fromtime"
+        ].transform("min")
+        base_cohort["timeline_stop"] = base_cohort.groupby("ukrdcid", as_index=False)[
+            "totime"
+        ].transform("max")
+
+        # Mark first and most recent treatments
+        base_cohort["first_treatment"] = (
+            base_cohort["timeline_start"] == base_cohort["fromtime"]
+        )
         base_cohort["most_recent"] = (
-            base_cohort["fromtime"] == base_cohort["fromtime_max"]
+            base_cohort["timeline_stop"] == base_cohort["totime"]
         )
 
-        # add column which is true if recorded is first from time for a given ukrdcid
-        base_cohort["first_treatment"] = (
-            base_cohort.groupby("ukrdcid")["fromtime"].transform("min")
-            == base_cohort["fromtime"]
-        )
+        # Calculate length of timeline
+        # Null value here is >90days
+        # TODO: this needs revisiting maybe a safer way of doing it is to
+        # select whichever is larger now() - timeline_start or 91 days
+        # this would be non deterministic
+        base_cohort["timeline_length"] = (
+            base_cohort["timeline_stop"] - base_cohort["timeline_start"]
+        ).fillna(dt.timedelta(days=91))
+
+        # Ensure deathtime exists for mocked/test data that may omit the column
+        if "deathtime" not in base_cohort.columns:
+            base_cohort["deathtime"] = pd.NaT
+
+        base_cohort["life_length"] = (
+            base_cohort["deathtime"] - base_cohort["timeline_start"]
+        ).fillna(dt.timedelta(days=91))
 
         return base_cohort
 
@@ -517,29 +547,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # Generate some helper columns to make it easier to calculate incidence
         # and prevalence
         base_cohort = self._add_helper_columns(base_cohort)
-
-        # we calculate the beginning and end of each continuous/uninterrupted treatment period
-        # At this point each patient should only have one of them.
-
-        # replace totime= na with today
-        base_cohort["totime"] = base_cohort["totime"].fillna(dt.datetime.now())
-        base_cohort["timeline_start"] = base_cohort.groupby("ukrdcid", as_index=False)[
-            "fromtime"
-        ].transform("min")
-        base_cohort["timeline_stop"] = base_cohort.groupby("ukrdcid", as_index=False)[
-            "totime"
-        ].transform("max")
-
-        base_cohort["timeline_length"] = (
-            base_cohort["timeline_stop"] - base_cohort["timeline_start"]
-        )
-        # JM Set deathtime to NaT if not a datetime (appears as a ndarray, presumably number in at least one place in UKRDC)
-        # base_cohort["deathtime"] = pd.to_datetime(
-        #    base_cohort["deathtime"], errors="coerce"
-        # )
-        base_cohort["life_length"] = (
-            base_cohort["deathtime"] - base_cohort["timeline_start"]
-        )
 
         # prevalent cohort includes everyone who's treatment block spans the end of the time window
         # who is not acute. Acute patients must meet the same criterion with the addition of being
@@ -573,19 +580,15 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Crash landed patients are defined:
         # - no chronic treatment records or tx
-        # - remains on KRT for more than 90 days
+        # - remains on KRT for more than 90 days or transfered out
         # - survives for more than 90 days
         is_crash_landing = (
             (~base_cohort["is_chronic"] & ~base_cohort["historic_tx"])
             & (
                 (base_cohort["timeline_length"] > dt.timedelta(days=90))
-                | base_cohort["timeline_length"].isna()
                 | transfered_out
             )
-            & (
-                (base_cohort["life_length"] > dt.timedelta(days=90))
-                | base_cohort["life_length"].isna()
-            )
+            & (base_cohort["life_length"] > dt.timedelta(days=90))
         )
 
         # Patients with a previous record of transplant or ckd are considered
@@ -613,6 +616,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             & (base_cohort["timeline_stop"] > self.time_window[1])
             & (base_cohort["timeline_length"] > dt.timedelta(days=90))
         )
+
+        # debug
+        debug_cohort = base_cohort[base_cohort.fromtime > self.time_window[0]]
 
         return base_cohort
 
