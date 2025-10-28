@@ -395,9 +395,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # this is more overly helpful so we drop them
         base_cohort = base_cohort.reset_index(drop=True)
 
-        # DEBUG
-        debug_cohort = base_cohort[base_cohort.fromtime > self.time_window[0]]
-
         return base_cohort
 
     def _chain_treatments(self, raw_patients: pd.DataFrame):
@@ -616,9 +613,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             & (base_cohort["timeline_stop"] > self.time_window[1])
             & (base_cohort["timeline_length"] > dt.timedelta(days=90))
         )
-
-        # debug
-        debug_cohort = base_cohort[base_cohort.fromtime > self.time_window[0]]
 
         return base_cohort
 
