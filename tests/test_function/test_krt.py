@@ -532,11 +532,11 @@ def test_produce_report_no_cohort_raises():
     calculator = KRTStatsCalculator(
         session=mock_session, 
         facility="TESTFACILITY", 
-        from_time=pd.Timestamp("2024-01-01"), 
-        to_time=pd.Timestamp("2024-06-01")
+        from_time=dt.datetime(2024, 1, 1), 
+        to_time=dt.datetime(2024, 6, 1)
     )
     
-    calculator.extract_stats = MagicMock(return_value=None)
+    calculator.extract_patient_cohort = MagicMock(return_value=None)
     calculator._patient_cohort = None
 
     with pytest.raises(NoCohortError):

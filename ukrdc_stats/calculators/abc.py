@@ -52,7 +52,7 @@ class AbstractFacilityStatsCalculator(ABC):
         should probably be returned as a list of mrns.
         """
         if self._patient_cohort is None:
-            self.extract_stats()
+            self.extract_patient_cohort()
 
         if self._patient_cohort is None:
             raise NoCohortError

@@ -122,20 +122,20 @@ def calculate_therapy_types(
     ] = "Unknown/Incomplete"
     patient_cohort.loc[:, "qbl05"] = patient_cohort["qbl05"].replace(mappings)
 
-    # Group and count patients by 'registry_code_type' and 'qbl05'
-    grouped_patients = (
-        patient_cohort.groupby(["registry_code_type", "qbl05"], as_index=False)
-        .size()
-        .rename(columns={"size": "count"})
+    # aggregate patients on modality and treatment supervision
+    aggregate_patients = (
+        patient_cohort.groupby(["registry_code_type", "qbl05"])["ukrdcid"]
+        .count()
+        .reset_index(name="count")
         .sort_values("registry_code_type")
     )
 
     # Create labels and patients lists
     labels = [
         f"{row.registry_code_type} {row.qbl05}".strip()
-        for _, row in grouped_patients.iterrows()
+        for _, row in aggregate_patients.iterrows()
     ]
-    patients = grouped_patients["count"].tolist()
+    patients = aggregate_patients["count"].tolist()
 
     return labels, patients
 
@@ -352,7 +352,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             days=self.recovery_window
         ):
             query = query.where(
-                Treatment.fromtime < self.time_window[1] + self.recovery_window
+                Treatment.fromtime
+                < self.time_window[1] + dt.timedelta(days=self.recovery_window)
             )
 
         if limit_to_ukrdc:
@@ -541,36 +542,19 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: Patient cohort dataframe
         """
 
-        # Generate some helper columns to make it easier to calculate incidence
-        # and prevalence
+        # Generate some helper columns to label patients in helpful ways
         base_cohort = self._add_helper_columns(base_cohort)
-
-        # prevalent cohort includes everyone who's treatment block spans the end of the time window
-        # who is not acute. Acute patients must meet the same criterion with the addition of being
-        # on KRT for more than 90 days.
-        base_cohort["prevalent"] = (
-            (base_cohort["timeline_start"] < self.time_window[1])
-            & (
-                (base_cohort["timeline_stop"] > self.time_window[1])
-                | base_cohort["timeline_stop"].isna()
-            )
-            & base_cohort["is_chronic"]
-        )
 
         # Without full coverage we can do anything super accurate with transfer
         # out. However we will treat certain dischargereason codes as idicating
         # continued treatment.
-        """
-        discharge_reasons = ["38"]
+        discharge_reasons = []  # = ["38"]?
+        discharge_locations = ["ABROAD"]
         transfered_patients = base_cohort[
-            base_cohort["dischargereasoncode"].isin(discharge_reasons)
-            & base_cohort.most_recent
-        ].ukrdcid.drop_duplicates()
-        transfered_out = base_cohort.ukrdcid.isin(transfered_patients)
-        """
-        transfered_patients = base_cohort[
-            base_cohort["dischargelocationcode"].isin(["ABROAD"])
-            # & base_cohort["dischargelocationcodestd"] == "RR1+"
+            (
+                base_cohort["dischargelocationcode"].isin(discharge_locations)
+                | base_cohort["dischargereasoncode"].isin(discharge_reasons)
+            )
             & base_cohort.most_recent
         ].ukrdcid.drop_duplicates()
         transfered_out = base_cohort.ukrdcid.isin(transfered_patients)
@@ -610,7 +594,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # window and is greater than 90 days.
         base_cohort["prevalent"] = (
             (base_cohort["timeline_start"] <= self.time_window[1])
-            & (base_cohort["timeline_stop"] > self.time_window[1])
+            & (
+                (base_cohort["timeline_stop"] > self.time_window[1])
+                | base_cohort["timeline_stop"].isna()
+            )
             & (base_cohort["timeline_length"] > dt.timedelta(days=90))
         )
 
@@ -912,13 +899,14 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # filter patient cohort to get the last treatment of each prevalent patient
         if subunit == "all":
             prevalent_cohort = self._patient_cohort[
-                self._patient_cohort.prevalent & self._patient_cohort.most_recent
+                self._patient_cohort.prevalent
+                # & self._patient_cohort.most_recent
             ]
 
         else:
             prevalent_cohort = self._patient_cohort[
                 self._patient_cohort.prevalent
-                & self._patient_cohort.most_recent
+                # & self._patient_cohort.most_recent
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
             ]
 
@@ -944,12 +932,13 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # population size calculated from the sum of the incident and prevalant patients
-        pop_size = len(
-            self._patient_cohort[
-                (self._patient_cohort.healthcarefacilitycode == unit)
-                & (self._patient_cohort.incident | self._patient_cohort.prevalent)
-            ].ukrdcid.unique()
-        )
+        all_patients = self._patient_cohort[
+            self._patient_cohort.incident | self._patient_cohort.prevalent
+        ]
+        if not unit == "all":
+            all_patients = all_patients[all_patients.healthcarefacilitycode == unit]
+
+        pop_size = len(all_patients.ukrdcid.unique())
 
         incident_krt = self._calculate_therapies_incident_patients(subunit=unit)
         prevalent_krt = self._calculate_therapies_prevalent_patients(subunit=unit)
@@ -1002,7 +991,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             unit_stats[unit] = self.extract_satellite_stats(unit)
 
         unit_stats[self.facility] = self.extract_satellite_stats(self.facility)
-
         return UnitLevelKRTStats(all=self.extract_satellite_stats(), units=unit_stats)
 
     def generate_cohort_report(
@@ -1044,7 +1032,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "totime",
                     "registry_code_type",
                 ],
-                [cohort, "most_recent", f"sendingfacility == '{self.facility}'"],
+                [cohort, "first_treatment", f"sendingfacility == '{self.facility}'"],
                 include_ni=include_ni,
             )
 
