@@ -8,8 +8,8 @@ sessionmaker = conn.session_maker()
 
 
 
-#facility = "RKB01"
-facility = "RNJ00"
+facility = "RAJ"
+#facility = "RNJ00"
 #start = dt.datetime(2025, 7, 26)
 start = dt.datetime(2025,7,30)
 end = dt.datetime(2025,10,28)
@@ -28,7 +28,7 @@ with sessionmaker() as session:
     #calculator.extract_patient_cohort(
     #    limit_to_ukrdc=True,
     #)
-    #calculator.extract_satellite_stats()
+    calculator.extract_stats()
     report = calculator.generate_cohort_report(cohort="incident", include_ni=False)
 
     report.table.to_csv(".do_not_commit/report.csv")

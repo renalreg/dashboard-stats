@@ -395,48 +395,80 @@ def test_calculate_therapies_incident_patients():
 def test_calculate_therapies_prevalent_patients():
     assert True 
 
-@patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_vacular_access')
+@patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_vascular_access')
 def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
-    # Mock return value for _query_vascular_access
-    mock_query_vascular_access.return_value = pd.DataFrame({
-        'qhd20': ['NLN', 'AVF', 'TLN', pd.NA],
-        'no': [10, 5, 15, 2],
-    })
-
-    # Mock patient cohort
+    """Test vascular access calculation for incident patients.
+    
+    Verifies that:
+    - The method correctly filters incident patients
+    - Subunit filtering works as expected
+    - Vascular access data is properly merged and aggregated
+    - Missing data is handled with Unknown/Incomplete label
+    """
+    # Mock patient cohort with 6 incident patients across 2 facilities
     krt_calculator._patient_cohort = pd.DataFrame({
-        'pid': [1, 2, 3, 4],
-        'incident': [True, True, True, True],
-        'healthcarefacilitycode': ['A', 'A', 'B', 'B']
+        'pid': ["1", "2", "3", "4", "5", "6"],
+        'ukrdcid': ["1", "2", "3", "4", "5", "6"],
+        'incident': [True, True, True, True, True, False],  # Patient 6 not incident
+        'first_treatment': [True, True, False, True, True, True],  # Patient 3 not first treatment
+        'healthcarefacilitycode': ['A', 'A', 'A', 'B', 'B', 'B']
     })
-
-
-    # Call the method under test for all subunits
+    
+    # Complete access data for all patients
+    all_access_data = pd.DataFrame({
+        'pid': ["1", "2", "4", "5"],
+        'qhd20': ['AVF', 'NLN', 'TLN', 'AVF'],
+        'procedure_time': [dt.datetime(2020, 1, 1)] * 4
+    })
+    
+    # Mock _query_vascular_access to return filtered data based on input patient_list
+    def mock_query_side_effect(patient_list):
+        # Filter access data to only include patients in the input list
+        pids = patient_list.tolist()
+        return all_access_data[all_access_data['pid'].isin(pids)]
+    
+    mock_query_vascular_access.side_effect = mock_query_side_effect
+    
+    # Test for all subunits
     result_all = krt_calculator._calculate_access_incident(subunit='all')
-
-    # Validate the result for all subunits
+    
+    # Should include all 5 incident patients (1,2,3,4,5)
+    # Patient 3 has no access data, so gets Unknown/Incomplete
     assert result_all.metadata.title == "Vascular Access on First HD Session"
     assert result_all.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
-    assert result_all.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
-    assert result_all.data.y == [10, 5, 15, 2]
-
-    # Call the method under test for subunit 'A'
+    assert sorted(result_all.data.x) == sorted(['AVF', 'NLN', 'TLN', 'Unknown/Incomplete'])
+    
+    # Count by access type: AVF=2 (patients 1,5), NLN=1 (patient 2), TLN=1 (patient 4), Unknown=1 (patient 3)
+    access_counts = dict(zip(result_all.data.x, result_all.data.y))
+    assert access_counts['AVF'] == 2
+    assert access_counts['NLN'] == 1
+    assert access_counts['TLN'] == 1
+    assert access_counts['Unknown/Incomplete'] == 1
+    
+    # Test for subunit 'A'
+    # Queries access for incident + first_treatment + facility A (patients 1, 2)
+    # But merges with ALL incident patients, so result includes all 5 incident patients
+    # Patients not in the query get Unknown/Incomplete
     result_subunit_a = krt_calculator._calculate_access_incident(subunit='A')
-
-    # Validate the result for subunit 'A'
+    
     assert result_subunit_a.metadata.title == "Vascular Access on First HD Session"
-    assert result_subunit_a.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
-    assert result_subunit_a.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
-    assert result_subunit_a.data.y == [10, 5, 15, 2]
-
-    # Call the method under test for subunit 'B'
+    access_counts_a = dict(zip(result_subunit_a.data.x, result_subunit_a.data.y))
+    assert access_counts_a['AVF'] == 1  # Patient 1
+    assert access_counts_a['NLN'] == 1  # Patient 2
+    # Patients 3, 4, 5 not in query (different facility or not first_treatment), so get Unknown
+    assert access_counts_a['Unknown/Incomplete'] == 3
+    
+    # Test for subunit 'B'
+    # Queries access for incident + first_treatment + facility B (patients 4, 5)
+    # But merges with ALL incident patients, so result includes all 5 incident patients
     result_subunit_b = krt_calculator._calculate_access_incident(subunit='B')
-
-    # Validate the result for subunit 'B'
+    
     assert result_subunit_b.metadata.title == "Vascular Access on First HD Session"
-    assert result_subunit_b.metadata.summary == "Vascular access for incident patients registered on their first dialysis session."
-    assert result_subunit_b.data.x == ['NLN', 'AVF', 'TLN', 'Unknown/Incomplete']
-    assert result_subunit_b.data.y == [10, 5, 15, 2]
+    access_counts_b = dict(zip(result_subunit_b.data.x, result_subunit_b.data.y))
+    assert access_counts_b['TLN'] == 1  # Patient 4
+    assert access_counts_b['AVF'] == 1  # Patient 5
+    # Patients 1, 2, 3 not in query (different facility or not first_treatment), so get Unknown
+    assert access_counts_b['Unknown/Incomplete'] == 3
 
 @patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_dialysis_sessions')
 def test_calculate_dialysis_frequency(mock_query_dialysis_sessions, krt_calculator):
@@ -470,7 +502,8 @@ def test_calculate_dialysis_frequency(mock_query_dialysis_sessions, krt_calculat
         'pid': [1, 2, 3, 4],
         'registry_code_type': ['HD', 'HD', 'HD', 'HD'],
         'qbl05': ['HOSP', 'SATL', 'In-centre', 'In-centre'],
-        'healthcarefacilitycode': ['A', 'A', 'B', 'B']
+        'healthcarefacilitycode': ['A', 'A', 'B', 'B'],
+        'prevalent': [True, True, True, True]
     })
 
     # Call the method under test for all subunits

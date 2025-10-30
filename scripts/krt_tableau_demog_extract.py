@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from rr_connection_manager import PostgresConnection
 from ukrdc_stats.calculators.krt import KRTStatsCalculator
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
-from ukrdc_stats.utils import map_codes, lookup_codes, facility_names, short_names, region_map, check_headcounts
+from ukrdc_stats.utils import map_codes, lookup_codes,check_headcounts
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_sqla.ukrdc import PatientRecord, DialysisSession
 from sqlalchemy import select
@@ -113,7 +113,8 @@ def query_vascular_access(session:Session, patient_list:pd.Series):
      
     # deduplicate on first value
     vascular_access = vascular_access.sort_values(by="procedure_time").drop_duplicates(subset="pid", keep="first")
-    
+    print(vascular_access.head())
+
     return vascular_access.rename(columns={"qhd20":"variable"})
 
 def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, ukrdc_session:Session, aggregated = True):
@@ -168,6 +169,9 @@ def calculate_tableau_demog(facility:str, start:dt.datetime, stop:dt.datetime, u
         end_date=stop,
         start_date=start,
     )
+    demographics_calculator.extract_patient_cohort()
+    demographics_calculator._calculate_age()
+    
     _, demographics_report = demographics_calculator.produce_report(
         output_columns=["gender", "age", "ethnic_group_code"]
     )
@@ -316,6 +320,7 @@ with sessionmaker() as session:
                 print(e)
 
             single_quarter_cohorts.append(tableau_demog)
+
             
 
     # remap Paeds and add centre names and regions

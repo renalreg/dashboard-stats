@@ -653,6 +653,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         patient_list = self._patient_cohort[
             (self._patient_cohort.registry_code_type == "HD")
             & (self._patient_cohort.qbl05.isin(["HOSP", "SATL", "In-centre"]))
+            & self._patient_cohort.prevalent
         ]
 
         if subunit != "all":
@@ -748,51 +749,68 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         del subunit
         return
 
-    def _query_vacular_access(self, patient_list: pd.Series) -> pd.DataFrame:
+    def _query_vascular_access(self, patient_list: pd.Series) -> pd.DataFrame:
         """Function to query the vascular access table to return the type of
-        access used on the first dialysis session for a cohort defined by the
-        patient list.
+        access used within 14 days of the first dialysis session for a cohort
+        defined by the patient list. Returns the earliest session with qhd22
+        populated in that window.
 
         Args:
             patient_list (pd.Series): List of pids defining a cohort.
 
         Returns:
-            pd.DataFrame: _description_
+            pd.DataFrame: DataFrame with columns pid, qhd20, proceduretime
         """
+        CHUNK_SIZE = 100
+        all_results = []
 
-        window = (
-            select(
-                PatientRecord.pid,
-                DialysisSession.procedure_time,
-                DialysisSession.qhd20,
-                func.rank()
-                .over(
-                    order_by=DialysisSession.procedure_time,
-                    partition_by=PatientRecord.pid,
+        pids = patient_list.tolist()
+
+        for i in range(0, len(pids), CHUNK_SIZE):
+            chunk_pids = pids[i : i + CHUNK_SIZE]
+
+            time_windows = (
+                select(
+                    DialysisSession.pid,
+                    DialysisSession.procedure_time.label("start_time"),
+                    (DialysisSession.procedure_time + dt.timedelta(days=14)).label(
+                        "end_time"
+                    ),
                 )
-                .label("rnk"),
-            )
-            .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
-            .where(
-                PatientRecord.pid.in_(
-                    # pylint: disable=singleton-comparison
-                    patient_list
+                .where(DialysisSession.pid.in_(chunk_pids))
+                .distinct(DialysisSession.pid)
+                .order_by(DialysisSession.pid, DialysisSession.procedure_time.asc())
+            ).subquery()
+
+            d = aliased(DialysisSession)
+            vascular_access_query = (
+                select(d.pid, d.qhd20, d.procedure_time)
+                .join(
+                    time_windows,
+                    and_(
+                        d.pid == time_windows.c.pid,
+                        d.procedure_time.between(
+                            time_windows.c.start_time, time_windows.c.end_time
+                        ),
+                    ),
                 )
+                .where(d.qhd22.isnot(None))
+                .distinct(d.pid)
+                .order_by(d.pid, d.procedure_time.asc())
             )
-        ).subquery()
 
-        # query to select the type of access used on the first session
-        initial_access_query = (
-            select(window.c.qhd20, func.count(window.c.pid).label("no"))
-            .group_by(window.c.qhd20)
-            .where(window.c.rnk == 1)
-        )
+            chunk_results = pd.DataFrame(self.session.execute(vascular_access_query))
+            if not chunk_results.empty:
+                all_results.append(chunk_results)
 
-        initial_access_data = pd.DataFrame(
-            self.session.execute(initial_access_query)
-        ).drop_duplicates()
+        if all_results:
+            vascular_access_data = pd.concat(all_results, ignore_index=True)
+        else:
+            vascular_access_data = pd.DataFrame(
+                columns=["pid", "qhd20", "procedure_time"]
+            )
 
-        return initial_access_data
+        return vascular_access_data
 
     def _calculate_access_incident(self, subunit: str = "all") -> Labelled2d:
         """Displays the vascular access of incident patients on their first dialysis session
@@ -808,30 +826,38 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             raise NoCohortError("No patient cohort has been extracted")
 
         # filter by subunit
-        if subunit != "all":
+        if subunit == "all":
+            patient_list = self._patient_cohort[
+                self._patient_cohort.incident
+            ].pid.drop_duplicates()
+        else:
             patient_list = self._patient_cohort[
                 self._patient_cohort.incident
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
-                # & self._patient_cohort.firsttreatment
-            ].pid.drop_duplicates()
-        else:
-            patient_list = self._patient_cohort[
-                self._patient_cohort.incident  # & self._patient_cohort.firsttreatment
+                & self._patient_cohort.first_treatment
             ].pid.drop_duplicates()
 
-        # function runs queries against the vascular access table
-        initial_access_data = self._query_vacular_access(patient_list)
+        # function runs queries against the vascular access table and map to patients
+        initial_access_data = self._query_vascular_access(patient_list)
+        incident_access = self._patient_cohort[self._patient_cohort.incident].merge(
+            initial_access_data[["pid", "qhd20"]].rename(columns={"qhd20": "vascular"}),
+            on="pid",
+            how="left",
+        )
 
-        if len(initial_access_data) > 0:
-            initial_access_data.loc[initial_access_data.qhd20.isna(), "qhd20"] = (
-                "Unknown/Incomplete"
-            )
+        incident_access.loc[incident_access.vascular.isna(), "vascular"] = (
+            "Unknown/Incomplete"
+        )
 
-            x_data = list(initial_access_data.qhd20)
-            y_data = list(initial_access_data.no)
-        else:
-            x_data = []
-            y_data = []
+        # aggregate cohort
+        aggregate_patients = (
+            incident_access.groupby(["vascular"])["ukrdcid"]
+            .count()
+            .reset_index(name="value")
+            .sort_values("vascular")
+        )
+        x_data = list(aggregate_patients.vascular)
+        y_data = list(aggregate_patients.value)
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -896,11 +922,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # filter patient cohort to get the last treatment of each prevalent patient
+        # filter patient cohort to get the first treatment type of each patient
         if subunit == "all":
             prevalent_cohort = self._patient_cohort[
-                self._patient_cohort.prevalent
-                # & self._patient_cohort.most_recent
+                self._patient_cohort.prevalent & self._patient_cohort.first_treatment
             ]
 
         else:

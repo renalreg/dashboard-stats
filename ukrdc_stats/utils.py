@@ -331,3 +331,13 @@ def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
         raise Warning(msg)
 
     return
+
+
+VASCULAR_MAPPING = {
+    "AVF": "AVF/AVG",
+    "AVFUO": "AVF/AVG",
+    "AVG": "AVF/AVG",
+    "TLN": "TL",
+    "NLN": "NTL",
+    "HER": "AVF/AVG",
+}
