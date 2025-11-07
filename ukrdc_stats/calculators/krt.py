@@ -76,6 +76,10 @@ class KRTStats(JSONModel):
         ...,
         description="vascular access of incident dialysis patients on their first session",
     )
+    prevalent_most_recent_access: Labelled2d = Field(
+        ...,
+        description="vascular access of prevalent dialysis patients on their most recent session",
+    )
     metadata: KRTMetadata
 
 
@@ -202,10 +206,15 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         self,
         session: Session,
         facility: str,
+        date: dt.datetime = None,
         from_time: dt.datetime = None,
         to_time: dt.datetime = None,
     ):
-        super().__init__(session, facility)
+        if to_time and date:
+            date = to_time
+        
+        super().__init__(session, facility, date)
+        to_time = self.date
 
         if to_time > dt.datetime.now() - dt.timedelta(days=90):
             warnings.warn(
@@ -213,9 +222,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
 
         self.recovery_window = 90  # days around the window to look at treatments
-
-        if not to_time:
-            to_time = dt.datetime.now()
 
         if not from_time:
             from_time = to_time - dt.timedelta(days=365)
@@ -227,7 +233,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         self.registry_code_types: List[str] = ["HD", "PD", "TX"]
         self.home_therapy_code_types: List[str] = ["HOSP", "SATL", "INCENTRE"]
 
-    def extract_patient_cohort(self, limit_to_ukrdc: Optional[bool] = True):
+    def _extract_patient_cohort(self, limit_to_ukrdc: Optional[bool] = True):
         """
         Extract a complete patient cohort dataframe. This is calculated fresh
         each time but we would probably want to implement some caching here.
@@ -749,14 +755,93 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         del subunit
         return
 
-    def _query_vascular_access(self, patient_list: pd.Series) -> pd.DataFrame:
-        """Function to query the vascular access table to return the type of
-        access used within 14 days of the first dialysis session for a cohort
-        defined by the patient list. Returns the earliest session with qhd22
-        populated in that window.
+    def _query_first_vascular_access(self, patient_list: pd.Series) -> pd.DataFrame:
+        """
+        SQL query to retreive the first vascular access used within a grace
+        period of the first recorded dialysis session for a list of patients.
 
         Args:
             patient_list (pd.Series): List of pids defining a cohort.
+
+        Returns:
+            pd.DataFrame:  pid, accesstype, proceduretime
+        """
+
+        grace_period = 14
+        time_windows = (
+            select(
+                DialysisSession.pid,
+                DialysisSession.procedure_time.label("start_time"),
+                (DialysisSession.procedure_time + dt.timedelta(days=grace_period)).label(
+                    "end_time"
+                ),
+            )
+            .where(DialysisSession.pid.in_(patient_list))
+            .distinct(DialysisSession.pid)
+            .order_by(DialysisSession.pid, DialysisSession.procedure_time.asc())
+        ).subquery()
+
+        d = aliased(DialysisSession)
+        vascular_access_query = (
+            select(d.pid, d.qhd20, d.procedure_time)
+            .join(
+                time_windows,
+                and_(
+                    d.pid == time_windows.c.pid,
+                    d.procedure_time.between(
+                    time_windows.c.start_time, time_windows.c.end_time
+                ),
+            ),
+            )
+            .where(d.qhd20.isnot(None))
+            .distinct(d.pid)
+            .order_by(d.pid, d.procedure_time.asc())
+        )
+
+        results = pd.DataFrame(self.session.execute(vascular_access_query))
+        results = results.rename(columns={"qhd20": "accesstype"})
+
+        return results
+
+    def _query_most_recent_vascular_access(self, patient_list: pd.Series)->pd.DataFrame:
+        """
+        SQL query to retreive the most recent vascular access used within a grace
+        period of the end date specified in the calculator.
+
+        Args:
+            patient_list (pd.Series): List of pids defining a cohort.
+
+        Returns:
+            pd.DataFrame: DataFrame with columns pid, accesstype, proceduretime
+        """
+
+
+        vascular_access_query = (
+            select(DialysisSession.pid, DialysisSession.qhd20, DialysisSession.procedure_time)
+            .where(
+                DialysisSession.pid.in_(patient_list),
+                DialysisSession.procedure_time <= self.time_window[1],
+                #DialysisSession.procedure_time >= self.time_window[1] - dt.timedelta(days=grace_period),
+                DialysisSession.qhd20.isnot(None),
+            )
+            .distinct(DialysisSession.pid)
+            .order_by(DialysisSession.pid, DialysisSession.procedure_time.desc())
+        )
+
+        results = pd.DataFrame(self.session.execute(vascular_access_query))
+        results = results.rename(columns={"qhd20": "accesstype"})
+
+        return results
+
+    def _query_vascular_access(self, patient_list: pd.Series, is_first = True) -> pd.DataFrame:
+        """
+        Function to return query either the first or the most recent vascular
+        access for a list of patients. Patient list is batched to prevent the
+        query size overflowing the maximum allowed.
+
+        Args:
+            patient_list (pd.Series): List of pids defining a cohort.
+            is_first (bool, optional): Whether to return the first or most recent vascular access. Defaults to True.
 
         Returns:
             pd.DataFrame: DataFrame with columns pid, qhd20, proceduretime
@@ -766,40 +851,15 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         pids = patient_list.tolist()
 
+
         for i in range(0, len(pids), CHUNK_SIZE):
             chunk_pids = pids[i : i + CHUNK_SIZE]
 
-            time_windows = (
-                select(
-                    DialysisSession.pid,
-                    DialysisSession.procedure_time.label("start_time"),
-                    (DialysisSession.procedure_time + dt.timedelta(days=14)).label(
-                        "end_time"
-                    ),
-                )
-                .where(DialysisSession.pid.in_(chunk_pids))
-                .distinct(DialysisSession.pid)
-                .order_by(DialysisSession.pid, DialysisSession.procedure_time.asc())
-            ).subquery()
+            if is_first:
+                chunk_results = self._query_first_vascular_access(chunk_pids)
+            else:
+                chunk_results = self._query_most_recent_vascular_access(chunk_pids)
 
-            d = aliased(DialysisSession)
-            vascular_access_query = (
-                select(d.pid, d.qhd20, d.procedure_time)
-                .join(
-                    time_windows,
-                    and_(
-                        d.pid == time_windows.c.pid,
-                        d.procedure_time.between(
-                            time_windows.c.start_time, time_windows.c.end_time
-                        ),
-                    ),
-                )
-                .where(d.qhd22.isnot(None))
-                .distinct(d.pid)
-                .order_by(d.pid, d.procedure_time.asc())
-            )
-
-            chunk_results = pd.DataFrame(self.session.execute(vascular_access_query))
             if not chunk_results.empty:
                 all_results.append(chunk_results)
 
@@ -807,7 +867,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             vascular_access_data = pd.concat(all_results, ignore_index=True)
         else:
             vascular_access_data = pd.DataFrame(
-                columns=["pid", "qhd20", "procedure_time"]
+                columns=["pid", "accesstype", "procedure_time"]
             )
 
         return vascular_access_data
@@ -839,24 +899,24 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # function runs queries against the vascular access table and map to patients
         initial_access_data = self._query_vascular_access(patient_list)
-        incident_access = self._patient_cohort[self._patient_cohort.incident].merge(
-            initial_access_data[["pid", "qhd20"]].rename(columns={"qhd20": "vascular"}),
+        self._incident_access = self._patient_cohort[self._patient_cohort.incident].merge(
+            initial_access_data[["pid", "accesstype"]],
             on="pid",
             how="left",
         )
 
-        incident_access.loc[incident_access.vascular.isna(), "vascular"] = (
+        self._incident_access.loc[self._incident_access.accesstype.isna(), "accesstype"] = (
             "Unknown/Incomplete"
         )
 
         # aggregate cohort
         aggregate_patients = (
-            incident_access.groupby(["vascular"])["ukrdcid"]
+            self._incident_access.groupby(["accesstype"])["ukrdcid"]
             .count()
             .reset_index(name="value")
-            .sort_values("vascular")
+            .sort_values("accesstype")
         )
-        x_data = list(aggregate_patients.vascular)
+        x_data = list(aggregate_patients.accesstype)
         y_data = list(aggregate_patients.value)
 
         return Labelled2d(
@@ -864,6 +924,66 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 title="Vascular Access on First HD Session",
                 summary="Vascular access for incident patients registered on their first dialysis session.",
                 description=dialysis_descriptions["INCIDENT_INITIAL_ACCESS"],
+                axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
+                population_size=0,
+            ),
+            data=Labelled2dData(x=x_data, y=y_data),
+        )
+
+    def _calculate_access_prevalent(self, subunit: str = "all") -> Labelled2d:
+        """Calculates the prevalent vascular access using the most recent access data.
+
+        Args:
+            subunit (str, optional): Satellite unit. Defaults to "all".
+
+        Raises:
+            NoCohortError: If no patient cohort has been extracted.
+
+        Returns:
+            Labelled2d: Number of prevalent patients with each type of access.
+        """
+
+        if self._patient_cohort is None:
+            raise NoCohortError("No patient cohort has been extracted")
+
+        # Filter by subunit
+        if subunit == "all":
+            patient_list = self._patient_cohort[
+                self._patient_cohort.prevalent
+            ].pid.drop_duplicates()
+        else:
+            patient_list = self._patient_cohort[
+                self._patient_cohort.prevalent
+                & (self._patient_cohort.healthcarefacilitycode == subunit)
+            ].pid.drop_duplicates()
+
+        # Query the most recent vascular access
+        recent_access_data = self._query_vascular_access(patient_list, is_first=False)
+        self._prevalent_access = self._patient_cohort[self._patient_cohort.prevalent].merge(
+            recent_access_data[["pid", "accesstype"]],
+            on="pid",
+            how="left",
+        )
+
+        self._prevalent_access.loc[self._prevalent_access.accesstype.isna(), "accesstype"] = (
+            "Unknown/Incomplete"
+        )
+
+        # Aggregate cohort
+        aggregate_patients = (
+            self._prevalent_access.groupby(["accesstype"])["ukrdcid"]
+            .count()
+            .reset_index(name="value")
+            .sort_values("accesstype")
+        )
+        x_data = list(aggregate_patients.accesstype)
+        y_data = list(aggregate_patients.value)
+
+        return Labelled2d(
+            metadata=Labelled2dMetadata(
+                title="Most Recent Vascular Access",
+                summary="Vascular access for prevalent patients registered on their most recent dialysis session.",
+                description=dialysis_descriptions["PREVALENT_MOST_RECENT_ACCESS"],
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
                 population_size=0,
             ),
@@ -971,6 +1091,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             self._calculate_dialysis_frequency(subunit=unit)
         )
         incident_initial_access = self._calculate_access_incident(subunit=unit)
+        prevalent_most_recent_access = self._calculate_access_prevalent(subunit=unit)
 
         return KRTStats(
             metadata=KRTMetadata(
@@ -983,6 +1104,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             incentre_dialysis_frequency=incentre_dialysis_frequency,
             incentre_time_dialysed=incentre_time_dialysed,
             incident_initial_access=incident_initial_access,
+            prevalent_most_recent_access=prevalent_most_recent_access,
         )
 
     def extract_stats(
@@ -1022,12 +1144,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         self, cohort: str, include_ni: bool = False
     ) -> BaseTable:
         """
+        Create a report to return the modalities of either incident or
+        prevalent patients specified by the calculator.
 
         Args:
-            cohort (str): _description_
+            cohort (str): "incident" or "prevalent"
+            include_ni (bool, optional): Whether to include NI patients. Defaults to False.
 
         Returns:
-            BaseTable: _description_
+            BaseTable: A table containing the modalities and incidence/prevalence
+            status of patient for the cohort specified by the calculator.
         """
 
         # check the centre is in the output

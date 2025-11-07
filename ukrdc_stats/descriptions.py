@@ -197,6 +197,21 @@ dialysis_descriptions = {
         - [Dialysis Session](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2005565449/Dialysis+Session+Procedure) qhd20 for first dialysis session. 
         """
     ),
+    "PREVALENT_MOST_RECENT_ACCESS": dedent(
+        """
+        # Prevalent Most Recent Access
+        ## Overview
+        Vascular access recorded on the most recent dialysis session of each prevalent patient.
+
+        ## Methodology
+        - This cohort is identical to that used for prevalent patients treatment breakdown.
+        - The most recent coded vascular access is selected within a two week period of the end of the calculation window
+        - ipsum lopsum nausium
+       
+       ## UKRDC Entities Used
+        - [Dialysis Session](https://renalregistry.atlassian.net/wiki/spaces/UD/pages/2005565449/Dialysis+Session+Procedure) qhd20 for first dialysis session. 
+        """
+    ),
 }
 
 demographic_generic = """

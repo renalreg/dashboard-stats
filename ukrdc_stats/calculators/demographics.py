@@ -20,6 +20,7 @@ from ukrdc_sqla.ukrdc import (
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import (
+    GENDER_GROUP_MAP,
     age_from_dob,
     map_codes,
     _calculate_base_patient_histogram,
@@ -36,8 +37,6 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dMetadata,
 )
 
-# NHS digital gender map
-GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
 
 
 class DemographicsMetadata(JSONModel):
@@ -76,13 +75,18 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             facility (str): Facility to calculate the
             date (datetime, optional): Date to calculate at. Defaults to today.
         """
-        super().__init__(session, facility)
+        if date and end_date:
+            date = end_date
+
+        super().__init__(session, facility, date)
 
         # Set the dates to calculate between, defaulting to today and 90 days ago
-        self.end_date: dt.datetime = date or end_date or dt.datetime.today()
-        self.start_date: dt.datetime = start_date or self.end_date - dt.timedelta(
-            days=90
-        )
+        self.end_date: dt.datetime = self.date
+
+        if not start_date:
+            self.start_date = self.end_date - dt.timedelta(days=90)
+        else:
+            self.start_date = start_date
 
     def _extract_base_patient_cohort(
         self,
@@ -272,7 +276,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
         )
 
-    def extract_patient_cohort(
+    def _extract_patient_cohort(
         self,
         include_tracing: Optional[bool] = False,
         limit_to_ukrdc: Optional[bool] = True,

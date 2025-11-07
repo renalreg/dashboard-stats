@@ -341,3 +341,6 @@ VASCULAR_MAPPING = {
     "NLN": "NTL",
     "HER": "AVF/AVG",
 }
+
+# NHS digital gender map
+GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}

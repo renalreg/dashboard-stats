@@ -29,6 +29,7 @@ with sessionmaker() as session:
     #    limit_to_ukrdc=True,
     #)
     calculator.extract_stats()
+    calculator.append_demographics()
     report = calculator.generate_cohort_report(cohort="incident", include_ni=False)
 
     report.table.to_csv(".do_not_commit/report.csv")
