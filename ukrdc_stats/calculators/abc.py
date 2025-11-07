@@ -8,16 +8,16 @@ from typing import Optional, List
 import pandas as pd
 import datetime as dt
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from ukrdc_sqla.ukrdc import PatientRecord, Patient
 
-from scripts.extract_dialysis_prescriptions import demographics_df
 from ukrdc_stats.models.base import JSONModel
 from ukrdc_stats.models.generic_2d import BaseTable
 from ukrdc_stats.exceptions import NoCohortError
 
-from ukrdc_sqla.ukrdc import PatientNumber, PatientRecord
+from ukrdc_sqla.ukrdc import PatientNumber
 from ukrdc_stats.utils import GENDER_GROUP_MAP, map_codes
+
 
 class AbstractFacilityStatsCalculator(ABC):
     """
@@ -30,13 +30,14 @@ class AbstractFacilityStatsCalculator(ABC):
     """
 
     def __init__(
-        self, session: Session, 
-        facility: str, 
+        self,
+        session: Session,
+        facility: str,
         date: Optional[dt.datetime] = None,
     ):
         # Set up the database session
         self.session: Session = session
- 
+
         # Store the facility code
         self.facility: str = facility
 
@@ -98,9 +99,8 @@ class AbstractFacilityStatsCalculator(ABC):
             headers=report.columns.tolist(),
             rows=[row.tolist() for _, row in report.iterrows()],
         )
-    
 
-    # Constrain extract patient cohort with 
+    # Constrain extract patient cohort with
     def extract_patient_cohort(self, **kwargs):
         self._extract_patient_cohort(**kwargs)
         self._validate_patient_cohort(self._patient_cohort)
@@ -113,18 +113,20 @@ class AbstractFacilityStatsCalculator(ABC):
 
     def _validate_patient_cohort(self, dataframe: pd.DataFrame):
         """
-        There are certain constraint 
+        There are certain constraint
         """
         if self._patient_cohort is None:
-            raise ValueError(f"Patient cohort extractor has failed to produce the _patient_cohort dataframe")
+            raise ValueError(
+                "Patient cohort extractor has failed to produce the _patient_cohort dataframe"
+            )
 
-        required_columns = {'pid', 'ukrdcid', 'sendingfacility'}
+        required_columns = {"pid", "ukrdcid", "sendingfacility"}
         missing_columns = required_columns - set(dataframe.columns)
         if missing_columns:
             raise ValueError(f"Missing columns in patient cohort: {missing_columns}")
 
     # All calculators should contain a method to extract aggregated stats as a
-    # pydantic object for api of the UI to use     
+    # pydantic object for api of the UI to use
     @abstractmethod
     def extract_stats(self) -> JSONModel:
         """
@@ -133,7 +135,7 @@ class AbstractFacilityStatsCalculator(ABC):
         Returns:
             JSONModel: Pydantic object containing all related stats
         """
-    
+
     def _query_demographics(self, patient_list):
         """Generalized query to return the demographic information
 
@@ -143,64 +145,84 @@ class AbstractFacilityStatsCalculator(ABC):
         Returns:
             _type_: _description_
         """
-        
+
         query_demog = (
             select(
                 PatientRecord.pid,
                 Patient.gender,
                 Patient.ethnicgroupcode,
                 func.date(Patient.birthtime).label("dob"),
-                func.date_part('year', func.age(self.date, Patient.birthtime)).label('age'),
-                func.coalesce(Patient.deathtime > self.date, True).label('is_alive')
+                func.date_part("year", func.age(self.date, Patient.birthtime)).label(
+                    "age"
+                ),
+                func.coalesce(Patient.deathtime > self.date, True).label("is_alive"),
             )
             .join(PatientRecord, Patient.pid == PatientRecord.pid)
             .where(
                 PatientRecord.pid.in_(patient_list),
             )
         )
-        
+
         return pd.DataFrame(self.session.execute(query_demog)).drop_duplicates()
 
     def _relabel_demographics(self, demographics_raw):
         # Map age to fixed bins
         demographics_raw["age"] = demographics_raw["age"].astype(int)
-        bins = [0,18, 35, 55, 75, 150]
+        bins = [0, 18, 35, 55, 75, 150]
         labels = ["<18", "18-34", "35-54", "55-74", ">=75"]
         for i in range(len(labels)):
-            demographics_raw.loc[(bins[i+1] > demographics_raw["age"]) & (bins[i] <= demographics_raw["age"]), "agerange"] = labels[i]
+            demographics_raw.loc[
+                (bins[i + 1] > demographics_raw["age"])
+                & (bins[i] <= demographics_raw["age"]),
+                "agerange",
+            ] = labels[i]
 
-        demographics_raw.loc[demographics_raw["is_alive"] == False, "agerange"] = "Deceased"
+        demographics_raw.loc[demographics_raw["is_alive"] == False, "agerange"] = (
+            "Deceased"
+        )
         demographics_raw.loc[demographics_raw["is_alive"] == False, "age"] = None
 
         # Map gender to stats groups
-        demographics_raw["gender"] = demographics_raw["gender"].map(GENDER_GROUP_MAP, None).fillna("Unknown")
+        demographics_raw["gender"] = (
+            demographics_raw["gender"].map(GENDER_GROUP_MAP, None).fillna("Unknown")
+        )
 
         # Map ethnicity to stats groups
-        ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session)
-        demographics_raw["ethnicity"] = demographics_raw["ethnicgroupcode"].map(ethnic_group_map, None).fillna("Unknown")
+        ethnic_group_map = map_codes(
+            "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
+        )
+        demographics_raw["ethnicity"] = (
+            demographics_raw["ethnicgroupcode"]
+            .map(ethnic_group_map, None)
+            .fillna("Unknown")
+        )
 
         return demographics_raw
 
     def append_demographics(self):
         if self._patient_cohort is None:
-            raise ValueError("Please extract cohort before appending demographic information")
-        
+            raise ValueError(
+                "Please extract cohort before appending demographic information"
+            )
+
         # get demographic attributes from database
-        
+
         # break up large queries into chunks to avoid PostgreSQL stack overflow
         batch_size = 100
         demographics = []
         for i in range(0, len(self._patient_cohort), batch_size):
-            batch = self._patient_cohort.iloc[i: i + batch_size]
-            demographics.append(
-                self._query_demographics(batch.pid)
-            )
+            batch = self._patient_cohort.iloc[i : i + batch_size]
+            demographics.append(self._query_demographics(batch.pid))
 
         demographics = self._relabel_demographics(pd.concat(demographics))
-        
+
         # merge back into patient cohort and remove duplicated columns
-        self._patient_cohort = self._patient_cohort.merge(demographics, how="left", on="pid",  suffixes=('', '_extra'))
-        self._patient_cohort = self._patient_cohort.loc[:, ~self._patient_cohort.columns.str.endswith('_extra')]
+        self._patient_cohort = self._patient_cohort.merge(
+            demographics, how="left", on="pid", suffixes=("", "_extra")
+        )
+        self._patient_cohort = self._patient_cohort.loc[
+            :, ~self._patient_cohort.columns.str.endswith("_extra")
+        ]
         print(":)")
 
     # For future implementation postcode lookup against external api

@@ -38,7 +38,6 @@ from ukrdc_stats.models.generic_2d import (
 )
 
 
-
 class DemographicsMetadata(JSONModel):
     population: Optional[int] = Field(
         None, description="Population demographics are calculated from"

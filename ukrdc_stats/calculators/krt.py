@@ -212,7 +212,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
     ):
         if to_time and date:
             date = to_time
-        
+
         super().__init__(session, facility, date)
         to_time = self.date
 
@@ -772,9 +772,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             select(
                 DialysisSession.pid,
                 DialysisSession.procedure_time.label("start_time"),
-                (DialysisSession.procedure_time + dt.timedelta(days=grace_period)).label(
-                    "end_time"
-                ),
+                (
+                    DialysisSession.procedure_time + dt.timedelta(days=grace_period)
+                ).label("end_time"),
             )
             .where(DialysisSession.pid.in_(patient_list))
             .distinct(DialysisSession.pid)
@@ -789,9 +789,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 and_(
                     d.pid == time_windows.c.pid,
                     d.procedure_time.between(
-                    time_windows.c.start_time, time_windows.c.end_time
+                        time_windows.c.start_time, time_windows.c.end_time
+                    ),
                 ),
-            ),
             )
             .where(d.qhd20.isnot(None))
             .distinct(d.pid)
@@ -803,7 +803,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         return results
 
-    def _query_most_recent_vascular_access(self, patient_list: pd.Series)->pd.DataFrame:
+    def _query_most_recent_vascular_access(
+        self, patient_list: pd.Series
+    ) -> pd.DataFrame:
         """
         SQL query to retreive the most recent vascular access used within a grace
         period of the end date specified in the calculator.
@@ -815,13 +817,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             pd.DataFrame: DataFrame with columns pid, accesstype, proceduretime
         """
 
-
         vascular_access_query = (
-            select(DialysisSession.pid, DialysisSession.qhd20, DialysisSession.procedure_time)
+            select(
+                DialysisSession.pid,
+                DialysisSession.qhd20,
+                DialysisSession.procedure_time,
+            )
             .where(
                 DialysisSession.pid.in_(patient_list),
                 DialysisSession.procedure_time <= self.time_window[1],
-                #DialysisSession.procedure_time >= self.time_window[1] - dt.timedelta(days=grace_period),
+                # DialysisSession.procedure_time >= self.time_window[1] - dt.timedelta(days=grace_period),
                 DialysisSession.qhd20.isnot(None),
             )
             .distinct(DialysisSession.pid)
@@ -833,7 +838,9 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         return results
 
-    def _query_vascular_access(self, patient_list: pd.Series, is_first = True) -> pd.DataFrame:
+    def _query_vascular_access(
+        self, patient_list: pd.Series, is_first=True
+    ) -> pd.DataFrame:
         """
         Function to return query either the first or the most recent vascular
         access for a list of patients. Patient list is batched to prevent the
@@ -850,7 +857,6 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         all_results = []
 
         pids = patient_list.tolist()
-
 
         for i in range(0, len(pids), CHUNK_SIZE):
             chunk_pids = pids[i : i + CHUNK_SIZE]
@@ -899,15 +905,17 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # function runs queries against the vascular access table and map to patients
         initial_access_data = self._query_vascular_access(patient_list)
-        self._incident_access = self._patient_cohort[self._patient_cohort.incident].merge(
+        self._incident_access = self._patient_cohort[
+            self._patient_cohort.incident
+        ].merge(
             initial_access_data[["pid", "accesstype"]],
             on="pid",
             how="left",
         )
 
-        self._incident_access.loc[self._incident_access.accesstype.isna(), "accesstype"] = (
-            "Unknown/Incomplete"
-        )
+        self._incident_access.loc[
+            self._incident_access.accesstype.isna(), "accesstype"
+        ] = "Unknown/Incomplete"
 
         # aggregate cohort
         aggregate_patients = (
@@ -959,15 +967,17 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Query the most recent vascular access
         recent_access_data = self._query_vascular_access(patient_list, is_first=False)
-        self._prevalent_access = self._patient_cohort[self._patient_cohort.prevalent].merge(
+        self._prevalent_access = self._patient_cohort[
+            self._patient_cohort.prevalent
+        ].merge(
             recent_access_data[["pid", "accesstype"]],
             on="pid",
             how="left",
         )
 
-        self._prevalent_access.loc[self._prevalent_access.accesstype.isna(), "accesstype"] = (
-            "Unknown/Incomplete"
-        )
+        self._prevalent_access.loc[
+            self._prevalent_access.accesstype.isna(), "accesstype"
+        ] = "Unknown/Incomplete"
 
         # Aggregate cohort
         aggregate_patients = (
