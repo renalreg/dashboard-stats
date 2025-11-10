@@ -333,6 +333,25 @@ def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
     return
 
 
+def aggregate_data(
+    dataframe: pd.DataFrame, groupby_attributes: list[str]
+) -> pd.DataFrame:
+    """Simple utility function to wrap pandas aggregation on ukrdcid
+
+    Args:
+        dataframe (pd.DataFrame): _description_
+        groupby_attributes (list[str]): _description_
+        value_column (str): _description_
+    """
+
+    return (
+        dataframe.drop_duplicates(subset=["ukrdcid"])
+        .groupby(groupby_attributes)
+        .size()
+        .reset_index(name="value")
+    )
+
+
 VASCULAR_MAPPING = {
     "AVF": "AVF/AVG",
     "AVFUO": "AVF/AVG",

@@ -184,7 +184,9 @@ class AbstractFacilityStatsCalculator(ABC):
 
         # Map gender to stats groups
         demographics_raw["gender"] = (
-            demographics_raw["gender"].map(GENDER_GROUP_MAP, None).fillna("Unknown")
+            demographics_raw["gender"]
+            .map(GENDER_GROUP_MAP, None)
+            .fillna("Unknown/Uncoded")
         )
 
         # Map ethnicity to stats groups
@@ -194,7 +196,7 @@ class AbstractFacilityStatsCalculator(ABC):
         demographics_raw["ethnicity"] = (
             demographics_raw["ethnicgroupcode"]
             .map(ethnic_group_map, None)
-            .fillna("Unknown")
+            .fillna("Unknown/Uncoded")
         )
 
         return demographics_raw
@@ -208,7 +210,7 @@ class AbstractFacilityStatsCalculator(ABC):
         # get demographic attributes from database
 
         # break up large queries into chunks to avoid PostgreSQL stack overflow
-        batch_size = 100
+        batch_size = 1000
         demographics = []
         for i in range(0, len(self._patient_cohort), batch_size):
             batch = self._patient_cohort.iloc[i : i + batch_size]
@@ -223,7 +225,6 @@ class AbstractFacilityStatsCalculator(ABC):
         self._patient_cohort = self._patient_cohort.loc[
             :, ~self._patient_cohort.columns.str.endswith("_extra")
         ]
-        print(":)")
 
     # For future implementation postcode lookup against external api
     def append_deprivation_index(self):
