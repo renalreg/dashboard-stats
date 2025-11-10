@@ -94,6 +94,7 @@ class AbstractFacilityStatsCalculator(ABC):
 
             report = pd.merge(report, patient_numbers, on="ukrdcid", how="left")
             report["nhsno"] = report["nhsno"].fillna("Unknown")
+            report = report.drop_duplicates()
 
         return population, BaseTable(
             headers=report.columns.tolist(),
