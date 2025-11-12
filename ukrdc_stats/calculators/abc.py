@@ -178,10 +178,8 @@ class AbstractFacilityStatsCalculator(ABC):
                 "agerange",
             ] = labels[i]
 
-        demographics_raw.loc[demographics_raw["is_alive"] == False, "agerange"] = (
-            "Deceased"
-        )
-        demographics_raw.loc[demographics_raw["is_alive"] == False, "age"] = None
+        demographics_raw.loc[not demographics_raw["is_alive"], "agerange"] = "Deceased"
+        demographics_raw.loc[not demographics_raw["is_alive"], "age"] = None
 
         # Map gender to stats groups
         demographics_raw["gender"] = (

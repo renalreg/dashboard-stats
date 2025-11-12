@@ -212,9 +212,12 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
     ):
         if to_time and date:
             date = to_time
+        elif date:
+            to_time = date
+        else:
+            date = to_time
 
         super().__init__(session, facility, date)
-        to_time = self.date
 
         if to_time > dt.datetime.now() - dt.timedelta(days=90):
             warnings.warn(

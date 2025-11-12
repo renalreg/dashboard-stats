@@ -23,7 +23,16 @@ with sessionmaker() as session:
     calculator.append_demographics()
     
     pop, report = calculator.produce_report(
-        output_columns = ["ukrdcid", "sendingfacility", "registry_code_type", "incident", "prevalent", "agerange", "ethnicity","gender"],
+        output_columns = [
+            "ukrdcid", 
+            "sendingfacility", 
+            "registry_code_type", 
+            "incident", 
+            "prevalent", 
+            "agerange", 
+            "ethnicity", 
+            "gender"
+        ],
         include_ni = True    
     )
     report.to_csv(".do_not_commit/report.csv")

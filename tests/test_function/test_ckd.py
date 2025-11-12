@@ -489,7 +489,8 @@ def test_extract_patient_cohort_returns_expected_columns(
     calculator._get_archive_data = MagicMock(return_value=mock_archive_data)
     calculator._get_test_results = MagicMock(return_value=mock_test_results)
 
-    result = calculator.extract_patient_cohort()
+    calculator.extract_patient_cohort()
+    result = calculator._patient_cohort
 
     assert not result.empty
     assert "externalid" in result.columns

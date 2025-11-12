@@ -207,32 +207,46 @@ def test_add_helper_columns(mock_extract_base_patient_cohort):
 
 def test_exclude_records():
     """Test the _exclude_records method with different 90+ day gaps relative to the time window."""
+
+    window_start = dt.datetime(2019,1,1)
+    window_stop = dt.datetime(2020,1,1)
+    big_gap = dt.timedelta(days=91)
+    small_gap = dt.timedelta(days=89)
+
+
     test_patient_cohort = pd.DataFrame([
         # Patient 1: Recovery gap extends beyond end of the window (exclude entirely)
-        {'ukrdcid': "1", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2020,2,2)},
-        {'ukrdcid': "1", 'fromtime': dt.datetime(2020,2,2), 'totime': dt.datetime(2022,1,2), 'next_fromtime': None},
+        {'rowid':1,'ukrdcid': "1", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2020,2,2)},
+        {'rowid':2,'ukrdcid': "1", 'fromtime': dt.datetime(2020,2,2), 'totime': dt.datetime(2022,1,2), 'next_fromtime': None},
         # Patient 2: Recovery gap ends within the time window (partially included)
-        {'ukrdcid': "2", 'fromtime': dt.datetime(2006,1,5), 'totime': dt.datetime(2019,1,20), 'next_fromtime': dt.datetime(2019,5,10)},
-        {'ukrdcid': "2", 'fromtime': dt.datetime(2019,5,10), 'totime': dt.datetime(2019,4,15), 'next_fromtime': None},
+        {'rowid':3,'ukrdcid': "2", 'fromtime': dt.datetime(2006,1,5), 'totime': dt.datetime(2019,1,20), 'next_fromtime': dt.datetime(2019,5,10)},
+        {'rowid':4,'ukrdcid': "2", 'fromtime': dt.datetime(2019,5,10), 'totime': dt.datetime(2019,4,15), 'next_fromtime': None},
         # Patient 3: Recovery gap ends after the time window (remain included)
-        {'ukrdcid': "3", 'fromtime': dt.datetime(2019,2,1), 'totime': dt.datetime(2020,1,2), 'next_fromtime': dt.datetime(2020,5,2)},
-        {'ukrdcid': "3", 'fromtime': dt.datetime(2020,5,2), 'totime': dt.datetime(2019,7,25), 'next_fromtime': None},
+        {'rowid':5,'ukrdcid': "3", 'fromtime': dt.datetime(2019,2,1), 'totime': dt.datetime(2020,1,2), 'next_fromtime': dt.datetime(2020,5,2)},
+        {'rowid':6,'ukrdcid': "3", 'fromtime': dt.datetime(2020,5,2), 'totime': dt.datetime(2019,7,25), 'next_fromtime': None},
+        # Patient 4: Continuous treatment without gaps
+        {'rowid':7,'ukrdcid': "4", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,3,1), 'next_fromtime': dt.datetime(2019,3,2)},
+        {'rowid':8,'ukrdcid': "4", 'fromtime': dt.datetime(2019,3,2), 'totime': dt.datetime(2020,1,1), 'next_fromtime': None},
+        # Patient 5: Multiple gaps
+        {'rowid':9,'ukrdcid': "5", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,2,1), 'next_fromtime': dt.datetime(2019,5,1)},
+        {'rowid':10,'ukrdcid': "5", 'fromtime': dt.datetime(2019,5,1), 'totime': dt.datetime(2019,6,1), 'next_fromtime': dt.datetime(2019,9,1)},
+        {'rowid':11,'ukrdcid': "5", 'fromtime': dt.datetime(2019,9,1), 'totime': dt.datetime(2020,1,1), 'next_fromtime': None},
+        # Patient 6: Gap exactly 90 days
+        {'rowid':12,'ukrdcid': "6", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,10), 'next_fromtime': dt.datetime(2019,4,10)},
+        {'rowid':13,'ukrdcid': "6", 'fromtime': dt.datetime(2019,4,10), 'totime': dt.datetime(2020,1,1), 'next_fromtime': None},
+        # Patient 7: Overlapping treatments
+        {'rowid':14,'ukrdcid': "7", 'fromtime': dt.datetime(2019,1,1), 'totime': dt.datetime(2019,1,15), 'next_fromtime': dt.datetime(2019,1,10)},
+        {'rowid':15,'ukrdcid': "7", 'fromtime': dt.datetime(2019,1,10), 'totime': dt.datetime(2020,1,1), 'next_fromtime': None},
     ])
 
     session = MagicMock()
     # Calculator time window ends on 2019-03-31
-    calculator = KRTStatsCalculator(session, "RFDOG", dt.datetime(2019,1,1), dt.datetime(2020,1,1))
+    calculator = KRTStatsCalculator(session, "RFDOG", from_time = window_start, to_time = window_stop)
 
     result_df = calculator._exclude_records(test_patient_cohort)
 
-    # Patient 1 should be fully excluded, so no rows with ukrdcid = 1
-    # Patients 2 and 3 should remain partially or fully included
-    ukrdcids_out = result_df.sort_values('ukrdcid').ukrdcid.tolist()
-    from_time_out = [
-        d.to_pydatetime() for d in result_df.sort_values('fromtime')['fromtime']
-    ]
-    assert ukrdcids_out == ["2", "3"]
-    assert from_time_out == [dt.datetime(2019, 2, 1, 0, 0), dt.datetime(2019, 5, 10, 0, 0)]
+    output_rows = sorted(result_df["rowid"].tolist())
+    assert  output_rows == [4, 5, 7, 8, 11, 12, 13, 14, 15]
 
 def test_extract_incident_prevalent():
     """
@@ -364,7 +378,7 @@ def test_extract_incident_prevalent():
     mock_data["dischargelocationcode"] = "RFCAT"
 
     session = MagicMock()
-    calculator = KRTStatsCalculator(session, "RFDOG", dt.datetime(2020,1,1), dt.datetime(2020,6,30))
+    calculator = KRTStatsCalculator(session, "RFDOG", from_time = dt.datetime(2020,1,1), to_time = dt.datetime(2020,6,30))
     
     result = calculator._extract_incident_prevalent(mock_data)
     
@@ -417,7 +431,7 @@ def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
     # Complete access data for all patients
     all_access_data = pd.DataFrame({
         'pid': ["1", "2", "4", "5"],
-        'qhd20': ['AVF', 'NLN', 'TLN', 'AVF'],
+        'accesstype': ['AVF', 'NLN', 'TLN', 'AVF'],
         'procedure_time': [dt.datetime(2020, 1, 1)] * 4
     })
     
@@ -426,7 +440,7 @@ def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
         # Filter access data to only include patients in the input list
         pids = patient_list.tolist()
         return all_access_data[all_access_data['pid'].isin(pids)]
-    
+
     mock_query_vascular_access.side_effect = mock_query_side_effect
     
     # Test for all subunits
