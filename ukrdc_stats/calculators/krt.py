@@ -35,7 +35,9 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dMetadata,
     BaseTable,
 )
+
 from ukrdc_stats.models.base import JSONModel
+from ukrdc_stats.models.reports import CohortReport
 
 
 class KRTMetadata(JSONModel):
@@ -86,13 +88,6 @@ class KRTStats(JSONModel):
 class UnitLevelKRTStats(JSONModel):
     all: KRTStats
     units: Dict[str, KRTStats]
-
-
-class CohortReport(JSONModel):
-    description: str
-    cohort: str
-    population: int
-    table: BaseTable
 
 
 def calculate_therapy_types(

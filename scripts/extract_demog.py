@@ -23,9 +23,8 @@ end = dt.datetime(2025,10,28)
 with sessionmaker() as session:
     calculator = DemographicStatsCalculator(
         session=session, 
-        facility = facility
+        facility = facility,
+        date = end
     )
-    calculator.extract_stats()
-    #report = calculator.generate_report()
-
-    #report.table.to_csv(".do_not_commit/report.csv")
+    report = calculator.generate_demographics_report()
+    report.table.to_csv(".do_not_commit/demog_report.csv")

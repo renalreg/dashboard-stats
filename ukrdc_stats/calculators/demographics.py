@@ -32,6 +32,7 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
+from ukrdc_stats.models.reports import CohortReport
 
 
 class DemographicsMetadata(JSONModel):
@@ -60,8 +61,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         session: Session,
         facility: str,
         date: Optional[dt.datetime] = None,
-        end_date: Optional[dt.datetime] = None,
-        start_date: Optional[dt.datetime] = None,
+        from_time: Optional[dt.datetime] = None,
+        to_time: Optional[dt.datetime] = None,
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
@@ -70,18 +71,22 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             facility (str): Facility to calculate the
             date (datetime, optional): Date to calculate at. Defaults to today.
         """
-        if date and end_date:
-            date = end_date
+        if to_time and date:
+            date = to_time
+        elif date:
+            to_time = date
+        else:
+            date = to_time
 
         super().__init__(session, facility, date)
 
         # Set the dates to calculate between, defaulting to today and 90 days ago
         self.end_date: dt.datetime = self.date
 
-        if not start_date:
-            self.start_date = self.end_date - dt.timedelta(days=90)
+        if not from_time:
+            self.from_time = self.end_date - dt.timedelta(days=365)
         else:
-            self.start_date = start_date
+            self.from_time = from_time
 
     def _extract_base_patient_cohort(
         self,
@@ -302,4 +307,16 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             ethnic_group=self._calculate_ethnic_group_code(),
             gender=self._calculate_gender(),
             age=self._calculate_age(),
+        )
+
+    def generate_demographics_report(self, include_ni: bool = False) -> CohortReport:
+        pop, report = self.produce_report(
+            output_columns=["pid", "ukrdcid", "gender", "ethnicity", "agerange"],
+            include_ni=include_ni,
+        )
+
+        desc = "Report on demographics for patients with a treatment registered in the ukrdc"
+
+        return CohortReport(
+            description=desc, cohort="UKRR Extract", population=pop, table=report
         )
