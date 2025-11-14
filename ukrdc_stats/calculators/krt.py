@@ -931,7 +931,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                 summary="Vascular access for incident patients registered on their first dialysis session.",
                 description=dialysis_descriptions["INCIDENT_INITIAL_ACCESS"],
                 axis_titles=AxisLabels2d(x="Line Type", y="No. of Patients"),
-                population_size=0,
+                population_size=sum(y_data),
             ),
             data=Labelled2dData(x=x_data, y=y_data),
         )
