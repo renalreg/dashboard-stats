@@ -55,3 +55,4 @@ requires = ["poetry-core>=1.0.0"]
 
 [tool.isort]
 profile = 'black'
+
