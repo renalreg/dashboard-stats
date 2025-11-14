@@ -557,6 +557,5 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
 
         return cohort
 
-    def extract_patient_cohort(self, extract_all: bool = True):
+    def _extract_patient_cohort(self, extract_all: bool = True):
         self._patient_cohort = self._extract_base_patient_cohort(extract_all)
-        return self._patient_cohort

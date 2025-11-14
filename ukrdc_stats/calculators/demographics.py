@@ -20,10 +20,7 @@ from ukrdc_sqla.ukrdc import (
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
 from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import (
-    age_from_dob,
-    map_codes,
-    _calculate_base_patient_histogram,
-    _mapped_if_exists,
+    aggregate_data,
     _get_satellite_list,
 )
 
@@ -35,9 +32,7 @@ from ukrdc_stats.models.generic_2d import (
     Labelled2dData,
     Labelled2dMetadata,
 )
-
-# NHS digital gender map
-GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
+from ukrdc_stats.models.reports import CohortReport
 
 
 class DemographicsMetadata(JSONModel):
@@ -66,8 +61,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         session: Session,
         facility: str,
         date: Optional[dt.datetime] = None,
-        end_date: Optional[dt.datetime] = None,
-        start_date: Optional[dt.datetime] = None,
+        from_time: Optional[dt.datetime] = None,
+        to_time: Optional[dt.datetime] = None,
     ):
         """Initialises the PatientDemographicStats class and immediately runs the relevant query
 
@@ -76,13 +71,22 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             facility (str): Facility to calculate the
             date (datetime, optional): Date to calculate at. Defaults to today.
         """
-        super().__init__(session, facility)
+        if to_time and date:
+            date = to_time
+        elif date:
+            to_time = date
+        else:
+            date = to_time
+
+        super().__init__(session, facility, date)
 
         # Set the dates to calculate between, defaulting to today and 90 days ago
-        self.end_date: dt.datetime = date or end_date or dt.datetime.today()
-        self.start_date: dt.datetime = start_date or self.end_date - dt.timedelta(
-            days=90
-        )
+        self.end_date: dt.datetime = self.date
+
+        if not from_time:
+            self.from_time = self.end_date - dt.timedelta(days=365)
+        else:
+            self.from_time = from_time
 
     def _extract_base_patient_cohort(
         self,
@@ -107,10 +111,19 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # the renalregistry database). See here for more information:
         # https://github.com/renalreg/ukrr_quarterly_extract/blob/ec65cc06858cdabaa379e9e18b8f0614fc2c9af2/ukrr_extract/extract_functions.py#L342
 
+        patient_query = (
+            select(
+                PatientRecord.pid, PatientRecord.ukrdcid, PatientRecord.sendingfacility
+            )
+            .distinct(PatientRecord.ukrdcid)
+            .select_from(PatientRecord)
+        )
+
         if ukrr_expanded:
-            ukkr_cohort_query = (
-                select(Treatment.pid)
-                .distinct()
+            patient_query = (
+                patient_query.join(Treatment, PatientRecord.pid == Treatment.pid)
+                .join(ResultItem, PatientRecord.pid == ResultItem.pid)
+                .join(Observation, PatientRecord.pid == Observation.pid)
                 .where(
                     or_(
                         and_(
@@ -119,54 +132,36 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                                 Treatment.healthcarefacilitycode.in_(sats),
                                 Treatment.healthcarefacilitycode.in_(self.facility),
                             ),
-                            or_(
-                                Treatment.totime >= self.end_date,
-                                Treatment.totime.is_(None),
-                            ),
                         ),
-                        and_(
-                            ResultItem.observation_time < self.start_date,  # pylint: disable=C0121
-                            ResultItem.observation_time >= self.end_date,
+                        or_(
+                            Treatment.totime >= self.end_date,
+                            Treatment.totime.is_(None),
                         ),
-                        and_(
-                            Observation.observation_time < self.start_date,  # pylint: disable=C0121
-                            Observation.observation_time >= self.end_date,
-                        ),
-                    )
+                    ),
+                    and_(
+                        ResultItem.observation_time < self.start_date,  # pylint: disable=C0121
+                        ResultItem.observation_time >= self.end_date,
+                    ),
+                    and_(
+                        Observation.observation_time < self.start_date,  # pylint: disable=C0121
+                        Observation.observation_time >= self.end_date,
+                    ),
                 )
             )
         else:
-            ukkr_cohort_query = (
-                select(Treatment.pid)
-                .distinct()
-                .where(
-                    Treatment.fromtime < self.end_date,
-                    or_(
-                        Treatment.healthcarefacilitycode.in_(sats),
-                        Treatment.healthcarefacilitycode == self.facility,
-                    ),
-                    or_(
-                        Treatment.totime >= self.end_date,
-                        Treatment.totime.is_(None),
-                    ),
-                )
+            patient_query = patient_query.join(
+                Treatment, PatientRecord.pid == Treatment.pid
+            ).where(
+                Treatment.fromtime < self.end_date,
+                or_(
+                    Treatment.healthcarefacilitycode.in_(sats),
+                    Treatment.healthcarefacilitycode == self.facility,
+                ),
+                or_(
+                    Treatment.totime >= self.end_date,
+                    Treatment.totime.is_(None),
+                ),
             )
-
-        # select all patients who have a patientrecord sent from the facility
-        patient_query = (
-            select(
-                PatientRecord.ukrdcid,
-                Patient.gender,
-                Patient.ethnic_group_code,
-                Patient.birth_time,
-                Patient.death_time,
-            )
-            .join(PatientRecord, Patient.pid == PatientRecord.pid)
-            .where(
-                PatientRecord.sendingfacility == self.facility,
-                PatientRecord.pid.in_(ukkr_cohort_query),
-            )
-        )
 
         # limit stats to ukrdc
         if limit_to_ukrdc:
@@ -208,9 +203,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        gender = _calculate_base_patient_histogram(
-            self._patient_cohort, "gender", GENDER_GROUP_MAP
-        )
+        gender_aggregated = aggregate_data(self._patient_cohort, ["gender"])
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -220,7 +213,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Gender", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(gender, "gender").tolist(), y=gender.Count.tolist()
+                x=gender_aggregated.gender.tolist(), y=gender_aggregated.value.tolist()
             ),
         )
 
@@ -228,13 +221,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        ethnic_group_map = map_codes(
-            "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", self.session
-        )
-
-        ethnic_group_code = _calculate_base_patient_histogram(
-            self._patient_cohort, "ethnic_group_code", ethnic_group_map
-        )
+        ethnicity_aggregated = aggregate_data(self._patient_cohort, ["ethnicity"])
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -244,8 +231,8 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 axis_titles=AxisLabels2d(x="Ethnicity", y="No. of Patients"),
             ),
             data=Labelled2dData(
-                x=_mapped_if_exists(ethnic_group_code, "ethnic_group_code").tolist(),
-                y=ethnic_group_code.Count.tolist(),
+                x=ethnicity_aggregated.ethnicity.tolist(),
+                y=ethnicity_aggregated.value.tolist(),
             ),
         )
 
@@ -253,14 +240,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # add column with ages and calculate histogram
-        # self._patient_cohort["age"] = self._patient_cohort["birth_time"][
-        #    self._patient_cohort.death_time.isna()
-        # ].apply(lambda dob: age_from_dob(self.end_date, dob))
-        self._patient_cohort["age"] = self._patient_cohort["birth_time"].apply(
-            lambda dob: age_from_dob(self.end_date, dob)
-        )
-        age = _calculate_base_patient_histogram(self._patient_cohort, "age")
+        # aggregate age and filter out deceased (this may make the total less
+        # than other demographics).
+        age_aggregated = aggregate_data(self._patient_cohort, ["agerange"])
+        age_aggregated = age_aggregated[age_aggregated.agerange != "Deceased"]
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
@@ -269,10 +252,12 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
                 description=demographic_descriptions["AGE_DESCRIPTION"],
                 axis_titles=AxisLabels2d(x="Age", y="No. of Patients"),
             ),
-            data=Labelled2dData(x=age.age.tolist(), y=age.Count.tolist()),
+            data=Labelled2dData(
+                x=age_aggregated.agerange.tolist(), y=age_aggregated.value.tolist()
+            ),
         )
 
-    def extract_patient_cohort(
+    def _extract_patient_cohort(
         self,
         include_tracing: Optional[bool] = False,
         limit_to_ukrdc: Optional[bool] = True,
@@ -288,6 +273,7 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             limit_to_ukrdc=limit_to_ukrdc,
             ukrr_expanded=ukrr_expanded,
         )
+        self.append_demographics()
 
     def extract_stats(
         self,
@@ -321,4 +307,16 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
             ethnic_group=self._calculate_ethnic_group_code(),
             gender=self._calculate_gender(),
             age=self._calculate_age(),
+        )
+
+    def generate_demographics_report(self, include_ni: bool = False) -> CohortReport:
+        pop, report = self.produce_report(
+            output_columns=["pid", "ukrdcid", "gender", "ethnicity", "agerange"],
+            include_ni=include_ni,
+        )
+
+        desc = "Report on demographics for patients with a treatment registered in the ukrdc"
+
+        return CohortReport(
+            description=desc, cohort="UKRR Extract", population=pop, table=report
         )
