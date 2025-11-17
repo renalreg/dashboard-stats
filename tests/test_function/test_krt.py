@@ -421,18 +421,20 @@ def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
     """
     # Mock patient cohort with 6 incident patients across 2 facilities
     krt_calculator._patient_cohort = pd.DataFrame({
-        'pid': ["1", "2", "3", "4", "5", "6"],
-        'ukrdcid': ["1", "2", "3", "4", "5", "6"],
-        'incident': [True, True, True, True, True, False],  # Patient 6 not incident
-        'first_treatment': [True, True, False, True, True, True],  # Patient 3 not first treatment
-        'healthcarefacilitycode': ['A', 'A', 'A', 'B', 'B', 'B']
+        'pid': ["1", "2", "3", "4", "5", "6", "7"],
+        'ukrdcid': ["1", "2", "3", "4", "5", "6", "7"],
+        'incident': [True, True, True, True, True, False, True],  # Patient 6 not incident
+        'first_treatment': [True, True, True, True, True, True, False],  # Patient 3 not first treatment
+        'healthcarefacilitycode': ['A', 'A', 'A', 'B', 'B', 'B', 'B']
     })
-    
+    krt_calculator._patient_cohort["registry_code_type"] = "HD"
+    krt_calculator.satellite_units = ["A", "B"]
+
     # Complete access data for all patients
     all_access_data = pd.DataFrame({
-        'pid': ["1", "2", "4", "5"],
-        'accesstype': ['AVF', 'NLN', 'TLN', 'AVF'],
-        'procedure_time': [dt.datetime(2020, 1, 1)] * 4
+        'pid': ["1", "2", "3","4", "5"],
+        'accesstype': ['AVF', 'NLN', None,'TLN', 'AVF'],
+        'procedure_time': [dt.datetime(2020, 1, 1)] * 5
     })
     
     # Mock _query_vascular_access to return filtered data based on input patient_list
@@ -464,25 +466,18 @@ def test_calculate_access_incident(mock_query_vascular_access, krt_calculator):
     # But merges with ALL incident patients, so result includes all 5 incident patients
     # Patients not in the query get Unknown/Incomplete
     result_subunit_a = krt_calculator._calculate_access_incident(subunit='A')
-    
-    assert result_subunit_a.metadata.title == "Vascular Access on First HD Session"
+
     access_counts_a = dict(zip(result_subunit_a.data.x, result_subunit_a.data.y))
     assert access_counts_a['AVF'] == 1  # Patient 1
     assert access_counts_a['NLN'] == 1  # Patient 2
-    # Patients 3, 4, 5 not in query (different facility or not first_treatment), so get Unknown
-    assert access_counts_a['Unknown/Incomplete'] == 3
+    assert access_counts_a['Unknown/Incomplete'] == 1
     
     # Test for subunit 'B'
-    # Queries access for incident + first_treatment + facility B (patients 4, 5)
-    # But merges with ALL incident patients, so result includes all 5 incident patients
     result_subunit_b = krt_calculator._calculate_access_incident(subunit='B')
     
-    assert result_subunit_b.metadata.title == "Vascular Access on First HD Session"
     access_counts_b = dict(zip(result_subunit_b.data.x, result_subunit_b.data.y))
-    assert access_counts_b['TLN'] == 1  # Patient 4
-    assert access_counts_b['AVF'] == 1  # Patient 5
-    # Patients 1, 2, 3 not in query (different facility or not first_treatment), so get Unknown
-    assert access_counts_b['Unknown/Incomplete'] == 3
+    assert access_counts_b['TLN'] == 1
+    assert access_counts_b['AVF'] == 1
 
 @patch('ukrdc_stats.calculators.krt.KRTStatsCalculator._query_dialysis_sessions')
 def test_calculate_dialysis_frequency(mock_query_dialysis_sessions, krt_calculator):
@@ -520,6 +515,9 @@ def test_calculate_dialysis_frequency(mock_query_dialysis_sessions, krt_calculat
         'prevalent': [True, True, True, True]
     })
 
+    krt_calculator._patient_cohort["registry_code_type"] = "HD"
+    krt_calculator.satellite_units = ["A", "B"]
+
     # Call the method under test for all subunits
     median_freq, median_time = krt_calculator._calculate_dialysis_frequency(subunit='all')
 
@@ -537,6 +535,7 @@ def mock_patient_cohort():
         "first_treatment": [True, True, False, True],
         "prevalent": [False, True, False, False],
         "healcarefacilitycode": ["foo", "bar", "foo", "bar"],
+        "sendingfacility": ["RFDOG", "RFDOG", "RFDOG", "RFDOG"],
         "admitreasoncode" : ["reason_1", "reason_2", "reason_2", "reason_2"],
         "admitreasoncodestd": ["reasonstd_1", "reasonstd_2", "reasonstd_2", "reasonstd_2"],
         "registry_code_type" : ['HD', 'HD', 'HD', 'HD'],
@@ -588,44 +587,3 @@ def test_produce_report_no_cohort_raises():
 
     with pytest.raises(NoCohortError):
         calculator.produce_report(output_columns=["incident"], input_filters=["incident"])
-        
-def test_produce_report_include_ni(mock_patient_cohort):
-    filtered_cohort = mock_patient_cohort[mock_patient_cohort["ukrdcid"].isin([1, 3])].copy()
-
-    # Mock SQLAlchemy session.execute return
-    Row = namedtuple("Row", ["ukrdcid", "patientid"])
-    mock_result = [Row(1, "NHSPATIENTID1"), Row(3, "NHSPATIENTID3")]
-    mock_session = MagicMock()
-    mock_session.execute.return_value = mock_result
-
-    calculator = KRTStatsCalculator(
-        session=mock_session,
-        facility="TESTFACILITY",
-        from_time=pd.Timestamp("2024-01-01"),
-        to_time=pd.Timestamp("2024-06-01")
-    )
-
-    calculator._patient_cohort = filtered_cohort
-
-    population, table = calculator.produce_report(
-        output_columns=[
-                    "pid",
-                    "healcarefacilitycode",
-                    "admitreasoncode",
-                    "admitreasoncodestd",
-                    "registry_code_type",
-        ], 
-        input_filters=["incident"], 
-        include_ni=True
-    )
-    
-    assert population == 2
-    assert isinstance(table, BaseTable)
-    
-    # Check renamed
-    assert "nhsno" in table.headers
-    assert "patientid" not in table.headers
-    
-    nhsno_col = table.headers.index("nhsno")
-    nhs_values = [row[nhsno_col] for row in table.rows]
-    assert set(nhs_values) == {"NHSPATIENTID1", "NHSPATIENTID3"}

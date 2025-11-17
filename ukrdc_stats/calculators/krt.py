@@ -22,7 +22,7 @@ from ukrdc_sqla.ukrdc import (
 )
 
 from ukrdc_stats.calculators.abc import AbstractFacilityStatsCalculator
-from ukrdc_stats.utils import _get_satellite_list
+from ukrdc_stats.utils import _get_satellite_list, aggregate_data
 from ukrdc_stats.exceptions import NoCohortError
 from pydantic import Field
 
@@ -121,20 +121,18 @@ def calculate_therapy_types(
     ] = "Unknown/Incomplete"
     patient_cohort.loc[:, "qbl05"] = patient_cohort["qbl05"].replace(mappings)
 
-    # aggregate patients on modality and treatment supervision
-    aggregate_patients = (
-        patient_cohort.groupby(["registry_code_type", "qbl05"])["ukrdcid"]
-        .count()
-        .reset_index(name="count")
-        .sort_values("registry_code_type")
-    )
+    aggregate_patients = aggregate_data(
+        patient_cohort,
+        groupby_attributes=["registry_code_type", "qbl05"],
+        deduplicate=True,
+    ).sort_values("registry_code_type")
 
     # Create labels and patients lists
     labels = [
         f"{row.registry_code_type} {row.qbl05}".strip()
         for _, row in aggregate_patients.iterrows()
     ]
-    patients = aggregate_patients["count"].tolist()
+    patients = aggregate_patients["value"].tolist()
 
     return labels, patients
 
@@ -230,6 +228,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # defines encoding of KRT treatment types
         self.registry_code_types: List[str] = ["HD", "PD", "TX"]
         self.home_therapy_code_types: List[str] = ["HOSP", "SATL", "INCENTRE"]
+        self.satellite_units = _get_satellite_list(facility, session)
 
     def _extract_patient_cohort(self, limit_to_ukrdc: Optional[bool] = True):
         """
@@ -352,6 +351,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             )
         )
 
+        # apply cutoff. Implicitly if calculating for date more recent than
+        # cutoff we allow all fromtimes
         if dt.datetime.now() - self.time_window[1] > dt.timedelta(
             days=self.recovery_window
         ):
@@ -596,14 +597,25 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # Prevalence point defined at the end of the window patients are
         # counted as prevalent if their treatment timeline spans the end of the
         # window and is greater than 90 days.
-        base_cohort["prevalent"] = (
-            (base_cohort["timeline_start"] <= self.time_window[1])
+        # base_cohort["prevalent"] = (
+        #    (base_cohort["timeline_start"] <= self.time_window[1])
+        #    & (
+        #        (base_cohort["timeline_stop"] > self.time_window[1])
+        #        | base_cohort["timeline_stop"].isna()
+        #    )
+        #    & (base_cohort["timeline_length"] > dt.timedelta(days=90))
+        # )
+
+        # TODO: reintroduce the concept of being on treatment for more than 90
+        # days
+        prevalent_ids = base_cohort[
+            (base_cohort["fromtime"] < self.time_window[1])
             & (
-                (base_cohort["timeline_stop"] > self.time_window[1])
-                | base_cohort["timeline_stop"].isna()
+                (base_cohort["totime"] > self.time_window[1])
+                | base_cohort["totime"].isna()
             )
-            & (base_cohort["timeline_length"] > dt.timedelta(days=90))
-        )
+        ].ukrdcid.drop_duplicates()
+        base_cohort["prevalent"] = base_cohort.ukrdcid.isin(prevalent_ids)
 
         return base_cohort
 
@@ -660,12 +672,16 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             & self._patient_cohort.prevalent
         ]
 
-        if subunit != "all":
+        if subunit == "all":
+            patient_list = patient_list[
+                (patient_list.healthcarefacilitycode == self.facility)
+                | (patient_list.healthcarefacilitycode.isin(self.satellite_units))
+                | patient_list.healthcarefacilitycode.isna()
+            ].pid.drop_duplicates()
+        else:
             patient_list = patient_list[
                 patient_list.healthcarefacilitycode == subunit
             ].pid.drop_duplicates()
-        else:
-            patient_list = patient_list.pid.drop_duplicates()
 
         dialysis_frequency_meta = Labelled2dMetadata(
             title="Median Haemodialysis Frequency",
@@ -889,23 +905,35 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         if self._patient_cohort is None:
             raise NoCohortError("No patient cohort has been extracted")
 
-        # filter by subunit
+        # select pids of incident hd patients
         if subunit == "all":
-            patient_list = self._patient_cohort[
+            self._incident_access = self._patient_cohort[
                 self._patient_cohort.incident
-            ].pid.drop_duplicates()
+                & (
+                    (self._patient_cohort.healthcarefacilitycode == self.facility)
+                    | (
+                        self._patient_cohort.healthcarefacilitycode.isin(
+                            self.satellite_units
+                        )
+                    )
+                    | self._patient_cohort.healthcarefacilitycode.isna()
+                )
+                & self._patient_cohort.first_treatment
+                & (self._patient_cohort.registry_code_type == "HD")
+            ]
         else:
-            patient_list = self._patient_cohort[
+            self._incident_access = self._patient_cohort[
                 self._patient_cohort.incident
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
+                & (self._patient_cohort.registry_code_type == "HD")
                 & self._patient_cohort.first_treatment
-            ].pid.drop_duplicates()
+            ]
 
         # function runs queries against the vascular access table and map to patients
-        initial_access_data = self._query_vascular_access(patient_list)
-        self._incident_access = self._patient_cohort[
-            self._patient_cohort.incident
-        ].merge(
+        initial_access_data = self._query_vascular_access(
+            self._incident_access.pid.drop_duplicates()
+        )
+        self._incident_access = self._incident_access.merge(
             initial_access_data[["pid", "accesstype"]],
             on="pid",
             how="left",
@@ -916,12 +944,10 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         ] = "Unknown/Incomplete"
 
         # aggregate cohort
-        aggregate_patients = (
-            self._incident_access.groupby(["accesstype"])["ukrdcid"]
-            .count()
-            .reset_index(name="value")
-            .sort_values("accesstype")
+        aggregate_patients = aggregate_data(
+            self._incident_access, groupby_attributes=["accesstype"]
         )
+
         x_data = list(aggregate_patients.accesstype)
         y_data = list(aggregate_patients.value)
 
@@ -978,11 +1004,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         ] = "Unknown/Incomplete"
 
         # Aggregate cohort
-        aggregate_patients = (
-            self._prevalent_access.groupby(["accesstype"])["ukrdcid"]
-            .count()
-            .reset_index(name="value")
-            .sort_values("accesstype")
+        aggregate_patients = aggregate_data(
+            self._prevalent_access, groupby_attributes=["accesstype"]
         )
         x_data = list(aggregate_patients.accesstype)
         y_data = list(aggregate_patients.value)
@@ -1016,7 +1039,17 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # TODO: add in something to assign patients to where they were first seen
         if subunit == "all":
             incident_cohort = self._patient_cohort[
-                self._patient_cohort.incident & self._patient_cohort.first_treatment
+                self._patient_cohort.incident
+                & self._patient_cohort.first_treatment
+                & (
+                    (self._patient_cohort.healthcarefacilitycode == self.facility)
+                    | (
+                        self._patient_cohort.healthcarefacilitycode.isin(
+                            self.satellite_units
+                        )
+                    )
+                    | self._patient_cohort.healthcarefacilitycode.isna()
+                )
             ]
         else:
             incident_cohort = self._patient_cohort[
@@ -1053,13 +1086,24 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # filter patient cohort to get the first treatment type of each patient
         if subunit == "all":
             prevalent_cohort = self._patient_cohort[
-                self._patient_cohort.prevalent & self._patient_cohort.first_treatment
+                self._patient_cohort.prevalent
+                & self._patient_cohort.first_treatment
+                & (
+                    (self._patient_cohort.healthcarefacilitycode == self.facility)
+                    | (
+                        self._patient_cohort.healthcarefacilitycode.isin(
+                            self.satellite_units
+                        )
+                    )
+                    | self._patient_cohort.healthcarefacilitycode.isna()
+                )
             ]
 
         else:
             prevalent_cohort = self._patient_cohort[
                 self._patient_cohort.prevalent
                 # & self._patient_cohort.most_recent
+                & self._patient_cohort.first_treatment
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
             ]
 
@@ -1142,7 +1186,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         unit_stats: Dict[str, KRTStats] = {}
 
         # loop over each unit and calculate stats
-        for unit in _get_satellite_list(self.facility, self.session):
+        for unit in self.satellite_units:
             unit_stats[unit] = self.extract_satellite_stats(unit)
 
         unit_stats[self.facility] = self.extract_satellite_stats(self.facility)
