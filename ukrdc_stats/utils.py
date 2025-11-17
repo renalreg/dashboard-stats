@@ -333,8 +333,13 @@ def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
     return
 
 
+def row_completeness(row: pd.Series, groupby_attributes: list[str]) -> int:
+    """Calculate completeness based on specified groupby attributes"""
+    return row[groupby_attributes].notnull().sum()
+
+
 def aggregate_data(
-    dataframe: pd.DataFrame, groupby_attributes: list[str]
+    dataframe: pd.DataFrame, groupby_attributes: list[str], deduplicate: bool = True
 ) -> pd.DataFrame:
     """Simple utility function to wrap pandas aggregation on ukrdcid
 
@@ -344,12 +349,23 @@ def aggregate_data(
         value_column (str): _description_
     """
 
-    return (
-        dataframe.drop_duplicates(subset=["ukrdcid"])
-        .groupby(groupby_attributes)
-        .size()
-        .reset_index(name="value")
-    )
+    if deduplicate:
+        # Calculate completeness for each row
+        dataframe = dataframe.assign(
+            completeness=dataframe.apply(
+                lambda row: row_completeness(row, groupby_attributes), axis=1
+            )
+        )
+
+        # Sort by completeness and drop duplicates
+        dataframe = (
+            dataframe.sort_values(by="completeness", ascending=False)
+            .drop(columns=["completeness"])
+            .drop_duplicates(subset=["ukrdcid"])
+        )
+
+    # Perform aggregation
+    return dataframe.groupby(groupby_attributes).size().reset_index(name="value")
 
 
 VASCULAR_MAPPING = {
