@@ -22,6 +22,7 @@ from ukrdc_stats.exceptions import NoCohortError
 from ukrdc_stats.utils import (
     aggregate_data,
     _get_satellite_list,
+    AGE_BINS,
 )
 
 from ukrdc_stats.descriptions import demographic_descriptions
@@ -244,6 +245,11 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
         # than other demographics).
         age_aggregated = aggregate_data(self._patient_cohort, ["agerange"])
         age_aggregated = age_aggregated[age_aggregated.agerange != "Deceased"]
+
+        # Define the desired order for age ranges
+        age_order = AGE_BINS["labels"]
+        age_aggregated['agerange'] = pd.Categorical(age_aggregated['agerange'], categories=age_order, ordered=True)
+        age_aggregated = age_aggregated.sort_values('agerange')
 
         return Labelled2d(
             metadata=Labelled2dMetadata(

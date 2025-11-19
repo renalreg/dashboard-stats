@@ -11,8 +11,8 @@ conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
 sessionmaker = conn.session_maker()
 
 facility = "RAJ"
-end = dt.datetime(2025,11,17)
-start = end - dt.timedelta(days=30)
+end = dt.datetime(2023,12,31)
+start = end - dt.timedelta(days=365)
 
 with sessionmaker() as session:
     calculator = KRTStatsCalculator(

@@ -379,3 +379,9 @@ VASCULAR_MAPPING = {
 
 # NHS digital gender map
 GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unknown"}
+
+
+AGE_BINS = {
+    "labels" : ["<18", "18-34", "35-54", "55-74", ">=75"],
+    "bins" : [0, 18, 35, 55, 75, 150]
+}

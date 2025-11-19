@@ -16,7 +16,7 @@ from ukrdc_stats.models.generic_2d import BaseTable
 from ukrdc_stats.exceptions import NoCohortError
 
 from ukrdc_sqla.ukrdc import PatientNumber
-from ukrdc_stats.utils import GENDER_GROUP_MAP, map_codes
+from ukrdc_stats.utils import GENDER_GROUP_MAP, map_codes, AGE_BINS
 
 
 class AbstractFacilityStatsCalculator(ABC):
@@ -169,8 +169,8 @@ class AbstractFacilityStatsCalculator(ABC):
     def _relabel_demographics(self, demographics_raw):
         # Map age to fixed bins
         demographics_raw["age"] = demographics_raw["age"].astype(int)
-        bins = [0, 18, 35, 55, 75, 150]
-        labels = ["<18", "18-34", "35-54", "55-74", ">=75"]
+        bins = AGE_BINS["bins"]
+        labels = AGE_BINS["labels"]
         for i in range(len(labels)):
             demographics_raw.loc[
                 (bins[i + 1] > demographics_raw["age"])
