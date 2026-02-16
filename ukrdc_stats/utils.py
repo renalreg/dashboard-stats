@@ -151,9 +151,13 @@ def map_codes(source_std: str, destination_std: str, session: Session) -> dict:
         )
     )
 
-    codes = pd.DataFrame(session.execute(query))
+    codes = {row.source_code: row.destination_code for row in session.execute(query)}
+    if not codes:
+        raise ValueError(
+            f"No codes found for source coding standard '{source_std}' and destination coding standard '{destination_std}'"
+        )
 
-    return dict(zip(codes.source_code, codes.destination_code))
+    return codes
 
 
 def lookup_codes(
