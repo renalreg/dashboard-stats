@@ -510,9 +510,13 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         base_cohort["first_treatment"] = (
             base_cohort["timeline_start"] == base_cohort["fromtime"]
         )
-        base_cohort["most_recent"] = (
-            base_cohort["timeline_stop"] == base_cohort["totime"]
-        )
+        base_cohort["most_recent"] = False
+        base_cohort.loc[
+            base_cohort.groupby("ukrdcid").apply(
+                lambda x: x["totime"].idxmax() if x["totime"].notna().any() else x["fromtime"].idxmax()
+            ).values,
+            "most_recent"
+        ] = True
 
         # Calculate length of timeline
         # Null value here is >90days
@@ -1102,8 +1106,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         else:
             prevalent_cohort = self._patient_cohort[
                 self._patient_cohort.prevalent
-                # & self._patient_cohort.most_recent
-                & self._patient_cohort.first_treatment
+                & self._patient_cohort.most_recent
+                #& self._patient_cohort.first_treatment
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
             ]
 
@@ -1235,7 +1239,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
                     "totime",
                     "registry_code_type",
                 ],
-                [cohort, "first_treatment", f"sendingfacility == '{self.facility}'"],
+                [cohort, "most_recent", f"sendingfacility == '{self.facility}'"],
                 include_ni=include_ni,
             )
 
