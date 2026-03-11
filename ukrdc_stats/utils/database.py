@@ -11,10 +11,10 @@ def load_ukrdc_url_from_config(server_name: str, keypath: str) -> URL:
     """Load the UKRDC configuration from a JSON file."""
 
     config_path = Path(keypath)
-    
+
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found at {config_path}")
-    
+
     with open(config_path, "r") as f:
         ukrdc_config: dict[str, Any] = json.load(f)
 
@@ -59,6 +59,7 @@ def get_sessionmaker(server_name: str, keypath: str) -> sessionmaker:
     db_url = load_ukrdc_url_from_config(server_name, keypath)
     engine = create_engine(db_url)
     return sessionmaker(bind=engine)
+
 
 def get_archive_sessionmaker(session: Session) -> sessionmaker:
     """helper function to take a ukrdc session and generate an xml archive

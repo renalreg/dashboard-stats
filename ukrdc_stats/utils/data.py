@@ -214,45 +214,49 @@ def row_completeness(row: pd.Series, groupby_attributes: list[str]) -> int:
 
 
 def aggregate_data(
-    cohort_wide: pd.DataFrame, 
+    cohort_wide: pd.DataFrame,
     columns: list[str],
 ) -> pd.DataFrame:
-    """Function generates and aggregated dataframe in long format with 
+    """Function generates and aggregated dataframe in long format with
     headcounts (ukrdcid) split by the specified columns. The remaining columns
     will be rolled into the attribute (column name) and variable (column value)
     columns.
 
     Args:
-        cohort_wide (pd.DataFrame): dataframe containing patient data 
+        cohort_wide (pd.DataFrame): dataframe containing patient data
         columns (list[str]): _description_
 
     Returns:
         pd.DataFrame: _description_
     """
-    
+
     if "ukrdcid" not in cohort_wide.columns:
         raise MissingColumnError("ukrdcid not found in cohort_wide")
 
     if not all(col in cohort_wide.columns for col in columns):
         raise MissingColumnError(
-            f"input variable cohort wide does not contain all the specified columns"
+            "input variable cohort wide does not contain all the specified columns"
         )
-    
+
     columns.insert(0, "ukrdcid")
     value_columns = [col for col in cohort_wide.columns if col not in columns]
 
-    # transform dataframe into long form and count heads 
+    # transform dataframe into long form and count heads
     cohort_long = cohort_wide.melt(
-        id_vars=columns, 
-        value_vars=value_columns, 
-        var_name="attribute", 
-        value_name="variable"
-    )   
-    cohort_long = cohort_long.groupby(
-        ["attribute", "variable"] + [col for col in columns if col != "ukrdcid"], 
-        dropna=False
-    ).agg({"ukrdcid": "nunique"}).reset_index()
-    
+        id_vars=columns,
+        value_vars=value_columns,
+        var_name="attribute",
+        value_name="variable",
+    )
+    cohort_long = (
+        cohort_long.groupby(
+            ["attribute", "variable"] + [col for col in columns if col != "ukrdcid"],
+            dropna=False,
+        )
+        .agg({"ukrdcid": "nunique"})
+        .reset_index()
+    )
+
     cohort_long = cohort_long.rename(columns={"ukrdcid": "count"})
 
     return cohort_long
@@ -272,6 +276,6 @@ GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unkn
 
 
 AGE_BINS = {
-    "labels" : ["<18", "18-34", "35-54", "55-74", ">=75"],
-    "bins" : [0, 18, 35, 55, 75, 150]
+    "labels": ["<18", "18-34", "35-54", "55-74", ">=75"],
+    "bins": [0, 18, 35, 55, 75, 150],
 }

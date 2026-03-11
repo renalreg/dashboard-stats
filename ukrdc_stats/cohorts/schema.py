@@ -1,13 +1,14 @@
 """
-Version 3.0.0 of dashboard stats introduces pydantic style schemas the 
-dataframes which are integral to the dashboard stats library. The purpose of 
+Version 3.0.0 of dashboard stats introduces pydantic style schemas the
+dataframes which are integral to the dashboard stats library. The purpose of
 this change is to introduce better type checking and try and eliminate some of
 the errors which arise from dataframes not having the expected columns.
 
 In the first instance the schema will just look a type hinting and validating
-which columns can be null but pandera provides many much more sophisticated 
+which columns can be null but pandera provides many much more sophisticated
 options here.
 """
+
 import pandera.pandas as pa
 from pandera.typing import Series
 
@@ -38,6 +39,7 @@ class krt_base_schema(pa.DataFrameModel):
     class Config:
         coerce = True
 
+
 class demog_base_schema(pa.DataFrameModel):
     pid: Series[str]
     ukrdcid: Series[str]
@@ -46,7 +48,7 @@ class demog_base_schema(pa.DataFrameModel):
     ethnic_group: Series[str] = pa.Field(nullable=True)
     birth_time: Series[pa.DateTime] = pa.Field(nullable=True)
     deathtime: Series[pa.DateTime] = pa.Field(nullable=True)
-    
+
     class Config:
         coerce = True
 
@@ -69,7 +71,7 @@ class ckd_ukrdc_base_schema(pa.DataFrameModel):
     ethnicgroupdesc: Series[str] = pa.Field(nullable=True)
     ukkaethnicity: Series[str] = pa.Field(nullable=True)
     registry_code_type: Series[str]
-    
+
     class Config:
         coerce = True
 
@@ -83,6 +85,7 @@ class ckd_prevalent_schema(ckd_ukrdc_base_schema):
     adult_paed: Series[str]
     egfr_min: Series[int]
 
+
 class ckd_treatment_archive_base_schema(pa.DataFrameModel):
     sendingfacility: Series[str]
     patientid: Series[str]
@@ -93,7 +96,6 @@ class ckd_treatment_archive_base_schema(pa.DataFrameModel):
     admitreasondesc: Series[str] = pa.Field(nullable=True)
     fromtime: Series[pa.DateTime]
     totime: Series[pa.DateTime] = pa.Field(nullable=True)
-    
+
     class Config:
         coerce = True
-
