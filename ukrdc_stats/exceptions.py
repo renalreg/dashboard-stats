@@ -13,3 +13,6 @@ class EmptyCohortError(ValueError):
 
 class NoTestsError(ValueError):
     pass
+
+class MissingColumnError(ValueError):
+    pass

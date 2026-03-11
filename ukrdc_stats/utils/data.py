@@ -8,10 +8,11 @@ import pandas as pd
 import fileinput
 import warnings
 
-from ukrdc_sqla.ukrdc import CodeMap, SatelliteMap
+from ukrdc_sqla.ukrdc import CodeMap
+from ukrdc_stats.exceptions import MissingColumnError
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 
 def egfr(
@@ -20,7 +21,6 @@ def egfr(
     scr_date: dt.datetime,
     dob: dt.datetime,
     sex: int = 1,
-    ethnicity: Optional[str] = None,
 ) -> Optional[int]:
     """Function for calculating the egfr based on the equation found here:
     http://nephron.com/epi_equation
@@ -208,168 +208,54 @@ def _mapped_key(key: str) -> str:
     return f"{key}_mapped"
 
 
-def _calculate_base_patient_histogram(
-    cohort: pd.DataFrame, group: str, code_map: Optional[Dict[str, str]] = None
-) -> pd.DataFrame:
-    """Extract a histogram of the patient cohort, grouped by the given column
-
-    Args:
-        cohort (pd.DataFrame): Patient cohort
-        group (str): Column to group by
-
-    Raises:
-        NoCohortError: If the patient cohort is empty
-
-    Returns:
-        pd.DataFrame: Histogram dataframe of the patient cohort
-    """
-
-    if code_map:
-        mapped_column = _mapped_key(group)
-        cohort[mapped_column] = cohort[group].map(code_map)
-
-        histogram = (
-            cohort[["ukrdcid", mapped_column]]
-            .drop_duplicates()
-            .groupby([mapped_column])
-            .count()
-            .reset_index()
-        )
-
-    else:
-        histogram = (
-            cohort[["ukrdcid", group]]
-            .drop_duplicates()
-            .groupby([group])
-            .count()
-            .reset_index()
-        )
-
-    return histogram.rename(columns={"ukrdcid": "Count"})
-
-
-def _mapped_if_exists(df: pd.DataFrame, column: str) -> pd.Series:
-    """
-    Convenience function to return the mapped column if it exists,
-    otherwise return the original column
-
-    Args:
-        df (pd.DataFrame): Input dataframe
-        column (str): Column to return
-
-    Returns:
-        pd.Series: Mapped column if it exists, otherwise the original column
-    """
-    mapped_column: str = _mapped_key(column)
-    if mapped_column in df.columns:
-        return df[mapped_column]
-    else:
-        warnings.warn(
-            f"Column {mapped_column} does not exist in dataframe, returning {column} instead"
-        )
-        return df[column]
-
-
-def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
-    """
-    Get the list of satellites for the facility.
-    """
-    query = select(SatelliteMap.satellite_code).where(
-        SatelliteMap.main_unit_code == facility_code
-    )
-    return session.execute(query).scalars().all()
-
-
-def check_headcounts(cohort: pd.DataFrame, groupby_attributes: list[str] = []):
-    """Used in the scripts to ensure headcounts remain consistent and patients
-    aren't being dropped
-
-    Args:
-        cohort (pd.DataFrame): dataframe with coumns group_byattributes + value
-        groupby_attributes (_type_, optional): columns to label data e.g centre
-
-    Raises:
-        Warning: _description_
-    """
-
-    if not groupby_attributes:
-        groupby_attributes = ["satellite_code", "centre_code", "variable2"]
-
-    # remove paeds to keep things simple
-    if "adultpaed" in cohort.columns:
-        cohort = cohort[cohort["adultpaed"] == "Adult"]
-
-    # aggregate over specified columns
-    head_count = (
-        cohort.groupby(groupby_attributes)
-        .sum(numeric_only=True)
-        .reset_index()[groupby_attributes + ["value"]]
-    )
-
-    # intialise some bits for use later
-    label_columns = groupby_attributes.copy()
-    if "variable2" in label_columns:
-        label_columns.remove("variable2")
-
-    previous_labels = None
-    previous_value = None
-    msg = None
-
-    # cross check rows for consistency
-    for _, row in head_count.iterrows():
-        labels = row[label_columns].to_list()
-        value = row["value"]
-
-        if labels == previous_labels:
-            if value != previous_value:
-                msg = "Headcount id variable across categories\n"
-                mask = (
-                    head_count[label_columns] == pd.Series(labels, index=label_columns)
-                ).all(axis=1)
-                msg += head_count[mask].to_string(index=False) + "\n"
-        else:
-            previous_labels = labels
-            previous_value = value
-
-    if msg:
-        raise Warning(msg)
-
-    return
-
-
 def row_completeness(row: pd.Series, groupby_attributes: list[str]) -> int:
     """Calculate completeness based on specified groupby attributes"""
     return row[groupby_attributes].notnull().sum()
 
 
 def aggregate_data(
-    dataframe: pd.DataFrame, groupby_attributes: list[str], deduplicate: bool = True
+    cohort_wide: pd.DataFrame, 
+    columns: list[str],
 ) -> pd.DataFrame:
-    """Simple utility function to wrap pandas aggregation on ukrdcid
+    """Function generates and aggregated dataframe in long format with 
+    headcounts (ukrdcid) split by the specified columns. The remaining columns
+    will be rolled into the attribute (column name) and variable (column value)
+    columns.
 
     Args:
-        dataframe (pd.DataFrame): _description_
-        groupby_attributes (list[str]): _description_
-        value_column (str): _description_
+        cohort_wide (pd.DataFrame): dataframe containing patient data 
+        columns (list[str]): _description_
+
+    Returns:
+        pd.DataFrame: _description_
     """
+    
+    if "ukrdcid" not in cohort_wide.columns:
+        raise MissingColumnError("ukrdcid not found in cohort_wide")
 
-    if deduplicate:
-        # Calculate completeness for each row
-        dataframe = dataframe.assign(
-            completeness=dataframe.apply(
-                lambda row: row_completeness(row, groupby_attributes), axis=1
-            )
+    if not all(col in cohort_wide.columns for col in columns):
+        raise MissingColumnError(
+            f"input variable cohort wide does not contain all the specified columns"
         )
+    
+    columns.insert(0, "ukrdcid")
+    value_columns = [col for col in cohort_wide.columns if col not in columns]
 
-        # Sort by completeness and drop duplicates
-        dataframe = (
-            dataframe.sort_values(by="completeness", ascending=False)
-            .drop(columns=["completeness"])
-            .drop_duplicates(subset=["ukrdcid"])
-        )
+    # transform dataframe into long form and count heads 
+    cohort_long = cohort_wide.melt(
+        id_vars=columns, 
+        value_vars=value_columns, 
+        var_name="attribute", 
+        value_name="variable"
+    )   
+    cohort_long = cohort_long.groupby(
+        ["attribute", "variable"] + [col for col in columns if col != "ukrdcid"], 
+        dropna=False
+    ).agg({"ukrdcid": "nunique"}).reset_index()
+    
+    cohort_long = cohort_long.rename(columns={"ukrdcid": "count"})
 
-    # Perform aggregation
-    return dataframe.groupby(groupby_attributes).size().reset_index(name="value")
+    return cohort_long
 
 
 VASCULAR_MAPPING = {

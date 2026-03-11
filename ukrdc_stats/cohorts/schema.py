@@ -1,11 +1,12 @@
 """
 Version 3.0.0 of dashboard stats introduces pydantic style schemas the 
-dataframes which are integral to the dashboard stats library the purpose of 
+dataframes which are integral to the dashboard stats library. The purpose of 
 this change is to introduce better type checking and try and eliminate some of
 the errors which arise from dataframes not having the expected columns.
 
-In the first instance the schema will just look a type but pandera provides
-many much more sophisticated options here.
+In the first instance the schema will just look a type hinting and validating
+which columns can be null but pandera provides many much more sophisticated 
+options here.
 """
 import pandera.pandas as pa
 from pandera.typing import Series
@@ -48,4 +49,51 @@ class demog_base_schema(pa.DataFrameModel):
     
     class Config:
         coerce = True
+
+
+class ckd_ukrdc_base_schema(pa.DataFrameModel):
+    pid: Series[str]
+    ukrdcid: Series[str]
+    sendingfacility: Series[str]
+    birthtime: Series[pa.DateTime]
+    deathtime: Series[pa.DateTime] = pa.Field(nullable=True)
+    healthcarefacilitycode: Series[str]
+    healthcarefacilitydesc: Series[str] = pa.Field(nullable=True)
+    admitreasoncode: Series[str]
+    admitreasoncodestd: Series[str]
+    admitreasondesc: Series[str] = pa.Field(nullable=True)
+    fromtime: Series[pa.DateTime]
+    totime: Series[pa.DateTime] = pa.Field(nullable=True)
+    sex: Series[str]
+    ethnicgroupcode: Series[str] = pa.Field(nullable=True)
+    ethnicgroupdesc: Series[str] = pa.Field(nullable=True)
+    ukkaethnicity: Series[str] = pa.Field(nullable=True)
+    registry_code_type: Series[str]
     
+    class Config:
+        coerce = True
+
+
+class ckd_prevalent_schema(ckd_ukrdc_base_schema):
+    pid: Series[str] = pa.Field(unique=True)
+    ukrdcid: Series[str] = pa.Field(unique=True)
+
+    decimalage: Series[float]
+    age: Series[str]
+    adult_paed: Series[str]
+    egfr_min: Series[int]
+
+class ckd_treatment_archive_base_schema(pa.DataFrameModel):
+    sendingfacility: Series[str]
+    patientid: Series[str]
+    organization: Series[str]
+    numbertype: Series[str]
+    admitreasoncode: Series[str]
+    admitreasoncodestd: Series[str]
+    admitreasondesc: Series[str] = pa.Field(nullable=True)
+    fromtime: Series[pa.DateTime]
+    totime: Series[pa.DateTime] = pa.Field(nullable=True)
+    
+    class Config:
+        coerce = True
+
