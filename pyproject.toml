@@ -8,7 +8,7 @@ packages = [
 ]
 readme = "PKG-README.md"
 repository = "https://github.com/renalreg/dashboard-stats"
-version = "2.13.3"
+version = "2.13.4"
 
 
 [tool.poetry.dependencies]
@@ -19,6 +19,8 @@ ukrdc-sqla = "^3.0.0"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
 pandera = "^0.29.0"
 python-dotenv = "^1.1.0"
+setuptools = "^75.8.0"
+psycopg2-binary = "^2.9.11"
 
 [tool.poetry.group.test.dependencies]
 # All tests will require the dev dependencies as well
