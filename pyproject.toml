@@ -17,10 +17,9 @@ pandas = "^2.2.2"
 python = "^3.12" 
 ukrdc-sqla = "^3.0.0"
 psycopg = {extras = ["binary"], version = "^3.2.3"}
-pandera = "^0.29.0"
-python-dotenv = "^1.1.0"
 setuptools = "^75.8.0"
-psycopg2-binary = "^2.9.11"
+pandera = "^0.30.1"
+
 
 [tool.poetry.group.test.dependencies]
 # All tests will require the dev dependencies as well
