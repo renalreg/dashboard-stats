@@ -1,3 +1,9 @@
+"""
+Base cohort functions
+These functions define a set of core shared definitions which allow the
+generation of cohorts from the ukrdc database to 
+"""
+
 from sqlalchemy.orm import Session
 from ukrdc_stats.cohorts.query import query_ckd
 from ukrdc_stats.labellers.demographics import age, adult_paed
@@ -37,29 +43,34 @@ def ckd_prevalent(
     ukrdc_base_data = egfr(session, ukrdc_base_data, prevalence_point)
 
     # Apply cohort filtering logic
-    cohort = ukrdc_base_data[
-        (ukrdc_base_data.adult_paed == "Adult")
-        & (ukrdc_base_data.egfr_min < 30)
-        & ~ukrdc_base_data.egfr_min.isna()
-    ]
+    cohort = (
+        ukrdc_base_data[
+            (ukrdc_base_data.adult_paed == "Adult")
+            & (ukrdc_base_data.egfr_min < 30)
+            & ~ukrdc_base_data.egfr_min.isna()
+        ]
+        .copy()
+    )
 
     # label clinic types
-    cohort["clinictype"] = cohort["admitreasoncode"].replace(
+    cohort.loc[:, "clinictype"] = cohort["admitreasoncode"].replace(
         {"902": "AKC", "903": "NEPH"},
     )
     cohort.loc[~cohort["clinictype"].isin(["AKC", "NEPH"]), "clinictype"] = "Other"
 
-    cohort["sex"] = cohort["sex"].map(GENDER_GROUP_MAP).fillna("Missing")
+    cohort.loc[:, "sex"] = cohort["sex"].map(GENDER_GROUP_MAP).fillna("Missing")
 
     # fill na ethnicities
-    cohort["ukkaethnicity"] = cohort["ukkaethnicity"].fillna("Missing", inplace=True)
+    cohort.loc[:, "ukkaethnicity"] = cohort["ukkaethnicity"].fillna("Missing")
 
     return cohort
 
 
 def krt_prevalent():
+    
     pass
 
 
 def krt_incident():
     pass
+  

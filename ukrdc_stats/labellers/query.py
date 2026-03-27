@@ -1,12 +1,27 @@
+"""
+################
+LABELLER QUERIES
+################
+
+This module contains the raw queries which are used by the labellers to extract
+ukrdc data. The scope of these functions should as far as possible be kept to
+actually interacting with the database rather than processing and linking the
+data.
+
+"""
+
 import zipfile
 import shutil
 from typing import List, Optional
 
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
+
 from ukrdc_sqla.ukrdc import LabOrder, ResultItem, Address
+from ukrdc_sqla.xmlarchive import Patient as XMLPatient, Assessment
+from ukrdc_stats.utils.query import pid_ni_map
 
 from urllib.request import urlretrieve
 from pathlib import Path
@@ -18,6 +33,9 @@ ONS_ADDRESS_DATA_URL = (
 
 
 def download_ons_address_data():
+    """
+    Download the ONS address data from the ArcGIS portal.
+    """
     cache_dir = Path("cache/ons_postcode_data")
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -25,9 +43,7 @@ def download_ons_address_data():
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
     urlretrieve(ONS_ADDRESS_DATA_URL, zip_path)
-
-    # ArcGIS will happily serve HTML when the URL is wrong or rate-limited.
-    # Fail fast rather than caching junk.
+    
     with open(zip_path, "rb") as f:
         header = f.read(4)
     if header[:2] != b"PK":
@@ -54,7 +70,6 @@ def download_ons_address_data():
 
 
 def query_ons_postcode_data() -> pd.DataFrame:
-    "This currently requires lots of memory so should be revisited at some point"
 
     cache_dir = Path("cache/ons_postcode_data")
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +77,13 @@ def query_ons_postcode_data() -> pd.DataFrame:
     csv_path = cache_dir / "ONSPD_NOV_2025_UK.csv"
     if not csv_path.exists():
         download_ons_address_data()
-    imd_data = pd.read_csv(csv_path)[["pcd7", "imd20ind"]].drop_duplicates()
+
+    imd_data = pd.read_csv(
+        csv_path,
+        usecols=["pcd7", "imd20ind"],
+        dtype={"pcd7": "string", "imd20ind": "int"},
+        low_memory=False,
+    ).drop_duplicates()
 
     imd_data["imddecile"] = pd.cut(
         imd_data["imd20ind"],
@@ -171,3 +192,67 @@ def query_postcodes(
     df = df.drop(columns=["use_priority", "addressuse"])
 
     return df
+
+def query_careplanning(archieve_session: Session, facility_codes: List[str], prevalence_point: dt.datetime = None)->pd.DataFrame:
+    """Extract care-planning assessments from the archive database. If a
+    prevalence point is provided the most assessment prior to the prevelance 
+    point is selected. 
+    """
+    
+    assessments_query = (
+        select(
+            XMLPatient.nationalid.label("patientid"),
+            XMLPatient.organization,
+            XMLPatient.numbertype,
+            XMLPatient.creation_date,
+            Assessment.assessmentstart,
+            Assessment.assessmentend,
+            Assessment.assessmenttypecode,
+            Assessment.assessmenttypecodestd,
+            Assessment.assessmenttypecodedesc,
+            func.trim(Assessment.assessmentoutcomecode).label("assessmentoutcomecode"),
+            Assessment.assessmentoutcomecodestd,
+            Assessment.assessmentoutcomecodedesc,
+        )
+        .join(
+            Assessment,
+            Assessment.patientid == XMLPatient.id,
+        )
+        .where(
+            XMLPatient.sendingfacility.in_(facility_codes),
+        )
+    )
+    
+    if prevalence_point:
+        assessments_query = assessments_query.where(
+            Assessment.assessmentstart < prevalence_point
+        )
+        assessments_query = assessments_query.distinct(XMLPatient.nationalid, XMLPatient.organization)
+        assessments_query = assessments_query.order_by(
+            XMLPatient.nationalid,
+            XMLPatient.organization,
+            Assessment.assessmentstart.desc()
+        )
+
+
+    prevalent_assessments = archieve_session.execute(assessments_query).all()
+    if not prevalent_assessments:
+        prevalent_assessments_df = pd.DataFrame(columns=[
+            "patientid", 
+            "organization", 
+            "numbertype", 
+            "creation_date", 
+            "assessmentstart", 
+            "assessmentend", 
+            "assessmenttypecode", 
+            "assessmenttypecodestd", 
+            "assessmenttypecodedesc", 
+            "assessmentoutcomecode", 
+            "assessmentoutcomecodestd", 
+            "assessmentoutcomecodedesc"
+        ])
+    
+    else:
+        prevalent_assessments_df = pd.DataFrame(prevalent_assessments)
+    
+    return prevalent_assessments_df

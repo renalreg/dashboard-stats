@@ -16,11 +16,11 @@ from ukrdc_stats.cohorts.schema import (
     ckd_ukrdc_base_schema,
     ckd_treatment_archive_base_schema,
 )
+from ukrdc_stats.utils.query import pid_ni_map
 from ukrdc_sqla.ukrdc import (
     Treatment,
     Patient,
     PatientRecord,
-    PatientNumber,
     ModalityCodes,
     CodeMap,
 )
@@ -301,27 +301,6 @@ def query_ckd_ukrdc(
     return base_cohort
 
 
-def pid_ni_map(session: Session, facility: str) -> pd.DataFrame:
-    """
-    Function returns a mapping of patient ids to national ids for a given facility.
-    """
-    query = (
-        select(PatientNumber.pid, PatientNumber.patientid, PatientNumber.organization)
-        .distinct(
-            PatientNumber.pid, PatientNumber.patientid, PatientNumber.organization
-        )
-        .join(PatientRecord, PatientNumber.pid == PatientRecord.pid)
-        .where(PatientRecord.sendingfacility == facility)
-    )
-    pids = pd.DataFrame(session.execute(query))
-    # pids.rename(columns={"patientid": "nationalid"}, inplace=True)
-
-    if pids.empty:
-        raise EmptyCohortError
-
-    return pids
-
-
 @pa.check_output(ckd_treatment_archive_base_schema)
 def query_ckd_treatment_archive(
     archive_session: Session, facility: str, prevalence_point: dt.datetime
@@ -389,7 +368,8 @@ def query_ckd(session: Session, facility_code: str, prevalence_point: dt.datetim
             archive_session, facility_code, prevalence_point
         )
 
-    pid_ni_map_df = pid_ni_map(session, facility_code)
+
+    pid_ni_map_df = pid_ni_map(session, ckd_archive.sendingfacility.unique().tolist())
     ckd_archive_mapped = ckd_archive.merge(
         pid_ni_map_df,
         on=("patientid", "organization"),

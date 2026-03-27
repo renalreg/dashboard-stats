@@ -3,7 +3,6 @@ import datetime as dt
 from ukrdc_stats.exceptions import MissingColumnError
 
 
-
 def age(
     patient_cohort: pd.DataFrame,
     reference_date: dt.datetime,
