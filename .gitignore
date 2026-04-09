@@ -136,3 +136,5 @@ dmypy.json
 # Places to stash bits that shouldn't be on github
 .do_not_commit
 .qodo
+cache/
+/tests/test_statistical_accuracy/output
