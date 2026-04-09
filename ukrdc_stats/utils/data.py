@@ -215,7 +215,8 @@ def row_completeness(row: pd.Series, groupby_attributes: list[str]) -> int:
 
 def aggregate_data(
     cohort_wide: pd.DataFrame,
-    columns: list[str],
+    column_attributes: list[str],
+    row_attributes: list[str] = None,
 ) -> pd.DataFrame:
     """Function generates and aggregated dataframe in long format with
     headcounts (ukrdcid) split by the specified columns. The remaining columns
@@ -230,27 +231,36 @@ def aggregate_data(
         pd.DataFrame: _description_
     """
 
+    # catch issues early
+    if row_attributes is None:
+        row_attributes = [col for col in cohort_wide.columns if col not in column_attributes]
+
     if "ukrdcid" not in cohort_wide.columns:
         raise MissingColumnError("ukrdcid not found in cohort_wide")
 
-    if not all(col in cohort_wide.columns for col in columns):
+    if not all(col in cohort_wide.columns for col in column_attributes):
         raise MissingColumnError(
             "input variable cohort wide does not contain all the specified columns"
         )
 
-    columns.insert(0, "ukrdcid")
-    value_columns = [col for col in cohort_wide.columns if col not in columns]
+    if not all(col in cohort_wide.columns for col in row_attributes):
+        raise MissingColumnError(
+            "input variable cohort wide does not contain all the specified columns"
+        )
+
+    # drop unneeded columns 
+    cohort_wide = cohort_wide[column_attributes + row_attributes + ["ukrdcid"]]
 
     # transform dataframe into long form and count heads
     cohort_long = cohort_wide.melt(
-        id_vars=columns,
-        value_vars=value_columns,
+        id_vars=column_attributes + ["ukrdcid"],
+        value_vars=row_attributes,
         var_name="attribute",
         value_name="variable",
     )
     cohort_long = (
         cohort_long.groupby(
-            ["attribute", "variable"] + [col for col in columns if col != "ukrdcid"],
+            ["attribute", "variable"] + column_attributes,
             dropna=False,
         )
         .agg({"ukrdcid": "nunique"})

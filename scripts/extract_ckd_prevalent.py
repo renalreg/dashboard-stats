@@ -27,27 +27,28 @@ with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
     base_cohort = prevalent_careplanning(session,base_cohort,prevalence_date, "TPLTassess")
     base_cohort = main_satellite_centres(session, base_cohort)
 
+
+    column_attributes = [
+        "centre_code", 
+        "satellite_code", 
+        "clinictype"
+    ]
+    row_attributes = [        
+        "sex",
+        "age",
+        "clinictype",
+        "ukkaethnicity",
+        "imddecile", 
+        "assessmentoutcome"
+    ]
+
     # only keep needed columns
     base_cohort = base_cohort[
-        [
-            "ukrdcid",
-            "centre_code",
-            "satellite_code",
-            "sex",
-            "age",
-            "clinictype",
-            "ukkaethnicity",
-            "imddecile", 
-            "assessmentoutcome"
-        ]
-    ]
+        ["ukrdcid"]  +   column_attributes + row_attributes  
+    ].drop_duplicates()
     
     aggregated_data = aggregate_data(
-        base_cohort, [
-            "centre_code", 
-            "satellite_code", 
-            "clinictype"
-        ]
+        base_cohort, column_attributes
     )
     print(aggregated_data)
     aggregated_data.to_csv(OUTFILE, index=False)

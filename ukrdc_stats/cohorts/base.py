@@ -42,6 +42,10 @@ def ckd_prevalent(
     ukrdc_base_data = adult_paed(ukrdc_base_data)
     ukrdc_base_data = egfr(session, ukrdc_base_data, prevalence_point)
 
+    # Error handling for low completeness egfr
+    if ukrdc_base_data["egfr_min"].sum() / ukrdc_base_data.shape[0] < 0.1:
+        raise ValueError("Low completeness egfr")
+
     # Apply cohort filtering logic
     cohort = (
         ukrdc_base_data[

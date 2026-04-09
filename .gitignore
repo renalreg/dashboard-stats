@@ -137,3 +137,4 @@ dmypy.json
 .do_not_commit
 .qodo
 cache/
+/tests/test_statistical_accuracy/output

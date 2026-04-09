@@ -102,3 +102,9 @@ def egfr(
     )
 
     return patient_cohort
+
+def systolic():
+    pass
+
+def diastolic():
+    pass
