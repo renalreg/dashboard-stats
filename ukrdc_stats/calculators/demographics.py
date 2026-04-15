@@ -248,8 +248,10 @@ class DemographicStatsCalculator(AbstractFacilityStatsCalculator):
 
         # Define the desired order for age ranges
         age_order = AGE_BINS["labels"]
-        age_aggregated['agerange'] = pd.Categorical(age_aggregated['agerange'], categories=age_order, ordered=True)
-        age_aggregated = age_aggregated.sort_values('agerange')
+        age_aggregated["agerange"] = pd.Categorical(
+            age_aggregated["agerange"], categories=age_order, ordered=True
+        )
+        age_aggregated = age_aggregated.sort_values("agerange")
 
         return Labelled2d(
             metadata=Labelled2dMetadata(
