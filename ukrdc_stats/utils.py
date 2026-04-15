@@ -46,13 +46,13 @@ def egfr(
         return
 
     # only accept creatinines with accepted units
-    if scr_unit == "umol/L":
+    if scr_unit in ("umol/L", "umol/l", "µmol/L", "µmol/l"):
         scr = scr / 88.4
-    elif scr_unit == "mmol/L":
+    elif scr_unit in ("mmol/L", "mmol/l"):
         scr = scr / (10 * 88.4)
-    elif scr_unit == "g/L":
+    elif scr_unit in ("g/L", "g/l"):
         scr = 100.0 * scr
-    elif scr_unit == "mg/dL":
+    elif scr_unit in ("mg/dL", "mg/dl"):
         pass
     else:
         return
@@ -386,6 +386,6 @@ GENDER_GROUP_MAP = {"1": "Male", "2": "Female", "9": "Indeterminate", "X": "Unkn
 
 
 AGE_BINS = {
-    "labels" : ["<18", "18-34", "35-54", "55-74", ">=75"],
-    "bins" : [0, 18, 35, 55, 75, 150]
+    "labels": ["<18", "18-34", "35-54", "55-74", ">=75"],
+    "bins": [0, 18, 35, 55, 75, 150],
 }

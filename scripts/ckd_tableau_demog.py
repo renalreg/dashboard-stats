@@ -14,7 +14,6 @@ import argparse
 import pandas as pd
 import datetime as dt
 
-from dotenv import dotenv_values
 from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker

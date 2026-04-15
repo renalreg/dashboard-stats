@@ -512,10 +512,14 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         )
         base_cohort["most_recent"] = False
         base_cohort.loc[
-            base_cohort.groupby("ukrdcid").apply(
-                lambda x: x["totime"].idxmax() if x["totime"].notna().any() else x["fromtime"].idxmax()
-            ).values,
-            "most_recent"
+            base_cohort.groupby("ukrdcid")
+            .apply(
+                lambda x: x["totime"].idxmax()
+                if x["totime"].notna().any()
+                else x["fromtime"].idxmax()
+            )
+            .values,
+            "most_recent",
         ] = True
 
         # Calculate length of timeline
@@ -1107,7 +1111,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             prevalent_cohort = self._patient_cohort[
                 self._patient_cohort.prevalent
                 & self._patient_cohort.most_recent
-                #& self._patient_cohort.first_treatment
+                # & self._patient_cohort.first_treatment
                 & (self._patient_cohort.healthcarefacilitycode == subunit)
             ]
 
