@@ -18,7 +18,6 @@ pydantic = "^1.10.1"
 python = "^3.12" 
 ukrdc-sqla = "^4.0.0"
 freezegun = "^1.2.2"
-psycopg = {extras = ["binary"], version = "^3.2.3"}
 setuptools = "^75.8.0"
 psycopg = {version = "^3.2.11", extras = ["binary"]}
 
