@@ -49,13 +49,14 @@ def egfr(
     if scr_unit in ("umol/L", "umol/l", "µmol/L", "µmol/l"):
         scr = scr / 88.4
     elif scr_unit in ("mmol/L", "mmol/l"):
-        scr = scr / (10 * 88.4)
+        scr = scr / (1000 * 88.4)
     elif scr_unit in ("g/L", "g/l"):
         scr = 100.0 * scr
     elif scr_unit in ("mg/dL", "mg/dl"):
         pass
     else:
-        return
+        # assume umol/L if unknown unit
+        scr = scr / 88.4
 
     if sex == "2":
         kappa = 0.7
