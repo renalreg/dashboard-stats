@@ -18,8 +18,6 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from rr_connection_manager import PostgresConnection
-
 from ukrdc_stats.calculators.demographics import DemographicStatsCalculator, GENDER_GROUP_MAP
 from ukrdc_stats.utils import map_codes, lookup_codes, check_headcounts, short_names, facility_names, region_map
 from ukrdc_stats.calculators.ckd import PrevalentCKDCalculator
