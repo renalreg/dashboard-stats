@@ -402,7 +402,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             .distinct(LabOrder.pid, ResultItem.serviceidcode)
             .join(LabOrder, LabOrder.id == ResultItem.order_id)
             .where(
-                ResultItem.serviceidcode.in_(["QBLA1", "QBLAB", "QBLAL"]),
+                ResultItem.serviceidcode.in_(["QBLA1", "QBLAB", "QBLAL", "QBLAP"]),
                 LabOrder.pid.in_(patient_ids),
                 ResultItem.observation_time < self._prevalence_point,
             )
@@ -425,7 +425,7 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             results = pd.DataFrame(columns=columns)
 
         # separate and clean
-        egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAL"])].copy()
+        egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAP", "QBLAL"])].copy()
         egfr_results["resultvalue"] = (
             egfr_results["resultvalue"].str.replace("<", "").str.replace(">", "")
         )
