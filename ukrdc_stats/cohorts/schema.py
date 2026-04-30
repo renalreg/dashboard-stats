@@ -85,6 +85,9 @@ class ckd_prevalent_schema(ckd_ukrdc_base_schema):
     adult_paed: Series[str]
     egfr_min: Series[int]
 
+    class Config:
+        coerce = True
+
 
 class ckd_treatment_archive_base_schema(pa.DataFrameModel):
     sendingfacility: Series[str]
@@ -99,3 +102,12 @@ class ckd_treatment_archive_base_schema(pa.DataFrameModel):
 
     class Config:
         coerce = True
+
+
+class krt_incident_schema(krt_base_schema):
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
+    pass
+
+class krt_prevalent_schema(krt_base_schema):
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
+    pass

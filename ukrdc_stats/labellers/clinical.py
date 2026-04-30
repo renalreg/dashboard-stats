@@ -1,8 +1,11 @@
 import pandas as pd
+from typing import Union
+import datetime as dt
+
 from ukrdc_stats.utils.database import get_archive_sessionmaker
 from ukrdc_stats.utils.query import pid_ni_map
 from ukrdc_stats.labellers.query import query_careplanning
-
+from ukrdc_stats.cohorts.schema import krt_incident_schema, krt_prevalent_schema
 
 def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTAssess")->pd.DataFrame:
     """
@@ -65,4 +68,7 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
     )
     cohort["assessmentoutcome"] = cohort["assessmentoutcome"].fillna("No assessment")
 
-    return cohort
+    return cohort 
+
+def eskd():
+    pass

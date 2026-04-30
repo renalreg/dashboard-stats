@@ -94,11 +94,11 @@ def egfr(
         )
 
     col_name = f"egfr_{mode}"
-    egfr_data = egfr_data.rename(columns={"egfr": col_name})
+    egfr_data = egfr_data.rename(columns={"egfr": col_name, "observationtime": "egfr_date"})
 
     # Merge the final deduplicated eGFRs back onto the patient cohort
     patient_cohort = patient_cohort.merge(
-        egfr_data[["pid", col_name]], on="pid", how="left"
+        egfr_data[["pid", col_name, "egfr_date"]], on="pid", how="left"
     )
 
     return patient_cohort

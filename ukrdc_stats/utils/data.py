@@ -20,7 +20,7 @@ def egfr(
     scr_unit: str,
     scr_date: dt.datetime,
     dob: dt.datetime,
-    sex: int = 1,
+    sex: str = "1",
 ) -> Optional[int]:
     """Function for calculating the egfr based on the equation found here:
     http://nephron.com/epi_equation
@@ -46,33 +46,34 @@ def egfr(
         return
 
     # only accept creatinines with accepted units
-    if scr_unit == "umol/L":
+    if scr_unit.lower() in ("μmol/l", "umol/l"):
         scr = scr / 88.4
-    elif scr_unit == "mmol/L":
-        scr = scr / (10 * 88.4)
-    elif scr_unit == "g/L":
+    elif scr_unit.lower() == "mmol/l":
+        scr = 1000.* scr / 88.4
+    elif scr_unit.lower() == "g/l":
         scr = 100.0 * scr
-    elif scr_unit == "mg/dL":
+    elif scr_unit.lower() == "mg/dl":
         pass
     else:
-        return
+        # assume umol/L if unknown unit
+        scr = scr / 88.4
 
     if sex == "2":
         kappa = 0.7
-        alpha = -0.329
-        multiplier = 1.018
+        alpha = -0.241
+        multiplier = 1.012
     else:
         kappa = 0.9
-        alpha = -0.411
+        alpha = -0.302
         multiplier = 1.0
 
     scr_frac = scr / kappa
     if scr_frac > 1:
-        multiplier = multiplier * (scr_frac**-1.209)
+        multiplier = multiplier * (scr_frac**-1.2)
     else:
         multiplier = multiplier * (scr_frac**alpha)
 
-    egfr = round(141 * multiplier * (0.993**age))
+    egfr = round(142 * multiplier * (0.993**age))
 
     return egfr
 
@@ -233,7 +234,7 @@ def aggregate_data(
 
     # catch issues early
     if row_attributes is None:
-        row_attributes = [col for col in cohort_wide.columns if col not in column_attributes]
+        row_attributes = [col for col in cohort_wide.columns if col not in column_attributes and col != "ukrdcid"]
 
     if "ukrdcid" not in cohort_wide.columns:
         raise MissingColumnError("ukrdcid not found in cohort_wide")

@@ -138,3 +138,4 @@ dmypy.json
 .qodo
 cache/
 /tests/test_statistical_accuracy/output
+/tests/test_statistical_accuracy/data

@@ -3,6 +3,7 @@ import datetime as dt
 from ukrdc_stats.exceptions import MissingColumnError
 
 
+
 def age(
     patient_cohort: pd.DataFrame,
     reference_date: dt.datetime,
@@ -56,3 +57,6 @@ def adult_paed(patient_cohort: pd.DataFrame) -> pd.DataFrame:
     patient_cohort.loc[patient_cohort["age"] != "Under 18", "adult_paed"] = "Adult"
 
     return patient_cohort
+
+
+

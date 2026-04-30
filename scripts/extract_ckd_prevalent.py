@@ -8,7 +8,7 @@ from dotenv import dotenv_values
 from pathlib import Path
 
 SERVER = "ukrdc_staging"
-CENTRE = "RCSLB"
+CENTRE = "RP5"
 OUTFILE = Path(".do_not_commit") / "ckd_prevalent.csv"
 
 config = dotenv_values(".env")
@@ -50,7 +50,6 @@ with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
     aggregated_data = aggregate_data(
         base_cohort, column_attributes
     )
-    print(aggregated_data)
     aggregated_data.to_csv(OUTFILE, index=False)
     
     

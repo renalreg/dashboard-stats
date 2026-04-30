@@ -160,6 +160,26 @@ def main_satellite_centres(session: Session, patient_cohort: pd.DataFrame, outli
         
     return patient_cohort
 
+def main_unit_sendingfacilities(facilities: list[str]):
+    """
+
+    Args:
+        facilities (list[str]): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """
+    pass
+
+#def main_satellite_centres(patient_cohort: pd.DataFrame) -> pd.DataFrame:
+#    """
+#    Temp overwrite sendingfacility and healthcarefacilitycode with centre_code and satellite_code respectively.
+#    """
+#    patient_cohort['centre_code'] = patient_cohort['sendingfacility']
+#    patient_cohort['satellite_code'] = patient_cohort['healthcarefacilitycode']   
+#    return patient_cohort
+
+
 def map_paed_centres(session: Session, patient_cohort: pd.DataFrame) -> pd.DataFrame:
     """
     Map paediatric centres to their corresponding adult centres.

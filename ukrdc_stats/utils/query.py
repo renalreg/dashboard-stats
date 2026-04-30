@@ -26,3 +26,19 @@ def pid_ni_map(session: Session, facilities: list[str]) -> pd.DataFrame:
         raise EmptyCohortError
 
     return pids
+
+
+def sendingfacility_main_unit_map(session: Session) -> pd.DataFrame:
+    """
+    Function returns a mapping of sending facility codes to main unit codes.
+    """
+    query = (
+        select(PatientRecord.sendingfacility, PatientRecord.mainunit)
+        .distinct(PatientRecord.sendingfacility, PatientRecord.mainunit)
+    )
+    sendingfacilities = pd.DataFrame(session.execute(query))
+
+    if sendingfacilities.empty:
+        raise EmptyCohortError
+
+    return sendingfacilities
