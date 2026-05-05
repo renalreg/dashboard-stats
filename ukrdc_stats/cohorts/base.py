@@ -19,7 +19,7 @@ import pandera.pandas as pa
 import pandas as pd
 
 
-from ukrdc_stats.cohorts.schema import ckd_prevalent_schema, krt_incident_schema
+from ukrdc_stats.cohorts.schema import ckd_prevalent_schema, krt_prevalent_schema, krt_incident_schema
 
 
 def ckd_incident(session: Session, facility: str, end: dt.datetime, start: dt.datetime):
@@ -78,10 +78,19 @@ def ckd_prevalent(
 
     return cohort
 
-#@pa.check_output(krt_prevalent_schema)
-#def krt_prevalent() -> krt_prevalent_schema: 
-#    return
 
+@pa.check_output(krt_prevalent_schema)
+def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime) -> krt_prevalent_schema:
+    """
+    Get the prevalent KRT cohort for a given facility and prevalence point.
+    
+    Returns:
+        krt_prevalent_schema: Prevalent KRT cohort
+    """
+
+    cohort = query_krt_prevalent(session, facility, prevalence_point)    
+
+    return cohort
 
 
 def _chain_treatments(base_cohort, recovery_window:dt.timedelta):
@@ -119,8 +128,7 @@ def _chain_treatments(base_cohort, recovery_window:dt.timedelta):
         
         # Overlaps: previous starts before current, current starts before previous extended end, previous extended end before current end
         (base_cohort['prev_fromtime'] < base_cohort['fromtime']) &
-        (base_cohort['fromtime'] < base_cohort['prev_totime'] + recovery_window) &
-        (base_cohort['prev_totime'] + recovery_window < base_cohort['totime']),
+        (base_cohort['prev_totime'] > base_cohort['fromtime']),
         
         # Starts: same start, previous ends before current
         (base_cohort['prev_fromtime'] == base_cohort['fromtime']) &
@@ -244,7 +252,7 @@ def _reassign_transplants(singular_cohort):
    
     return singular_cohort 
 
-def _label_incident(krt_new_cohort,start_date, end_date, recovery_window:dt.timedelta= dt.timedelta(days=90)):
+def _label_incident(krt_new_cohort, recovery_window:dt.timedelta= dt.timedelta(days=90)):
     """
     The UKRR incident cohort counts patients who are recieving acute and
     chronic dialysis differently. This function attempts to apply this 
@@ -253,14 +261,6 @@ def _label_incident(krt_new_cohort,start_date, end_date, recovery_window:dt.time
     Returns:
         pd.DataFrame: DataFrame with acute/chronic labels
     """
-
-    
-    krt_new_cohort = krt_new_cohort[
-        (krt_new_cohort.timeline_start >= start_date)
-        & (krt_new_cohort.timeline_start <= end_date)
-        #& (krt_new_cohort.historic_tx == False)
-        #& ~krt_new_cohort.ckd_centre.isna()
-    ]
 
     # anyone who receives a transplant at any point is coded as chronic as long
     #  as it doesn't fail within 14 days. This many not be precise enough
@@ -280,6 +280,7 @@ def _label_incident(krt_new_cohort,start_date, end_date, recovery_window:dt.time
     group3_ids = krt_new_cohort[
         (krt_new_cohort.timeline_length < recovery_window)
         & (krt_new_cohort.length_of_life < recovery_window)
+        & (krt_new_cohort.acute=="0")
         & krt_new_cohort.ckd_centre.notna()
     ].ukrdcid.unique()
 
@@ -289,21 +290,14 @@ def _label_incident(krt_new_cohort,start_date, end_date, recovery_window:dt.time
         (krt_new_cohort.timeline_stop == krt_new_cohort.totime)
         & (krt_new_cohort.timeline_length < recovery_window) 
         & (krt_new_cohort.dischargereasoncode.isin(['38', '30', '91', '92']))
+        & (krt_new_cohort.acute=="0")
     ].ukrdcid.unique()
 
-    # filter down to chronic patients
+    # filter down to chronic krt patients
     chronic_ids = set(group1_ids) | set(group2_ids) | set(group3_ids) | set(group4_ids)
-    krt_new_cohort["incident"] = (
-        krt_new_cohort["ukrdcid"].isin(chronic_ids)
-        & (krt_new_cohort.historic_tx == False)
-    )
+    krt_new_cohort.loc[krt_new_cohort["ukrdcid"].isin(chronic_ids), "incident"] = True
     
-    # reduce down to one row per patient
-    incident_cohort_singular = krt_new_cohort[
-        krt_new_cohort.timeline_start == krt_new_cohort.fromtime
-    ].sort_values("totime", ascending=False).drop_duplicates("ukrdcid", keep="first")
-
-    return incident_cohort_singular
+    return krt_new_cohort
 
 def _label_incident_old(krt_new_cohort, start_date: dt.datetime, end_date: dt.datetime, recovery_window:dt.timedelta= dt.timedelta(days=90)):
     """Function with the aim of replicating the incident cohort produced by version 2.x.x
@@ -388,15 +382,32 @@ def krt_incident(
     
     # extract, clean and label the patient records used to calculate incidence
     base_cohort = query_krt_incident(session, facility, end_date, start_date, recovery_window)
+    
+    
     base_cohort["dialtplt"] = base_cohort["registry_code_type"] 
     base_cohort = _clean_totime(base_cohort)    
     base_cohort = _chain_treatments(base_cohort, recovery_window)
     base_cohort = _label_timeline(base_cohort)
+    
 
 
-    singular_incident = _label_incident(base_cohort,start_date, end_date, recovery_window)
+    # Remove patients with timelines beginning before analysis window or historic tx
+    base_cohort = base_cohort[
+        (base_cohort.timeline_start >= start_date)
+        & (base_cohort.timeline_start <= end_date)
+        & ~base_cohort.historic_tx
+    ].copy()
+
+    base_cohort = _label_incident(base_cohort, recovery_window)
+
+    # reduce down to one row per patient
+    singular_cohort = base_cohort[
+        base_cohort.timeline_start == base_cohort.fromtime
+    ].sort_values("totime", ascending=False).drop_duplicates("ukrdcid", keep="first")
+
+    
     #singular_incident = _label_incident_old(base_cohort, start_date, end_date, recovery_window)
-    singular_incident = main_satellite_centres(session, singular_incident, outlier_mapping_mode="otherise")
-    singular_incident = _reassign_transplants(singular_incident)
+    singular_cohort = main_satellite_centres(session, singular_cohort, outlier_mapping_mode="otherise")
+    singular_cohort = _reassign_transplants(singular_cohort)
 
-    return singular_incident[singular_incident.incident & (singular_incident.centre_code == facility)]
+    return singular_cohort[singular_cohort.incident & (singular_cohort.centre_code == facility)]

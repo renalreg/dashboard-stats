@@ -30,15 +30,31 @@ class krt_base_schema(pa.DataFrameModel):
     dischargelocationcode: Series[str] = pa.Field(nullable=True)
     dischargelocationcodestd: Series[str] = pa.Field(nullable=True)
     registry_code_type: Series[str]
+    end_of_care: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
+    acute: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
+    transfer_in: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
     deathtime: Series[pa.DateTime] = pa.Field(nullable=True)
     fromtime: Series[pa.DateTime]
     totime: Series[pa.DateTime] = pa.Field(nullable=True)
-    ckd_centre: Series[str] = pa.Field(nullable=True)
-    historic_tx: Series[bool]
 
     class Config:
         coerce = True
 
+class krt_query_incident_schema(krt_base_schema):
+    ckd_centre: Series[str] = pa.Field(nullable=True)
+    historic_tx: Series[bool]
+
+
+class krt_incident_schema(krt_query_incident_schema):
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
+    timeline_start: Series[pa.DateTime]
+    incident: Series[bool]
+    class Config:
+        coerce = True
+        unique = ["ukrdcid", "pid"]
+
+class krt_prevalent_schema(krt_base_schema):
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
 
 class demog_base_schema(pa.DataFrameModel):
     pid: Series[str]
@@ -102,12 +118,3 @@ class ckd_treatment_archive_base_schema(pa.DataFrameModel):
 
     class Config:
         coerce = True
-
-
-class krt_incident_schema(krt_base_schema):
-    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
-    pass
-
-class krt_prevalent_schema(krt_base_schema):
-    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
-    pass
