@@ -60,12 +60,13 @@ def egfr(
 
     if sex == "2":
         kappa = 0.7
-        alpha = -0.241
-        multiplier = 1.012
+        alpha = -0.329
+        multiplier = 1.018
     else:
         kappa = 0.9
-        alpha = -0.302
+        alpha = -0.411
         multiplier = 1.0
+
 
     scr_frac = scr / kappa
     if scr_frac > 1:
@@ -73,7 +74,7 @@ def egfr(
     else:
         multiplier = multiplier * (scr_frac**alpha)
 
-    egfr = round(142 * multiplier * (0.993**age))
+    egfr = round(141 * multiplier * (0.993**age))
 
     return egfr
 

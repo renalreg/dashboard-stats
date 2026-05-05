@@ -27,7 +27,7 @@ def egfr(
     egfr_data = query_results(
         session=session,
         pids=patient_cohort["pid"].tolist(),
-        test_codes=["QBLA1", "QBLAB", "QBLAL"],
+        test_codes=["QBLA1", "QBLAB", "QBLAL", "QBLAP"],
         to_time=prevalence_point,
     )
 
@@ -39,9 +39,9 @@ def egfr(
     egfr_data = egfr_data.dropna(subset=["resultvalue"])
 
     # Isolate eGFR and rename the column
-    egfr_data.loc[egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL"]), "egfr"] = (
+    egfr_data.loc[egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "egfr"] = (
         egfr_data.loc[
-            egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL"]), "resultvalue"
+            egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "resultvalue"
         ]
     )
 
@@ -69,7 +69,7 @@ def egfr(
     egfr_data = egfr_data.dropna(subset=["egfr"])
 
     # Prioritise calculated eGFR over lab eGFR for results at the same time
-    priority_map = {"QBLA1": 1, "QBLAB": 2, "QBLAL": 2}
+    priority_map = {"QBLA1": 1, "QBLAB": 3, "QBLAL": 3, "QBLAP": 2}
     egfr_data["priority"] = egfr_data["serviceidcode"].map(priority_map)
     egfr_data = egfr_data.sort_values(["pid", "observationtime", "priority"])
     egfr_data = egfr_data.drop_duplicates(
