@@ -13,6 +13,7 @@ import datetime as dt
 from ukrdc_stats.cohorts.schema import (
     krt_base_schema,
     krt_query_incident_schema,
+    krt_query_prevalent_schema,
     demog_base_schema,
     ckd_ukrdc_base_schema,
     ckd_treatment_archive_base_schema,
@@ -39,26 +40,20 @@ from sqlalchemy.orm import Session, aliased
 from ukrdc_stats.utils.database import get_archive_sessionmaker
 
 
-
-@pa.check_output(krt_base_schema)
+@cache_dataframe_to_disk(".do_not_commit/query_krt_prevalent")
+@pa.check_output(krt_query_prevalent_schema)
 def query_krt_prevalent(
     session: Session,
     facility: str,
     prevalence_point: dt.datetime,
     recovery_window: dt.timedelta = dt.timedelta(days=90),
-) -> krt_base_schema:
+) -> krt_query_prevalent_schema:
     """Core query containing all of the data from the ukrdc database
     necessary to generate a prevalent krt cohort.
     
     Returns:
-        krt_base_schema: Patient cohort dataframe
+        krt_query_prevalent_schema: Patient cohort dataframe
     """
-
-    # Select ukrdcids of patients treated at facility
-    ukrdc_sub = select(PatientRecord.ukrdcid).where(
-        PatientRecord.sendingfacility == facility,
-        PatientRecord.sendingextract == "UKRDC",
-    )
 
     query = (
         select(
@@ -72,11 +67,7 @@ def query_krt_prevalent(
             Treatment.admissionsourcecodestd,
             Treatment.qbl05,
             Treatment.hdp04,
-            PatientRecord.dischargereasoncode,
-            PatientRecord.dischargereasoncodestd,
-            PatientRecord.dischargelocationcode,
-            PatientRecord.dischargelocationcodestd,
-            PatientRecord.registry_code_type,
+            ModalityCodes.registry_code_type,
             Patient.deathtime,
             Treatment.fromtime,
             Treatment.totime
@@ -84,17 +75,20 @@ def query_krt_prevalent(
             PatientRecord
         ).join(
             Treatment, 
-            PatientRecord.pid == Treatment.patient_id
+            PatientRecord.pid == Treatment.pid
         ).join(
             Patient,
             PatientRecord.pid == Patient.id
+        ).join(
+            ModalityCodes,
+            ModalityCodes.registry_code == Treatment.admitreasoncode
         ).where(
-            PatientRecord.ukrdcid.in_(ukrdc_sub),
             PatientRecord.sendingfacility == facility,
             PatientRecord.sendingextract == "UKRDC",
-            Patient.deathtime >= prevalence_point,
+            (Patient.deathtime >= prevalence_point) | Patient.deathtime.is_(None),
             Treatment.fromtime <= prevalence_point + recovery_window,
-            Treatment.totime.is_(None) | (Treatment.totime >= prevalence_point),
+            Treatment.totime.is_(None) | (Treatment.totime >= prevalence_point - recovery_window),
+            ModalityCodes.registry_code_type.in_(["HD", "PD", "TX"])
         )
     )
 

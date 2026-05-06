@@ -7,7 +7,7 @@ generation of cohorts from the ukrdc database to
 from sqlalchemy.orm import Session
 from typing import Optional
 
-from ukrdc_stats.cohorts.query import query_ckd, query_krt_incident
+from ukrdc_stats.cohorts.query import query_ckd, query_krt_incident, query_krt_prevalent
 from ukrdc_stats.labellers.demographics import age, adult_paed
 from ukrdc_stats.labellers.biomarkers import egfr
 from ukrdc_stats.labellers.geography import main_satellite_centres
@@ -76,19 +76,13 @@ def ckd_prevalent(
     # fill na ethnicities
     cohort.loc[:, "ukkaethnicity"] = cohort["ukkaethnicity"].fillna("Missing")
 
-    return cohort
+    # TODO: this deaggregation logic should be revisited and was motivated by
+    # patient with low clearance and nephrology clinic on the same day.
+    cohort = cohort.sort_values(
+        by=["ukrdcid", "fromtime", "admitreasoncode"],
+        ascending=[True, False, False]
+    ).drop_duplicates(subset=["ukrdcid"], keep="first")
 
-
-@pa.check_output(krt_prevalent_schema)
-def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime) -> krt_prevalent_schema:
-    """
-    Get the prevalent KRT cohort for a given facility and prevalence point.
-    
-    Returns:
-        krt_prevalent_schema: Prevalent KRT cohort
-    """
-
-    cohort = query_krt_prevalent(session, facility, prevalence_point)    
 
     return cohort
 
@@ -300,7 +294,7 @@ def _label_incident(krt_new_cohort, recovery_window:dt.timedelta= dt.timedelta(d
     return krt_new_cohort
 
 def _label_incident_old(krt_new_cohort, start_date: dt.datetime, end_date: dt.datetime, recovery_window:dt.timedelta= dt.timedelta(days=90)):
-    """Function with the aim of replicating the incident cohort produced by version 2.x.x
+    """Function with the aim of replicating the incident cohort produced by version 2.x.x here for testing purposes
 
     Args:
         krt_new_cohort (_type_): _description_
@@ -354,7 +348,6 @@ def _label_incident_old(krt_new_cohort, start_date: dt.datetime, end_date: dt.da
     ].sort_values("totime", ascending=False).drop_duplicates("ukrdcid", keep="first")
 
     return incident_cohort_singular
-
 
 
 @pa.check_output(krt_incident_schema)
@@ -411,3 +404,30 @@ def krt_incident(
     singular_cohort = _reassign_transplants(singular_cohort)
 
     return singular_cohort[singular_cohort.incident & (singular_cohort.centre_code == facility)]
+
+@pa.check_output(krt_prevalent_schema)
+def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime) -> krt_prevalent_schema:
+    """
+    Get the prevalent KRT cohort for a given facility and prevalence point.
+    
+    Returns:
+        krt_prevalent_schema: Prevalent KRT cohort
+    """
+
+    base_cohort = query_krt_prevalent(session, facility, prevalence_point)
+    base_cohort["dialtplt"] = base_cohort["registry_code_type"]
+
+    # TODO: more logic around recovey window and treatment relationship to prevalence point
+    singular_cohort = (
+        base_cohort[
+            (base_cohort.fromtime <= prevalence_point)
+            & ((base_cohort.totime > prevalence_point) | base_cohort.totime.isna())
+        ]
+        .sort_values("totime", ascending=False)
+        .drop_duplicates("ukrdcid", keep="first")
+    )
+
+    singular_cohort = main_satellite_centres(session, singular_cohort, outlier_mapping_mode="otherise")
+    singular_cohort = _reassign_transplants(singular_cohort)
+
+    return singular_cohort

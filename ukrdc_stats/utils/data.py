@@ -45,17 +45,18 @@ def egfr(
     if age < 18:
         return
 
-    # only accept creatinines with accepted units
-    if scr_unit.lower() in ("μmol/l", "umol/l"):
-        scr = scr / 88.4
-    elif scr_unit.lower() == "mmol/l":
-        scr = 1000.* scr / 88.4
-    elif scr_unit.lower() == "g/l":
-        scr = 100.0 * scr
-    elif scr_unit.lower() == "mg/dl":
-        pass
+    if scr_unit:
+        if scr_unit.lower() in ("μmol/l", "umol/l"):
+            scr = scr / 88.4
+        elif scr_unit.lower() == "mmol/l":
+            scr = 1000.* scr / 88.4
+        elif scr_unit.lower() == "g/l":
+            scr = 1000. * scr
+        else:
+            # assume umol/L if unknown unit
+            scr = scr / 88.4
     else:
-        # assume umol/L if unknown unit
+        # assume umol/L if no unit
         scr = scr / 88.4
 
     if sex == "2":

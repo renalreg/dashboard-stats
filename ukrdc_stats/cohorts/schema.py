@@ -23,16 +23,9 @@ class krt_base_schema(pa.DataFrameModel):
     admitreasoncodestd: Series[str]
     admissionsourcecode: Series[str] = pa.Field(nullable=True)
     admissionsourcecodestd: Series[str] = pa.Field(nullable=True)
+    registry_code_type: Series[str]
     qbl05: Series[str] = pa.Field(nullable=True)
     hdp04: Series[str] = pa.Field(nullable=True)
-    dischargereasoncode: Series[str] = pa.Field(nullable=True)
-    dischargereasoncodestd: Series[str] = pa.Field(nullable=True)
-    dischargelocationcode: Series[str] = pa.Field(nullable=True)
-    dischargelocationcodestd: Series[str] = pa.Field(nullable=True)
-    registry_code_type: Series[str]
-    end_of_care: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
-    acute: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
-    transfer_in: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
     deathtime: Series[pa.DateTime] = pa.Field(nullable=True)
     fromtime: Series[pa.DateTime]
     totime: Series[pa.DateTime] = pa.Field(nullable=True)
@@ -40,12 +33,24 @@ class krt_base_schema(pa.DataFrameModel):
     class Config:
         coerce = True
 
+class krt_query_prevalent_schema(krt_base_schema):
+    pass
+
 class krt_query_incident_schema(krt_base_schema):
+    dischargereasoncode: Series[str] = pa.Field(nullable=True)
+    dischargereasoncodestd: Series[str] = pa.Field(nullable=True)
+    dischargelocationcode: Series[str] = pa.Field(nullable=True)
+    dischargelocationcodestd: Series[str] = pa.Field(nullable=True)
+    end_of_care: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
+    acute: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
+    transfer_in: Series[str] = pa.Field(nullable=False, isin=["1", "0"])
     ckd_centre: Series[str] = pa.Field(nullable=True)
     historic_tx: Series[bool]
 
 
 class krt_incident_schema(krt_query_incident_schema):
+    centre_code: Series[str]
+    satellite_code: Series[str]
     dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
     timeline_start: Series[pa.DateTime]
     incident: Series[bool]

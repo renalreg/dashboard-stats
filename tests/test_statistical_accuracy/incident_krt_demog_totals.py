@@ -123,8 +123,8 @@ if not KEYPATH:
         "Missing UKRDC_STATS_KEYPATH. Set it in your environment or in a .env file."
     )
     
-start_date = dt.datetime(2023, 1, 1)
-end_date = dt.datetime(2023, 12, 31)
+start_date = dt.datetime(YEAR, 1, 1)
+end_date = dt.datetime(YEAR, 12, 31)
 
 with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
     stats_codes = {v: k for k, v in map_codes("RR1+", "STATISTICIAN_CODE", session).items()}
