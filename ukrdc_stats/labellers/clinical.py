@@ -1,8 +1,8 @@
 import pandas as pd
-
 from ukrdc_stats.utils.database import get_archive_sessionmaker
 from ukrdc_stats.utils.query import pid_ni_map
-from ukrdc_stats.labellers.query import query_careplanning
+from ukrdc_stats.labellers.query import query_careplanning, query_vascular_access
+from ukrdc_stats.utils.data import VASCULAR_MAPPING
 
 def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTAssess")->pd.DataFrame:
     """
@@ -69,3 +69,39 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
 
 def eskd():
     pass
+
+def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
+
+    all_access_data = []
+    pids = cohort["pid"].unique().tolist()
+    
+    for i in range(0, len(pids), 100):
+        chunk = pids[i:i + 100]
+        chunk_data = query_vascular_access(session, chunk)
+        all_access_data.append(chunk_data)
+    
+    if len(all_access_data) == 0:
+        access_data = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+    else:
+        access_data = pd.concat(all_access_data)
+
+
+    if mode == "first":  
+        access_data = access_data[
+            access_data["procedure_time"] < cutoff_date
+        ].sort_values(by="procedure_time").drop_duplicates(
+            subset="pid", keep="first"
+        )
+    else:
+        raise Exception("Invalid or unsupported mode")
+    
+    # join access data to cohort
+    cohort = cohort.merge(
+        access_data,
+        on="pid",
+        how="left"
+    )
+    cohort.rename(columns={"procedure_time": "vascular_access_date", "qhd20": "access"}, inplace=True)
+    cohort.loc[cohort["vascular_access_date"].isna(), "access"] = "Missing"
+
+    return cohort

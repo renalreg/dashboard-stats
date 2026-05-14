@@ -76,14 +76,15 @@ def ckd_prevalent(
     # fill na ethnicities
     cohort.loc[:, "ukkaethnicity"] = cohort["ukkaethnicity"].fillna("Missing")
 
-    # TODO: this deaggregation logic should be revisited and was motivated by
+    # TODO: this deduplication logic should be revisited and was motivated by
     # patient with low clearance and nephrology clinic on the same day.
     cohort = cohort.sort_values(
         by=["ukrdcid", "fromtime", "admitreasoncode"],
         ascending=[True, False, False]
     ).drop_duplicates(subset=["ukrdcid"], keep="first")
 
-
+    cohort = main_satellite_centres(cohort)
+    
     return cohort
 
 
@@ -371,8 +372,10 @@ def krt_incident(
 
     if not start_date:
         start_date = end_date - dt.timedelta(days=365)
+
+    if start_date > end_date:
+        raise ValueError("Start date must be before end date")
    
-    
     # extract, clean and label the patient records used to calculate incidence
     base_cohort = query_krt_incident(session, facility, end_date, start_date, recovery_window)
     

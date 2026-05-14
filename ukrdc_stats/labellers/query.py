@@ -19,7 +19,13 @@ import datetime as dt
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from ukrdc_sqla.ukrdc import LabOrder, ResultItem, Address
+from ukrdc_sqla.ukrdc import (
+    LabOrder,
+    ResultItem, 
+    Address,
+    PatientRecord,
+    DialysisSession
+)
 from ukrdc_sqla.xmlarchive import Patient as XMLPatient, Assessment
 from ukrdc_stats.utils.query import pid_ni_map
 
@@ -256,3 +262,18 @@ def query_careplanning(archieve_session: Session, facility_codes: List[str], pre
         prevalent_assessments_df = pd.DataFrame(prevalent_assessments)
     
     return prevalent_assessments_df
+
+def query_vascular_access(session, patient_list):
+    
+    query = (
+        select(PatientRecord.pid, DialysisSession.procedure_time, DialysisSession.qhd20)
+        .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
+        .where(PatientRecord.pid.in_(patient_list))
+        .order_by(PatientRecord.pid, DialysisSession.procedure_time)
+    )
+
+    vascular_access = pd.DataFrame(session.execute(query))
+    if vascular_access.empty:
+        vascular_access = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+    
+    return vascular_access

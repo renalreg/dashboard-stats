@@ -68,6 +68,7 @@ def query_krt_prevalent(
             Treatment.qbl05,
             Treatment.hdp04,
             ModalityCodes.registry_code_type,
+            Patient.birthtime,
             Patient.deathtime,
             Treatment.fromtime,
             Treatment.totime
@@ -192,6 +193,7 @@ def query_krt_incident(
             ModalityCodes.acute,
             ModalityCodes.transfer_in,
             Patient.deathtime,
+            Patient.birthtime,
             Treatment.fromtime,
             Treatment.totime,
             ckd_latest.c.ckd_centre,
