@@ -3,6 +3,7 @@ functions against know totals from UKKA published ckd demographics data.
 """
 from ukrdc_stats.cohorts.base import krt_incident
 from ukrdc_stats.utils.database import get_sessionmaker
+from ukrdc_stats.utils.cache import cached_session
 from ukrdc_stats.utils.query import pid_ni_map
 import datetime as dt
 import pandas as pd
@@ -10,24 +11,21 @@ from dotenv import dotenv_values
 from pathlib import Path
 
 
-
-
-
 FACILITIES = [
-# live
-"RAJ",   # MSE
-"RAQ01", # Lister
-"RCSLB", # Nottingham
-"RH8",   # RD&E
-"RHW01", # Reading
-"RK7CC", # Sheffield
-"RL403", # Wolverhampton
-"RNJ00", # Barts
-"RFPFG", # Derby
-"RBD01", # Dorset
-"RLZ01", # Shrewsbury
-"RP5",   # Doncaster
-"BHLY",  # BHLY
+    # live
+    "RAJ",   # MSE
+    "RAQ01", # Lister
+    "RCSLB", # Nottingham
+    "RH8",   # RD&E
+    "RHW01", # Reading
+    "RK7CC", # Sheffield
+    "RL403", # Wolverhampton
+    "RNJ00", # Barts
+    "RFPFG", # Derby
+    "RBD01", # Dorset
+    "RLZ01", # Shrewsbury
+    "RP5",   # Doncaster
+    "BHLY",  # BHLY
 ]
 #FACILITIES = ["RCSLB"]
 
@@ -48,26 +46,27 @@ if not KEYPATH:
 start_date = dt.datetime(YEAR-1, 12, 31)
 end_date = dt.datetime(YEAR, 12, 31)
 
-with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
-    incident_patients = []
-    ni_map = pid_ni_map(session, FACILITIES)
-    for facility in FACILITIES:
-        incident_cohort = krt_incident(session, facility, start_date=start_date, end_date=end_date)
-        
-        # try to map join nhs number
-        incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "NHS"], on="pid", how="left")
-        incident_cohort.rename(columns = {"patientid": "nhs_number"}, inplace=True)
+with get_sessionmaker(SERVER, keypath=KEYPATH)() as db_session:
+    with cached_session(db_session) as session:
+        incident_patients = []
+        ni_map = pid_ni_map(session, FACILITIES)
+        for facility in FACILITIES:
+            incident_cohort = krt_incident(session, facility, start_date=start_date, end_date=end_date)
+            
+            # try to map join nhs number
+            incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "NHS"], on="pid", how="left")
+            incident_cohort.rename(columns = {"patientid": "nhs_number"}, inplace=True)
 
-        # try to map join chi
-        incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "CHI"], on="pid", how="left")
-        incident_cohort.rename(columns = {"patientid": "chi"}, inplace=True)
+            # try to map join chi
+            incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "CHI"], on="pid", how="left")
+            incident_cohort.rename(columns = {"patientid": "chi"}, inplace=True)
 
-        # try to map join hsc
-        incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "HSC"], on="pid", how="left")
-        incident_cohort.rename(columns = {"patientid": "hsc"}, inplace=True)
+            # try to map join hsc
+            incident_cohort = incident_cohort.merge(ni_map[["pid", "patientid"]][ni_map.organization == "HSC"], on="pid", how="left")
+            incident_cohort.rename(columns = {"patientid": "hsc"}, inplace=True)
 
-        incident_cohort["nhsno"] = incident_cohort["nhs_number"].fillna(incident_cohort["chi"]).fillna(incident_cohort["hsc"])         
-        incident_patients.append(incident_cohort[["ukrdcid", "pid", "centre_code", "satellite_code", "dialtplt", "timeline_start", "nhsno"]])
+            incident_cohort["nhsno"] = incident_cohort["nhs_number"].fillna(incident_cohort["chi"]).fillna(incident_cohort["hsc"])         
+            incident_patients.append(incident_cohort[["ukrdcid", "pid", "centre_code", "satellite_code", "dialtplt", "timeline_start", "nhsno"]])
 
     incident_all = pd.concat(incident_patients)
     incident_all = incident_all.merge(rr_ref_data[["nhsno", "KRT-start", "centre", "trtstart"]], on="nhsno", how="left")

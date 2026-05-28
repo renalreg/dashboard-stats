@@ -6,7 +6,6 @@ an empty cohort error.
 
 TODO:
 - Expand validation via pandera schemas
-- Add caching
 """
 
 import datetime as dt
@@ -19,7 +18,6 @@ from ukrdc_stats.cohorts.schema import (
     ckd_treatment_archive_base_schema,
 )
 from ukrdc_stats.utils.query import pid_ni_map
-from ukrdc_stats.utils.cache import cache_dataframe_to_disk
 from ukrdc_sqla.ukrdc import (
     Treatment,
     Patient,
@@ -40,7 +38,6 @@ from sqlalchemy.orm import Session, aliased
 from ukrdc_stats.utils.database import get_archive_sessionmaker
 
 
-@cache_dataframe_to_disk(".do_not_commit/query_krt_prevalent")
 @pa.check_output(krt_query_prevalent_schema)
 def query_krt_prevalent(
     session: Session,
@@ -101,7 +98,6 @@ def query_krt_prevalent(
     return pd.DataFrame(data)
 
 
-@cache_dataframe_to_disk(".do_not_commit/query_krt_incident")
 @pa.check_output(krt_query_incident_schema)
 def query_krt_incident(
     session: Session,
@@ -237,7 +233,6 @@ def query_krt_incident(
     return pd.DataFrame(data)
 
 
-@cache_dataframe_to_disk(".do_not_commit/facility_demographics")
 @pa.check_output(demog_base_schema)
 def facility_demographics(session: Session, facility_code: str) -> krt_base_schema:
     """Core query to extract demographic information
@@ -278,7 +273,6 @@ def facility_demographics(session: Session, facility_code: str) -> krt_base_sche
     return demographics
 
 
-@cache_dataframe_to_disk(".do_not_commit/query_ckd_ukrdc")
 @pa.check_output(ckd_ukrdc_base_schema)
 def query_ckd_ukrdc(
     session: Session,
@@ -377,7 +371,6 @@ def query_ckd_ukrdc(
     return base_cohort
 
 
-@cache_dataframe_to_disk(".do_not_commit/query_ckd_treatment_archive")
 @pa.check_output(ckd_treatment_archive_base_schema)
 def query_ckd_treatment_archive(
     archive_session: Session, facility: str, prevalence_point: dt.datetime
@@ -429,7 +422,6 @@ def query_ckd_treatment_archive(
     return output
 
 
-#@cache_dataframe_to_disk(".do_not_commit/query_ckd")
 @pa.check_output(ckd_ukrdc_base_schema)
 def query_ckd(session: Session, facility_code: str, prevalence_point: dt.datetime):
     """

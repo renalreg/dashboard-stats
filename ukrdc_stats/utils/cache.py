@@ -1,90 +1,106 @@
-"""
-Basic AI generated caching for functions which return dataframes.
+"""Session-level query caching."""
 
-Copy pasted from tableau extracts, to be replaced with something more fit for
-purpose.
-"""
-
-from __future__ import annotations
-
-import functools
 import hashlib
-import inspect
 import json
 from pathlib import Path
-from typing import Any, Callable, Iterable, ParamSpec, TypeVar
+from contextlib import contextmanager
+from typing import Literal
 
-import pandas as pd
+from dogpile.cache import make_region
+from dogpile.cache.api import NO_VALUE
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
-P = ParamSpec("P")
-R = TypeVar("R")
+_DEFAULT_CACHE_DIR = Path(".do_not_commit") / "query_cache"
 
-
-def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
-
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
-
-    return repr(value)
+# Memory-based region (process lifetime)
+_memory_region = make_region().configure("dogpile.cache.memory")
 
 
-def _make_cache_key(func: Callable[..., Any], payload: dict[str, Any]) -> str:
-    blob = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode(
-        "utf-8"
+def _make_file_region(cache_dir: Path, expiration: int):
+    """Create a dbm-backed file cache region."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return make_region().configure(
+        "dogpile.cache.dbm",
+        expiration_time=expiration,
+        arguments={"filename": str(cache_dir / "query_cache.dbm")},
     )
-    digest = hashlib.sha256(blob).hexdigest()[:16]
-    return f"{func.__name__}__{digest}"
+
+def _generate_cache_key(session: Session, statement, parameters: dict) -> str:
+    """Hash of SQL structure + bound parameters + DB URL (no credentials)."""
+    url = session.bind.url
+    db_url = f"{url.drivername}://{url.host}:{url.port}/{url.database}"
+    sql_text = str(statement._generate_cache_key())
+
+    key_parts = {
+        "db": db_url,
+        "sql": sql_text,
+        "params": {k: str(v) for k, v in parameters.items()},
+    }
+    blob = json.dumps(key_parts, sort_keys=True).encode()
+    return hashlib.sha256(blob).hexdigest()[:32]
+
+class QueryCache:
+    """Caches query results."""
+
+    def __init__(
+        self,
+        expiration: int = 3600,
+        backend: Literal["memory", "file"] = "memory",
+        cache_dir: Path = _DEFAULT_CACHE_DIR,
+    ):
+        self.expiration = expiration
+        self._enabled = False
+        self._region = (
+            _make_file_region(cache_dir, expiration)
+            if backend == "file"
+            else _memory_region
+        )
+    
+    def enable(self, session: Session):
+        """Attach cache to this session."""
+        self._enabled = True
+        
+        @event.listens_for(session, "do_orm_execute")
+        def _on_orm_execute(orm_context):
+            return self._intercept(orm_context)
+    
+    def _intercept(self, orm_context):
+        """Check cache first, execute and store if not cached."""
+        cache_key = _generate_cache_key(
+            orm_context.session,
+            orm_context.statement,
+            orm_context.parameters or {}
+        )
+
+        cached = self._region.get(cache_key)
+        if cached is not NO_VALUE:
+            return cached()
+
+        conn = orm_context.session.connection()
+        result = conn.execute(orm_context.statement)
+        frozen = result.freeze()
+        self._region.set(cache_key, frozen)
+        return frozen()
 
 
-def cache_dataframe_to_disk(
-    cache_dir: str | Path,
-    *,
-    exclude_params: Iterable[str] = (
-        "session",
-        "ukrdc_session",
-        "archive_session",
-        "engine",
-        "connection",
-        "conn",
-    ),
-    refresh: bool = False,
-) -> Callable[[Callable[P, pd.DataFrame]], Callable[P, pd.DataFrame]]:
-    cache_dir_path = Path(cache_dir)
+@contextmanager
+def cached_session(
+    session: Session,
+    expiration: int = 3600,
+    backend: Literal["memory", "file"] = "memory",
+    cache_dir: Path = _DEFAULT_CACHE_DIR,
+):
+    """Context manager for query caching on a session.
 
-    def decorator(func: Callable[P, pd.DataFrame]) -> Callable[P, pd.DataFrame]:
-        signature = inspect.signature(func)
-        exclude_set = set(exclude_params)
-
-        @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> pd.DataFrame:
-            bound = signature.bind_partial(*args, **kwargs)
-            bound.apply_defaults()
-
-            key_payload = {
-                "func": func.__name__,
-                "args": {
-                    name: _jsonable(value)
-                    for name, value in bound.arguments.items()
-                    if name not in exclude_set
-                },
-            }
-            cache_key = _make_cache_key(func, key_payload)
-
-            cache_dir_path.mkdir(parents=True, exist_ok=True)
-            cache_path = cache_dir_path / f"{cache_key}.pkl"
-
-            if cache_path.exists() and not refresh:
-                return pd.read_pickle(cache_path)
-
-            df = func(*args, **kwargs)
-            df.to_pickle(cache_path)
-            return df
-
-        return wrapper
-
-    return decorator
+    Args:
+        backend: ``"memory"`` for in-process cache, ``"file"`` for a dbm file
+            cache that persists between runs (stored in ``cache_dir``).
+        cache_dir: Directory for the dbm file when ``backend="file"``.
+    """
+    cache = QueryCache(expiration, backend=backend, cache_dir=cache_dir)
+    cache.enable(session)
+    try:
+        yield session
+    finally:
+        pass  # Events auto-detach when session closes

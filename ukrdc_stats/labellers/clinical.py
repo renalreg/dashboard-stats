@@ -72,6 +72,7 @@ def eskd():
 
 def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
 
+
     all_access_data = []
     pids = cohort["pid"].unique().tolist()
     
@@ -81,15 +82,15 @@ def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
         all_access_data.append(chunk_data)
     
     if len(all_access_data) == 0:
-        access_data = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+        access_data = pd.DataFrame(columns=["pid", "proceduretime", "qhd20"])
     else:
         access_data = pd.concat(all_access_data)
 
 
     if mode == "first":  
         access_data = access_data[
-            access_data["procedure_time"] < cutoff_date
-        ].sort_values(by="procedure_time").drop_duplicates(
+            access_data["proceduretime"] < cutoff_date
+        ].sort_values(by="proceduretime").drop_duplicates(
             subset="pid", keep="first"
         )
     else:
@@ -101,7 +102,63 @@ def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
         on="pid",
         how="left"
     )
-    cohort.rename(columns={"procedure_time": "vascular_access_date", "qhd20": "access"}, inplace=True)
+    cohort.rename(columns={"proceduretime": "vascular_access_date", "qhd20": "access"}, inplace=True)
     cohort.loc[cohort["vascular_access_date"].isna(), "access"] = "Missing"
 
     return cohort
+
+
+def hd_dialysis_frequency( session, patient_cohort, start, stop, mode = "median"):
+    
+    # todo: check for other codes/code standards
+    dialysis_snomed = ["302497006", "233581009", "233586004"]
+
+    if "dialtplt" not in patient_cohort.columns:
+        raise Exception("dialtplt column not found in patient_cohort")
+    
+
+    # retrieve dialysis sessions for hd patients
+    hd_patients = patient_cohort[patient_cohort["dialtplt"].isin(["HD", "HHD"])]["pid"].unique().tolist()
+    all_dialysis_data = []
+    for i in range(0, len(hd_patients), 100):
+        chunk = hd_patients[i:i + 100]
+        chunk_data = query_dialysis_sessions(session, chunk)
+        all_dialysis_data.append(chunk_data)
+
+    if all_dialysis_data:
+        dialysis_data = pd.concat(all_dialysis_data).drop_duplicates(subset=["pid", "procedure_time"])
+        dialysis_data = dialysis_data[
+            (dialysis_data.procedure_time < stop)
+            & (dialysis_data.procedure_time >= start)
+        ]
+        dialysis_data["weekstart"] = dialysis_data["procedure_time"].dt.to_period("W").dt.start_time
+        dialysis_data = dialysis_data[dialysis_data.procedure_type_code.isin(dialysis_snomed)]
+        
+        median_sessions = (
+            dialysis_data.groupby(["pid", "weekstart"])
+            .size()
+            .reset_index(name="hdsessionno")
+            .groupby("pid")["hdsessionno"]
+            .median()
+            .astype(int)
+            .reset_index()
+            .rename(columns={"hdsessionno": "median_sessions_per_week"})
+        )
+        #print(median_sessions.head())
+        median_sessions["sessions_binned"] = pd.cut(
+            median_sessions["median_sessions_per_week"],
+            bins=[0, 2, 3, 4, 1000],
+            labels=["<2", "2", "3", ">3"],
+            right=False
+        )
+    
+        patient_cohort = patient_cohort.merge(
+            median_sessions[["pid", "median_sessions_per_week", "sessions_binned"]],
+            on="pid",
+            how="left"
+        )
+
+    #TODO: what if a hd patient has no hd sessions?
+    #debug = patient_cohort[patient_cohort.dialtplt == 'HD']
+
+    return patient_cohort

@@ -27,7 +27,6 @@ from ukrdc_sqla.ukrdc import (
     DialysisSession
 )
 from ukrdc_sqla.xmlarchive import Patient as XMLPatient, Assessment
-from ukrdc_stats.utils.query import pid_ni_map
 
 from urllib.request import urlretrieve
 from pathlib import Path
