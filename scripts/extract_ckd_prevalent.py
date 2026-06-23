@@ -33,12 +33,11 @@ with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
         "satellite_code", 
         "clinictype"
     ]
-    row_attributes = [        
+    row_attributes = [
         "sex",
         "age",
-        "clinictype",
         "ukkaethnicity",
-        "imddecile", 
+        "imddecile",
         "assessmentoutcome"
     ]
 

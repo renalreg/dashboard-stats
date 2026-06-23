@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker, Session
+from ukrdc_stats.utils.cache import cachedsessionmaker
 
 
 def load_ukrdc_url_from_config(server_name: str, keypath: str) -> URL:
@@ -45,7 +46,7 @@ def load_ukrdc_url_from_config(server_name: str, keypath: str) -> URL:
     )
 
 
-def get_sessionmaker(server_name: str, keypath: str) -> sessionmaker:
+def get_sessionmaker(server_name: str, keypath: str, caching: bool = False) -> sessionmaker:
     """Create a SQL session for the specified server using the UKRDC configuration.
 
     Args:
@@ -58,7 +59,11 @@ def get_sessionmaker(server_name: str, keypath: str) -> sessionmaker:
 
     db_url = load_ukrdc_url_from_config(server_name, keypath)
     engine = create_engine(db_url)
-    return sessionmaker(bind=engine)
+
+    if caching:
+        return cachedsessionmaker(bind=engine)
+    else:
+        return sessionmaker(bind=engine)
 
 
 def get_archive_sessionmaker(session: Session) -> sessionmaker:

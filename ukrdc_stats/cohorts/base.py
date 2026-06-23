@@ -83,7 +83,7 @@ def ckd_prevalent(
         ascending=[True, False, False]
     ).drop_duplicates(subset=["ukrdcid"], keep="first")
 
-    cohort = main_satellite_centres(cohort)
+    cohort = main_satellite_centres(session, cohort)
     
     return cohort
 

@@ -139,3 +139,5 @@ dmypy.json
 cache/
 /tests/test_statistical_accuracy/output
 /tests/test_statistical_accuracy/data
+/static 
+/templates

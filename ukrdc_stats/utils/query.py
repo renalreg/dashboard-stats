@@ -20,7 +20,7 @@ def pid_ni_map(session: Session, facilities: list[str]) -> pd.DataFrame:
         .join(PatientRecord, PatientNumber.pid == PatientRecord.pid)
         .where(PatientRecord.sendingfacility.in_(facilities))
     )
-    pids = pd.DataFrame(session.execute(query))
+    pids = pd.DataFrame(session.execute(query).all())
 
     if pids.empty:
         raise EmptyCohortError
@@ -36,7 +36,7 @@ def sendingfacility_main_unit_map(session: Session) -> pd.DataFrame:
         select(PatientRecord.sendingfacility, PatientRecord.mainunit)
         .distinct(PatientRecord.sendingfacility, PatientRecord.mainunit)
     )
-    sendingfacilities = pd.DataFrame(session.execute(query))
+    sendingfacilities = pd.DataFrame(session.execute(query).all())
 
     if sendingfacilities.empty:
         raise EmptyCohortError
