@@ -8,7 +8,7 @@ import pandas as pd
 import fileinput
 import warnings
 
-from ukrdc_sqla.ukrdc import CodeMap, SatelliteMap
+from ukrdc_sqla.ukrdc import CodeMap
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
 from typing import Optional, Dict, List
@@ -275,8 +275,10 @@ def _get_satellite_list(facility_code: str, session: Session) -> List[str]:
     """
     Get the list of satellites for the facility.
     """
-    query = select(SatelliteMap.satellite_code).where(
-        SatelliteMap.main_unit_code == facility_code
+    query = select(CodeMap.source_code).where(
+        CodeMap.destination_code == facility_code,
+        CodeMap.destination_coding_standard == "RR1+_MAIN",
+        CodeMap.source_coding_standard == "RR1+_SATELLITE",
     )
     return session.execute(query).scalars().all()
 
