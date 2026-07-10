@@ -14,7 +14,7 @@ version = "2.13.7"
 [tool.poetry.dependencies]
 SQLAlchemy = "^2.0.0"
 pandas = "^2.2.2" 
-pydantic = "^1.10.1" 
+pydantic = ">=2.0.0,<3"
 python = "^3.12" 
 ukrdc-sqla = "^4.0.0"
 freezegun = "^1.2.2"

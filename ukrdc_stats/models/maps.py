@@ -18,9 +18,9 @@ class TimeSeries3dData(JSONModel):
 
 
 class AxisLabel3d(JSONModel):
-    x: Optional[str]
-    y: Optional[str]
-    z: Optional[str]
+    x: Optional[str] = None
+    y: Optional[str] = None
+    z: Optional[str] = None
 
 
 class Basic3dMetadata(JSONModel):

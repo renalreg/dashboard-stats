@@ -2,7 +2,7 @@
 Base Pydantic class with JSON aliasing, used in the UKRDC API
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 def _to_camel(snake_str: str) -> str:
@@ -11,6 +11,7 @@ def _to_camel(snake_str: str) -> str:
 
 
 class JSONModel(BaseModel):
-    class Config:
-        alias_generator = _to_camel
-        allow_population_by_field_name = True
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
