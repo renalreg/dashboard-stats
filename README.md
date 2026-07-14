@@ -10,7 +10,7 @@ Library for generating statistics for the UKRDC dashboard
 See [PKG-README](./PKG-README.md) for user installation and usage.
 
 ## Developer notes
-⚠️This is a public repository all script output should be pointed at the .do_not_commit directory at the root of this project to prevent accidental committing of data. Tox testing be run and passing before any commits of notebooks or other code.
+⚠️This is a public repository all script output should be pointed at the .do_not_commit directory at the root of this project to prevent accidental committing of data. Tox testing to be run and passing before any commits of notebooks or other code.
 
 ### Installation
 
