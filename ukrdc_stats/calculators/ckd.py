@@ -425,7 +425,9 @@ class PrevalentCKDCalculator(AbstractFacilityStatsCalculator):
             results = pd.DataFrame(columns=columns)
 
         # separate and clean
-        egfr_results = results[results["serviceidcode"].isin(["QBLAB", "QBLAP", "QBLAL"])].copy()
+        egfr_results = results[
+            results["serviceidcode"].isin(["QBLAB", "QBLAP", "QBLAL"])
+        ].copy()
         egfr_results["resultvalue"] = (
             egfr_results["resultvalue"].str.replace("<", "").str.replace(">", "")
         )
