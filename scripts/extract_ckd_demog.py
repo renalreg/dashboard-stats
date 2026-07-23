@@ -2,8 +2,6 @@
 Script to generate cohort for the ukrdc tableau dashboards.
 """
 from ukrdc_stats.utils.database import get_sessionmaker
-from ukrdc_stats.utils.cache import cached_session
-from ukrdc_stats.utils.data import map_codes, lookup_codes
 from ukrdc_stats.cohorts.base import ckd_prevalent
 from ukrdc_stats.exceptions import EmptyCohortError
 from dotenv import dotenv_values

@@ -141,3 +141,6 @@ cache/
 /tests/test_statistical_accuracy/data
 /static 
 /templates
+
+# Some stuff here not appropriate for public repo
+demo/exploratory

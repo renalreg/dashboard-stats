@@ -72,7 +72,6 @@ def eskd():
 
 def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
 
-
     all_access_data = []
     pids = cohort["pid"].unique().tolist()
     
@@ -82,15 +81,15 @@ def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
         all_access_data.append(chunk_data)
     
     if len(all_access_data) == 0:
-        access_data = pd.DataFrame(columns=["pid", "proceduretime", "qhd20"])
+        access_data = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
     else:
         access_data = pd.concat(all_access_data)
 
 
     if mode == "first":  
         access_data = access_data[
-            access_data["proceduretime"] < cutoff_date
-        ].sort_values(by="proceduretime").drop_duplicates(
+            access_data["procedure_time"] < cutoff_date
+        ].sort_values(by="procedure_time").drop_duplicates(
             subset="pid", keep="first"
         )
     else:
@@ -102,7 +101,7 @@ def vascular_access(cohort, session, cutoff_date, mode:str = "first"):
         on="pid",
         how="left"
     )
-    cohort.rename(columns={"proceduretime": "vascular_access_date", "qhd20": "access"}, inplace=True)
+    cohort.rename(columns={"procedure_time": "vascular_access_date", "qhd20": "access"}, inplace=True)
     cohort.loc[cohort["vascular_access_date"].isna(), "access"] = "Missing"
 
     return cohort

@@ -100,6 +100,7 @@ def _chain_treatments(base_cohort, recovery_window:dt.timedelta):
     """
     
     base_cohort.sort_values(by=["ukrdcid", "fromtime", "totime"], inplace=True)
+    base_cohort['timeline_order'] = base_cohort.groupby('ukrdcid').cumcount()
     
     # Get previous treatment's time bounds (within each patient)
     base_cohort['prev_fromtime'] = base_cohort.groupby('ukrdcid')['fromtime'].shift(1)
@@ -152,7 +153,7 @@ def _chain_treatments(base_cohort, recovery_window:dt.timedelta):
     
     choices = ['before',"short recovery", 'meets', 'overlaps', 'starts', 'during', 'finished by', 'equals']
     base_cohort['prev_treatment_relationship'] = np.select(conditions, choices, default=None)
-    
+
     return base_cohort
 
 
@@ -160,7 +161,9 @@ def _clean_totime(base_cohort:pd.DataFrame) -> pd.DataFrame:
     """
     The current record will typically be open (totime is NaT). However it's 
     more convenient to treat these as infinities, for computing equalities.
-    Function also cleans totimes where a date of death is present. 
+    Function also cleans totimes where a date of death is present. This 
+    function could further be expanded to handle cases where the record hasn't
+    been closed. 
     
     Args:
         base_cohort (pd.DataFrame): Base cohort dataframe
@@ -182,6 +185,61 @@ def _clean_totime(base_cohort:pd.DataFrame) -> pd.DataFrame:
     if "deathtime" in base_cohort.columns:
         mask = base_cohort['totime'] >= base_cohort['deathtime']
         base_cohort.loc[mask, 'totime'] = base_cohort.loc[mask, 'deathtime']
+
+    return base_cohort
+
+def _clean_equal_records(base_cohort:pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove records that are equal to the previous record.
+    
+    Args:
+        base_cohort (pd.DataFrame): Base cohort dataframe
+    
+    Returns:
+        pd.DataFrame: Cleaned base cohort dataframe
+    """
+
+    if 'prev_treatment_relationship' not in base_cohort.columns:
+        raise ValueError("prev_treatment_relationship column not found in base_cohort")
+    
+    base_cohort.to_csv("equal_records_debug.csv", index=False)
+    
+
+    # Rule 1: where equal records of same modality are present in different 
+    # centres merge records. This for cases where multiple centres fill in
+    # treatment timeline
+    equal_records = base_cohort[
+        base_cohort['prev_treatment_relationship'] == 'equals'
+    ]
+    for record in equal_records.itertuples():
+        # earlier iterations may already have dropped this record or its predecessor
+        if record.Index not in base_cohort.index:
+            continue
+        prev_rows = base_cohort.loc[
+            (record.ukrdcid == base_cohort.ukrdcid)
+            & (record.timeline_order - 1 == base_cohort.timeline_order)
+        ]
+        if prev_rows.empty:
+            continue
+        # itertuples gives a single row object so comparisons yield scalars
+        prev_record = next(prev_rows.itertuples())
+
+        # if the centre of equal records isn't equal we attemp to keep the one
+        # that matches the ckd centre. Note that we may want to expand this to
+        # starts and contains as well
+        if prev_record.sendingfacility != record.sendingfacility:
+            ckd_centres = {
+                c for c in (prev_record.ckd_centre, record.ckd_centre) if pd.notna(c)
+            }
+            prev_matches = prev_record.sendingfacility in ckd_centres
+            curr_matches = record.sendingfacility in ckd_centres
+            if prev_matches and not curr_matches:
+                # Keep the previous record and remove the current one
+                base_cohort = base_cohort.drop(record.Index)
+            elif curr_matches and not prev_matches:
+                # recode relationship and drop previous record
+                base_cohort.loc[record.Index, 'prev_treatment_relationship'] = prev_record.prev_treatment_relationship
+                base_cohort = base_cohort.drop(prev_record.Index)
 
     return base_cohort
 
@@ -290,6 +348,8 @@ def _label_incident(krt_new_cohort, recovery_window:dt.timedelta= dt.timedelta(d
 
     # filter down to chronic krt patients
     chronic_ids = set(group1_ids) | set(group2_ids) | set(group3_ids) | set(group4_ids)
+
+    krt_new_cohort["incident"] = False
     krt_new_cohort.loc[krt_new_cohort["ukrdcid"].isin(chronic_ids), "incident"] = True
     
     return krt_new_cohort
@@ -379,13 +439,15 @@ def krt_incident(
     # extract, clean and label the patient records used to calculate incidence
     base_cohort = query_krt_incident(session, facility, end_date, start_date, recovery_window)
     
-    
-    base_cohort["dialtplt"] = base_cohort["registry_code_type"] 
+    # debug 
+    debug_ukrdcids = ['100133317']
+
+    base_cohort = base_cohort[base_cohort.ukrdcid.isin(debug_ukrdcids)]
+    base_cohort["dialtplt"] = base_cohort["registry_code_type"].copy() 
     base_cohort = _clean_totime(base_cohort)    
     base_cohort = _chain_treatments(base_cohort, recovery_window)
     base_cohort = _label_timeline(base_cohort)
-    
-
+    base_cohort = _clean_equal_records(base_cohort)
 
     # Remove patients with timelines beginning before analysis window or historic tx
     base_cohort = base_cohort[
@@ -395,6 +457,7 @@ def krt_incident(
     ].copy()
 
     base_cohort = _label_incident(base_cohort, recovery_window)
+
 
     # reduce down to one row per patient
     singular_cohort = base_cohort[
@@ -428,7 +491,7 @@ def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime
         ]
         .sort_values("totime", ascending=False)
         .drop_duplicates("ukrdcid", keep="first")
-    )
+    )   
 
     singular_cohort = main_satellite_centres(session, singular_cohort, outlier_mapping_mode="otherise")
     singular_cohort = _reassign_transplants(singular_cohort)
