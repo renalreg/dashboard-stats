@@ -419,7 +419,7 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         raw_patients = raw_patients.groupby("ukrdcid", as_index=False)[
             raw_patients.columns
-        ].apply(adjust_next_fromtime, include_group=False)
+        ].apply(adjust_next_fromtime, include_groups=False)
 
         return raw_patients
 
@@ -516,7 +516,8 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             .apply(
                 lambda x: x["totime"].idxmax()
                 if x["totime"].notna().any()
-                else x["fromtime"].idxmax()
+                else x["fromtime"].idxmax(),
+                include_groups=False
             )
             .values,
             "most_recent",
