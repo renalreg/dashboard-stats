@@ -2,9 +2,10 @@ import pandas as pd
 import datetime as dt
 from pathlib import Path
 from dotenv import dotenv_values
+
 from ukrdc_stats.cohorts.base import krt_incident, krt_prevalent
-from ukrdc_stats.labellers.demographics import age, adult_paed
-from ukrdc_stats.labellers.geography import imd
+from ukrdc_stats.labellers.demographics import age
+from ukrdc_stats.labellers.geography import imd, adult_paed
 from ukrdc_stats.labellers.clinical import vascular_access
 from ukrdc_stats.utils.database import get_sessionmaker
 from ukrdc_stats.utils.data import aggregate_data
@@ -18,28 +19,15 @@ QUARTER_START: int = 3
 NO_OF_QUARTERS: int = 1
 OUTPUT_DIR: Path = Path(".do_not_commit") 
 SERVER: str = "ukrdc_live"
-#OUTPUT_FILE: Path = Path(f"krt_demog_{SERVER}_{YEAR_START}.csv")
-OUTPUT_FILE: Path = Path(f"krt_debug.csv")
+OUTPUT_FILE: Path = Path(f"krt_demog_{SERVER}_{YEAR_START}.csv")
+#OUTPUT_FILE: Path = Path(f"krt_debug.csv")
 
-FACILITIES = [
-    # live
-    #"RAJ",   # MSE
-    "RAQ01", # Lister
-    "RCSLB", # Nottingham
-    "RH8",   # RD&E
-    "RHW01", # Reading
-    "RK7CC", # Sheffield
-    "RL403", # Wolverhampton
-    "RNJ00", # Barts
-    "RFPFG", # Derby
-    "RBD01", # Dorset
-    "RLZ01", # Shrewsbury
-    "RP5",   # Doncaster
-    "BHLY",  # BHLY
-]
-
-FACILITIES = [
-    "RHW01"
+CENTRES = [
+    "99RQR13",
+    "RAE05",
+    "RCB55",
+    "RF201",
+    "RQR13",
 ]
 
 def main():
@@ -61,25 +49,27 @@ def main():
 
             krt_incident_reports = []
             krt_prevalent_reports = []
-            for FACILITY in FACILITIES:
+            for centre in CENTRES:
                 # Extract incident and label
-                krt_incident_report = krt_incident(session, FACILITY, quarter_end, quarter_start)
+                krt_incident_report = krt_incident(session, centre, quarter_end, quarter_start)
+                
+                
                 krt_incident_report = age(krt_incident_report, quarter_end)
-                krt_incident_report = adult_paed(krt_incident_report)
-                krt_incident_report = vascular_access(krt_incident_report, session, quarter_end)
+                krt_incident_report = adult_paed(session, krt_incident_report)
+                #krt_incident_report = vascular_access(krt_incident_report, session, quarter_end)
                 krt_incident_report = imd(session, krt_incident_report)
                 krt_incident_report["incidprev"] = "incident"
                 krt_incident_reports.append(krt_incident_report)
 
-                # Extract prevalent and label
-                krt_prevalent_report = krt_prevalent(session, FACILITY, quarter_end)
+                # Extract prevalent and label   
+                krt_prevalent_report = krt_prevalent(session, centre, quarter_end)
                 krt_prevalent_report = age(krt_prevalent_report, quarter_end)
-                krt_prevalent_report = adult_paed(krt_prevalent_report)
-                krt_prevalent_report = vascular_access(krt_prevalent_report, session, quarter_end)
+                krt_prevalent_report = adult_paed(session, krt_prevalent_report)
+                #krt_prevalent_report = vascular_access(krt_prevalent_report, session, quarter_end)
                 krt_prevalent_report = imd(session, krt_prevalent_report)
                 krt_prevalent_report["incidprev"] = "prevalent"
                 krt_prevalent_reports.append(krt_prevalent_report)
-
+                
             krt_incident_combined = pd.concat(krt_incident_reports, ignore_index=True) if krt_incident_reports else pd.DataFrame()
             krt_prevalent_combined = pd.concat(krt_prevalent_reports, ignore_index=True) if krt_prevalent_reports else pd.DataFrame()
                 
@@ -108,7 +98,6 @@ def main():
         row_attributes = [
             "age",
             "imddecile",
-            "access", 
             "dialtplt"
         ]     
     )

@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from ukrdc_stats.cohorts.query import query_ckd, query_krt_incident, query_krt_prevalent
-from ukrdc_stats.labellers.demographics import age, adult_paed
+from ukrdc_stats.labellers.demographics import age
 from ukrdc_stats.labellers.biomarkers import egfr
-from ukrdc_stats.labellers.geography import main_satellite_centres
+from ukrdc_stats.labellers.geography import adult_paed, main_satellite_centres
 from ukrdc_stats.utils.data import GENDER_GROUP_MAP
+from ukrdc_stats.validation.validate import validate_centre
+from ukrdc_stats.exceptions import MissingColumnError
 
 import numpy as np
 import datetime as dt
@@ -28,7 +30,7 @@ def ckd_incident(session: Session, facility: str, end: dt.datetime, start: dt.da
 
 @pa.check_output(ckd_prevalent_schema)
 def ckd_prevalent(
-    session: Session, facility: str, prevalence_point: dt.datetime
+    session: Session, centre: str, prevalence_point: dt.datetime
 ) -> ckd_prevalent_schema:
     """
     Get the prevalent CKD cohort for a given facility and prevalence point.
@@ -42,11 +44,10 @@ def ckd_prevalent(
     """
 
     # Get base data
-    ukrdc_base_data = query_ckd(session, facility, prevalence_point)
+    ukrdc_base_data = query_ckd(session, centre, prevalence_point)
 
     # Label patients
     ukrdc_base_data = age(ukrdc_base_data, prevalence_point)
-    ukrdc_base_data = adult_paed(ukrdc_base_data)
     ukrdc_base_data = egfr(session, ukrdc_base_data, prevalence_point)
 
     # Error handling for low completeness egfr
@@ -58,8 +59,7 @@ def ckd_prevalent(
     # Apply cohort filtering logic
     cohort = (
         ukrdc_base_data[
-            (ukrdc_base_data.adult_paed == "Adult")
-            & (ukrdc_base_data.egfr_min <= 15)
+            (ukrdc_base_data.egfr_min <= 15)
             & ~ukrdc_base_data.egfr_min.isna()
         ]
         .copy()
@@ -83,9 +83,11 @@ def ckd_prevalent(
         ascending=[True, False, False]
     ).drop_duplicates(subset=["ukrdcid"], keep="first")
 
+    # Apply centre labelling logic and filter anything not in the required centre
     cohort = main_satellite_centres(session, cohort)
+    cohort = adult_paed(session, cohort)
     
-    return cohort
+    return cohort[cohort.centre_code == centre]
 
 
 def _chain_treatments(base_cohort, recovery_window:dt.timedelta):
@@ -176,13 +178,13 @@ def _clean_totime(base_cohort:pd.DataFrame) -> pd.DataFrame:
     infinity = dt.datetime(2200, 1, 1)
 
     if 'totime' not in base_cohort.columns:
-        raise ValueError("totime column not found in base_cohort")
+        raise MissingColumnError("totime column not found in base_cohort")
     
     # Replace NaT with infinity
     base_cohort.loc[base_cohort['totime'].isna(), 'totime'] = infinity
-    base_cohort.loc[base_cohort['deathtime'].isna(), 'deathtime'] = infinity
 
     if "deathtime" in base_cohort.columns:
+        base_cohort.loc[base_cohort['deathtime'].isna(), 'deathtime'] = infinity
         mask = base_cohort['totime'] >= base_cohort['deathtime']
         base_cohort.loc[mask, 'totime'] = base_cohort.loc[mask, 'deathtime']
 
@@ -200,9 +202,9 @@ def _clean_equal_records(base_cohort:pd.DataFrame) -> pd.DataFrame:
     """
 
     if 'prev_treatment_relationship' not in base_cohort.columns:
-        raise ValueError("prev_treatment_relationship column not found in base_cohort")
+        raise MissingColumnError("prev_treatment_relationship column not found in base_cohort")
     
-    base_cohort.to_csv("equal_records_debug.csv", index=False)
+    #base_cohort.to_csv("equal_records_debug.csv", index=False)
     
 
     # Rule 1: where equal records of same modality are present in different 
@@ -255,7 +257,7 @@ def _label_timeline(krt_incident_cohort:pd.DataFrame) -> pd.DataFrame:
     """
     
     if 'prev_treatment_relationship' not in krt_incident_cohort.columns:
-        raise ValueError("prev_treatment_relationship column not found in krt_incident_cohort")
+        raise MissingColumnError("prev_treatment_relationship column not found in krt_incident_cohort")
     
     timeline_start = krt_incident_cohort[
         (krt_incident_cohort["prev_treatment_relationship"] == 'before')
@@ -414,21 +416,24 @@ def _label_incident_old(krt_new_cohort, start_date: dt.datetime, end_date: dt.da
 @pa.check_output(krt_incident_schema)
 def krt_incident(
     session:Session, 
-    facility:str, 
+    centre:str, 
     end_date:dt.datetime, 
     start_date:Optional[dt.datetime] = None,
     recovery_window:dt.timedelta = dt.timedelta(days=90)
     ) -> krt_incident_schema:
     """
-    Get the incident KRT cohort for a given facility and date range.
+    Get the incident KRT cohort for a given renal centre, it's satellites and date range.
 
     Args:
         session (Session): UKRDC session
-        facility (str): Facility code
+        centre (str): Renal centre code
         end_date (dt.datetime): End date
         start_date (Optional[dt.datetime], optional): Start date. If not set it will default to a year prior to the end date.
+        recovery_window (dt.timedelta, optional): Time window for recovery used to determine chronic status. Defaults to 90 days.
 
     """
+
+    validate_centre(session, centre)
 
     if not start_date:
         start_date = end_date - dt.timedelta(days=365)
@@ -437,12 +442,7 @@ def krt_incident(
         raise ValueError("Start date must be before end date")
    
     # extract, clean and label the patient records used to calculate incidence
-    base_cohort = query_krt_incident(session, facility, end_date, start_date, recovery_window)
-    
-    # debug 
-    debug_ukrdcids = ['100133317']
-
-    base_cohort = base_cohort[base_cohort.ukrdcid.isin(debug_ukrdcids)]
+    base_cohort = query_krt_incident(session, centre, end_date, start_date, recovery_window)
     base_cohort["dialtplt"] = base_cohort["registry_code_type"].copy() 
     base_cohort = _clean_totime(base_cohort)    
     base_cohort = _chain_treatments(base_cohort, recovery_window)
@@ -466,10 +466,11 @@ def krt_incident(
 
     
     #singular_incident = _label_incident_old(base_cohort, start_date, end_date, recovery_window)
+    # TODO: update main_satellite_centres logic 
     singular_cohort = main_satellite_centres(session, singular_cohort, outlier_mapping_mode="otherise")
     singular_cohort = _reassign_transplants(singular_cohort)
 
-    return singular_cohort[singular_cohort.incident & (singular_cohort.centre_code == facility)]
+    return singular_cohort[singular_cohort.incident & (singular_cohort.centre_code == centre)]
 
 @pa.check_output(krt_prevalent_schema)
 def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime) -> krt_prevalent_schema:

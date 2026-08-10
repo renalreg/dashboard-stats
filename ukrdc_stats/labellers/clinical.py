@@ -2,7 +2,8 @@ import pandas as pd
 from ukrdc_stats.utils.database import get_archive_sessionmaker
 from ukrdc_stats.utils.query import pid_ni_map
 from ukrdc_stats.labellers.query import query_careplanning, query_vascular_access
-from ukrdc_stats.utils.data import VASCULAR_MAPPING
+from ukrdc_stats.exceptions import MissingColumnError
+
 
 def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTAssess")->pd.DataFrame:
     """
@@ -28,10 +29,10 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
         raise ValueError("assessment_type must be either 'TPLTassess' or 'KRTassess'")
 
     if "pid" not in cohort.columns: 
-        raise ValueError("cohort must contain 'pid' column")
+        raise MissingColumnError("cohort must contain 'pid' column")
     
     if "sendingfacility" not in cohort.columns:
-        raise ValueError("cohort must contain 'sendingfacility' column")
+        raise MissingColumnError("cohort must contain 'sendingfacility' column")
     
     archive_sessionmaker = get_archive_sessionmaker(session)
     sending_facilities = cohort["sendingfacility"].unique().tolist()
@@ -113,7 +114,7 @@ def hd_dialysis_frequency( session, patient_cohort, start, stop, mode = "median"
     dialysis_snomed = ["302497006", "233581009", "233586004"]
 
     if "dialtplt" not in patient_cohort.columns:
-        raise Exception("dialtplt column not found in patient_cohort")
+        raise MissingColumnError("dialtplt column not found in patient_cohort")
     
 
     # retrieve dialysis sessions for hd patients

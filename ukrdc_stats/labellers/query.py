@@ -24,27 +24,35 @@ from ukrdc_sqla.ukrdc import (
     ResultItem, 
     Address,
     PatientRecord,
-    DialysisSession
+    DialysisSession,
+    Facility
 )
+from ukrdc_sqla.utils.constants import FacilityType
 from ukrdc_sqla.xmlarchive import Patient as XMLPatient, Assessment
+
 
 from urllib.request import urlretrieve
 from pathlib import Path
+
+from ukrdc_stats.utils.cache import CONFIG
 
 ONS_ADDRESS_DATA_URL = (
     "https://www.arcgis.com/sharing/rest/content/items/"
     "3635ca7f69df4733af27caf86473ffa1/data"
 )
 
+# ONS data lives alongside the query cache under the env-configured CACHE_DIR
+ONS_CACHE_DIR = CONFIG["cache_dir"].parent / "ons_postcode_data"
+
 
 def download_ons_address_data():
     """
     Download the ONS address data from the ArcGIS portal.
     """
-    cache_dir = Path("cache/ons_postcode_data")
+    cache_dir = ONS_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    zip_path = Path("cache/ons_data.zip")
+    zip_path = cache_dir.parent / "ons_data.zip"
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
     urlretrieve(ONS_ADDRESS_DATA_URL, zip_path)
@@ -61,14 +69,15 @@ def download_ons_address_data():
             "Check ONS_ADDRESS_DATA_URL and network access."
         )
 
+    temp_extract = cache_dir.parent / "temp_extract"
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall("cache/temp_extract")
+        zip_ref.extractall(temp_extract)
 
-    source_file = Path("cache/temp_extract/data/ONSPD_NOV_2025_UK.csv")
+    source_file = temp_extract / "data" / "ONSPD_NOV_2025_UK.csv"
     if source_file.exists():
         shutil.copy2(source_file, cache_dir)
 
-    shutil.rmtree("cache/temp_extract")
+    shutil.rmtree(temp_extract)
     zip_path.unlink(missing_ok=True)
 
     return
@@ -76,7 +85,7 @@ def download_ons_address_data():
 
 def query_ons_postcode_data() -> pd.DataFrame:
 
-    cache_dir = Path("cache/ons_postcode_data")
+    cache_dir = ONS_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = cache_dir / "ONSPD_NOV_2025_UK.csv"
@@ -276,3 +285,12 @@ def query_vascular_access(session, patient_list):
         vascular_access = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
     
     return vascular_access
+
+def query_paed_centres(session) -> list[str]:
+    query = (
+        select(Facility.facilitycode)
+        .where(Facility.facilitytype == FacilityType.paediatric_renal_centre)
+    )
+    paed_centres = session.execute(query).all()
+
+    return [row[0] for row in paed_centres]

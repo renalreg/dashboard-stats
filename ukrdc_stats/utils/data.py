@@ -241,14 +241,16 @@ def aggregate_data(
     if "ukrdcid" not in cohort_wide.columns:
         raise MissingColumnError("ukrdcid not found in cohort_wide")
 
-    if not all(col in cohort_wide.columns for col in column_attributes):
+    missing_columns = [col for col in column_attributes if col not in cohort_wide.columns]
+    if missing_columns:
         raise MissingColumnError(
-            "input variable cohort wide does not contain all the specified columns"
+            f"cohort_wide is missing column attributes: {missing_columns}"
         )
 
-    if not all(col in cohort_wide.columns for col in row_attributes):
+    missing_rows = [col for col in row_attributes if col not in cohort_wide.columns]
+    if missing_rows:
         raise MissingColumnError(
-            "input variable cohort wide does not contain all the specified columns"
+            f"cohort_wide is missing row attributes: {missing_rows}"
         )
 
     # drop unneeded columns 

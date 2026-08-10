@@ -38,25 +38,3 @@ def age(
     )
 
     return patient_cohort
-
-
-def adult_paed(patient_cohort: pd.DataFrame) -> pd.DataFrame:
-    """
-    Placeholder to classify patients as adult or paediatric on age.
-    Strictly the definition is more specific and involves looking at the
-    treatment centre.
-
-    Args:
-        patient_cohort (pd.DataFrame): DataFrame containing patient data with 'age' column.
-    """
-    if "age" not in patient_cohort.columns:
-        raise MissingColumnError("Patient cohort must contain 'age' column")
-
-    patient_cohort["adult_paed"] = pd.NA
-    patient_cohort.loc[patient_cohort["age"] == "Under 18", "adult_paed"] = "Paediatric"
-    patient_cohort.loc[patient_cohort["age"] != "Under 18", "adult_paed"] = "Adult"
-
-    return patient_cohort
-
-
-

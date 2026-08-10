@@ -2,8 +2,9 @@ import pandas as pd
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from ukrdc_stats.labellers.query import query_postcodes, query_ons_postcode_data
+from ukrdc_stats.labellers.query import query_postcodes, query_paed_centres, query_ons_postcode_data
 from ukrdc_sqla.ukrdc import FacilityRelationship
+from ukrdc_stats.exceptions import MissingColumnError
 
 
 def imd(session: Session, patient_cohort: pd.DataFrame) -> pd.DataFrame:
@@ -61,9 +62,10 @@ def main_satellite_centres(session: Session, patient_cohort: pd.DataFrame, outli
 
 
     """
-
-    assert 'sendingfacility' in patient_cohort.columns
-    assert 'healthcarefacilitycode' in patient_cohort.columns
+    
+    for column in ("sendingfacility", "healthcarefacilitycode"):
+        if column not in patient_cohort.columns:
+            raise MissingColumnError(f"patient_cohort is missing column '{column}'")
 
     facility_relationships = pd.read_sql(
         select(
@@ -160,28 +162,24 @@ def main_satellite_centres(session: Session, patient_cohort: pd.DataFrame, outli
         
     return patient_cohort
 
-def main_unit_sendingfacilities(facilities: list[str]):
+
+def adult_paed(session: Session, patient_cohort: pd.DataFrame) -> pd.DataFrame:
+    """
+    Flag if centre is a paediatric centre. For any paed centre that are mapped 
+    via the main-satellite model recode paed as main centre.
     """
 
-    Args:
-        facilities (list[str]): _description_
+    for column in ("centre_code", "satellite_code"):
+        if column not in patient_cohort.columns:
+            raise MissingColumnError(f"patient_cohort is missing column '{column}'")
 
-    Returns:
-        pd.DataFrame: _description_
-    """
-    pass
+    paed_centres = query_paed_centres(session)
 
-#def main_satellite_centres(patient_cohort: pd.DataFrame) -> pd.DataFrame:
-#    """
-#    Temp overwrite sendingfacility and healthcarefacilitycode with centre_code and satellite_code respectively.
-#    """
-#    patient_cohort['centre_code'] = patient_cohort['sendingfacility']
-#    patient_cohort['satellite_code'] = patient_cohort['healthcarefacilitycode']   
-#    return patient_cohort
+    # Recode paed satellites as main centres
+    paed_satellites = patient_cohort['satellite_code'].isin(paed_centres)
+    patient_cohort.loc[paed_satellites, 'centre_code'] = patient_cohort.loc[paed_satellites, 'satellite_code']
 
-
-def map_paed_centres(session: Session, patient_cohort: pd.DataFrame) -> pd.DataFrame:
-    """
-    Map paediatric centres to their corresponding adult centres.
-    """
+    patient_cohort["adult_paed"] = "Adult"
+    patient_cohort.loc[patient_cohort['centre_code'].isin(paed_centres), 'adult_paed'] = "Paed"
+    
     return patient_cohort

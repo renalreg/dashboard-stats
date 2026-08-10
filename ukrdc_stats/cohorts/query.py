@@ -24,7 +24,9 @@ from ukrdc_sqla.ukrdc import (
     PatientRecord,
     ModalityCodes,
     CodeMap,
+    FacilityRelationship
 )
+from ukrdc_sqla.utils.constants import RelationshipType
 from ukrdc_sqla.xmlarchive import (
     Patient as XMLPatient,
     Treatment as XMLTreatment,
@@ -80,8 +82,17 @@ def query_krt_prevalent(
         ).join(
             ModalityCodes,
             ModalityCodes.registry_code == Treatment.admitreasoncode
+        ).outerjoin(
+            FacilityRelationship,
+            and_(
+                Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
+                FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
+            )
         ).where(
-            PatientRecord.sendingfacility == facility,
+            or_(
+                Treatment.healthcarefacilitycode == facility,
+                FacilityRelationship.parentfacilitycode == facility,
+            ),
             PatientRecord.sendingextract == "UKRDC",
             (Patient.deathtime >= prevalence_point) | Patient.deathtime.is_(None),
             Treatment.fromtime <= prevalence_point + recovery_window,
@@ -101,7 +112,7 @@ def query_krt_prevalent(
 @pa.check_output(krt_query_incident_schema)
 def query_krt_incident(
     session: Session,
-    facility: str,
+    centre_code: str,
     end: dt.datetime,
     start: dt.datetime,
     recovery_window: dt.timedelta = dt.timedelta(days=90),
@@ -122,11 +133,27 @@ def query_krt_incident(
     TransplantModality = aliased(ModalityCodes)  # pylint: disable=C0103
     SubPatientRecord = aliased(PatientRecord)
 
-    # Select ukrdcids of patients treated at facility
-    ukrdc_sub = select(PatientRecord.ukrdcid).where(
-        PatientRecord.sendingfacility == facility,
+    # Select ukrdcids of patients treated at centre or it's satellites
+    ukrdc_sub = select(PatientRecord.ukrdcid).select_from(
+        PatientRecord
+    ).join(
+        Treatment,
+        PatientRecord.pid == Treatment.pid
+    ).outerjoin(
+        FacilityRelationship,
+        and_(
+            Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
+            FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
+        )
+    ).where(
+        or_(
+            Treatment.healthcarefacilitycode == centre_code,
+            FacilityRelationship.parentfacilitycode == centre_code,
+        ),
         PatientRecord.sendingextract == "UKRDC",
     )
+
+    #debug_ukrdc_sub = session.execute(ukrdc_sub).all()
     
     # select most recent record of CKD clinic
     ckd_ranked = (
@@ -276,7 +303,7 @@ def facility_demographics(session: Session, facility_code: str) -> krt_base_sche
 @pa.check_output(ckd_ukrdc_base_schema)
 def query_ckd_ukrdc(
     session: Session,
-    facility: str,
+    centre: str,
     prevalence_point: dt.datetime,
     extract_all: bool = False,
 ) -> ckd_ukrdc_base_schema:
@@ -312,9 +339,19 @@ def query_ckd_ukrdc(
                 CodeMap.source_coding_standard == Patient.ethnicgroupcodestd,
             ),
         )
+        .outerjoin(
+            FacilityRelationship,
+            and_(
+                Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
+                FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
+            )
+        )
         .where(
             ModalityCodes.registry_code_type.in_(["CK", "CN"]),
-            PatientRecord.sendingfacility == facility,
+            or_(
+                Treatment.healthcarefacilitycode == centre,
+                FacilityRelationship.parentfacilitycode == centre,
+            ),
             PatientRecord.sendingextract == "UKRDC",
             or_(
                 Patient.deathtime > prevalence_point,
@@ -438,6 +475,8 @@ def query_ckd(session: Session, facility_code: str, prevalence_point: dt.datetim
             archive_session, facility_code, prevalence_point
         )
 
+    if ckd_archive.empty:
+        return ckd_ukrdc
 
     pid_ni_map_df = pid_ni_map(session, ckd_archive.sendingfacility.unique().tolist())
     ckd_archive_mapped = ckd_archive.merge(
