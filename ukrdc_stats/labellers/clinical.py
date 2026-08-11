@@ -5,7 +5,7 @@ from ukrdc_stats.labellers.query import query_careplanning, query_vascular_acces
 from ukrdc_stats.exceptions import MissingColumnError
 
 
-def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTAssess")->pd.DataFrame:
+def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTassess")->pd.DataFrame:
     """
     Function labels a cohort of patients with the care planning assessment data
     based on a point of time.
@@ -14,7 +14,7 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
         session (_type_): _description_
         cohort (_type_): _description_
         prevalence_date (_type_): _description_
-        assessment_type (str, optional): _description_. Defaults to "TPLTAssess".
+        assessment_type (str, optional): _description_. Defaults to "TPLTassess".
 
     Raises:
         ValueError: _description_
@@ -48,12 +48,12 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
     pid_map = pid_ni_map(session, sending_facilities)
     careplanning_data = careplanning_data.merge(
         pid_map,
-        on=["patientid", "organization"],
+        on=["patientid", "organization", "sendingfacility"],
         how="left",
     )
 
     careplanning_data = careplanning_data[careplanning_data["assessmenttypecode"] == assessment_type]    
-    careplanning_data = careplanning_data[["pid", "assessmenttypecode", "assessmentstart", "assessmentend", "assessmentoutcomecode"]]
+    careplanning_data = careplanning_data[["pid", "assessmenttypecode", "assessmentstart", "assessmentend", "assessmentoutcomecode"]].copy()
     careplanning_data["assessmentoutcome"] = careplanning_data["assessmentoutcomecode"].map(
         {"1": "Unsuitable", "2": "In-progress", "3": "Suitable"}
     ).fillna("Other")  
@@ -67,6 +67,68 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
     cohort["assessmentoutcome"] = cohort["assessmentoutcome"].fillna("No assessment")
 
     return cohort 
+
+def pre_start_careplanning(session, cohort, assessment_type = "TPLTassess")->pd.DataFrame:
+    """
+    Function labels a cohort of incident patients with the most recent care
+    planning assessment prior to each patient's KRT start date (fromtime).
+
+    Args:
+        session (_type_): _description_
+        cohort (_type_): _description_
+        assessment_type (str, optional): _description_. Defaults to "TPLTassess".
+
+    Raises:
+        ValueError: _description_
+        MissingColumnError: _description_
+
+    Returns:
+        _type_: _description_
+    """
+
+    if assessment_type not in ["TPLTassess", "KRTassess"]:
+        raise ValueError("assessment_type must be either 'TPLTassess' or 'KRTassess'")
+
+    for column in ["pid", "sendingfacility", "fromtime"]:
+        if column not in cohort.columns:
+            raise MissingColumnError(f"cohort must contain '{column}' column")
+
+    archive_sessionmaker = get_archive_sessionmaker(session)
+    sending_facilities = cohort["sendingfacility"].unique().tolist()
+
+    with archive_sessionmaker() as archive_session:
+        careplanning_data = query_careplanning(
+            archive_session,
+            sending_facilities
+        )
+
+    # Map patient IDs using pid_ni_map
+    pid_map = pid_ni_map(session, sending_facilities)
+    careplanning_data = careplanning_data.merge(
+        pid_map,
+        on=["patientid", "organization", "sendingfacility"],
+        how="left",
+    )
+
+    careplanning_data = careplanning_data[careplanning_data["assessmenttypecode"] == assessment_type]
+    careplanning_data = careplanning_data[["pid", "assessmenttypecode", "assessmentstart", "assessmentend", "assessmentoutcomecode"]].copy()
+    careplanning_data["assessmentoutcome"] = careplanning_data["assessmentoutcomecode"].map(
+        {"1": "Unsuitable", "2": "In-progress", "3": "Suitable"}
+    ).fillna("Other")
+
+    # merge_asof selects the latest assessment starting on or before fromtime
+    careplanning_data = careplanning_data.dropna(subset=["pid", "assessmentstart"])
+    cohort = pd.merge_asof(
+        cohort.sort_values("fromtime"),
+        careplanning_data.sort_values("assessmentstart"),
+        left_on="fromtime",
+        right_on="assessmentstart",
+        by="pid",
+        direction="backward",
+    )
+    cohort["assessmentoutcome"] = cohort["assessmentoutcome"].fillna("No assessment")
+
+    return cohort
 
 def eskd():
     pass

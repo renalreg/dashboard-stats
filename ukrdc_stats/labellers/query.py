@@ -24,6 +24,7 @@ from ukrdc_sqla.ukrdc import (
     ResultItem, 
     Address,
     PatientRecord,
+    Patient,
     DialysisSession,
     Facility
 )
@@ -217,6 +218,7 @@ def query_careplanning(archieve_session: Session, facility_codes: List[str], pre
         select(
             XMLPatient.nationalid.label("patientid"),
             XMLPatient.organization,
+            XMLPatient.sendingfacility,
             XMLPatient.numbertype,
             XMLPatient.creation_date,
             Assessment.assessmentstart,
@@ -241,10 +243,13 @@ def query_careplanning(archieve_session: Session, facility_codes: List[str], pre
         assessments_query = assessments_query.where(
             Assessment.assessmentstart < prevalence_point
         )
-        assessments_query = assessments_query.distinct(XMLPatient.nationalid, XMLPatient.organization)
+        assessments_query = assessments_query.distinct(
+            XMLPatient.nationalid, XMLPatient.organization, XMLPatient.sendingfacility
+        )
         assessments_query = assessments_query.order_by(
             XMLPatient.nationalid,
             XMLPatient.organization,
+            XMLPatient.sendingfacility,
             Assessment.assessmentstart.desc()
         )
 
@@ -254,6 +259,7 @@ def query_careplanning(archieve_session: Session, facility_codes: List[str], pre
         prevalent_assessments_df = pd.DataFrame(columns=[
             "patientid", 
             "organization", 
+            "sendingfacility",
             "numbertype", 
             "creation_date", 
             "assessmentstart", 
@@ -294,3 +300,34 @@ def query_paed_centres(session) -> list[str]:
     paed_centres = session.execute(query).all()
 
     return [row[0] for row in paed_centres]
+
+def query_demog(session: Session, pids: List[str]) -> pd.DataFrame:
+    """
+    Extracts demographic data for a list of pids. Queries are chunked into
+    groups of 100 to avoid connection timeouts caused by large IN clauses.
+    """
+
+    chunk_size = 100
+    demog_data = []
+    for i in range(0, len(pids), chunk_size):
+        chunk = pids[i : i + chunk_size]
+        query = (
+            select(
+                PatientRecord.pid,
+                Patient.gender,
+                Patient.birthtime,
+                Patient.ethnicgroupcode,
+            )
+            .join(Patient, Patient.pid == PatientRecord.pid)
+            .where(
+                PatientRecord.pid.in_(chunk),
+                PatientRecord.sendingextract == "UKRDC",
+            )
+        )
+        demog_data.extend(session.execute(query).all())
+
+    columns = ["pid", "gender", "birthtime", "ethnicgroupcode"]
+    if not demog_data:
+        return pd.DataFrame(columns=columns)
+
+    return pd.DataFrame(demog_data, columns=columns)
