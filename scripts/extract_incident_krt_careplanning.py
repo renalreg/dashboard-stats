@@ -54,6 +54,9 @@ def main():
                 krt_incident_report = age(krt_incident_report, quarter_end, session = session)
                 krt_incident_report = sex(krt_incident_report, session = session)
                 krt_incident_report = pre_start_careplanning(session, krt_incident_report, "TPLTassess")
+                  
+                # Recode transplants
+                
                 krt_incident_reports.append(krt_incident_report)
 
             krt_incident_combined = pd.concat(krt_incident_reports, ignore_index=True)
@@ -68,6 +71,8 @@ def main():
         cohort_wide=combined,
         column_attributes=[
             "centre_code",
+            "satellite_code",
+            "dialtplt",
             "year",
             "quarter",
             "assessmentoutcome",

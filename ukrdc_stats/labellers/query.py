@@ -16,7 +16,7 @@ from typing import List, Optional
 
 import pandas as pd
 import datetime as dt
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import Session
 
 from ukrdc_sqla.ukrdc import (
@@ -277,20 +277,52 @@ def query_careplanning(archieve_session: Session, facility_codes: List[str], pre
     
     return prevalent_assessments_df
 
-def query_vascular_access(session, patient_list):
-    
-    query = (
-        select(PatientRecord.pid, DialysisSession.procedure_time, DialysisSession.qhd20)
-        .join(DialysisSession, DialysisSession.pid == PatientRecord.pid)
-        .where(PatientRecord.pid.in_(patient_list))
-        .order_by(PatientRecord.pid, DialysisSession.procedure_time)
-    )
+def query_vascular_access(
+    session: Session,
+    pids: List[str],
+    cutoff_dates: List[dt.datetime],
+    chunk_size: int = 100,
+) -> pd.DataFrame:
+    """Extract the most recent dialysis session prior to a patient specific date
+    """
 
-    vascular_access = pd.DataFrame(session.execute(query))
-    if vascular_access.empty:
-        vascular_access = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
-    
-    return vascular_access
+    if len(pids) != len(cutoff_dates):
+        raise ValueError("pids and cutoff_dates must be the same length")
+
+    pairs = list(zip(pids, cutoff_dates))
+    results = []
+
+    for i in range(0, len(pairs), chunk_size):
+        chunk = pairs[i : i + chunk_size]
+        query = (
+            select(
+                DialysisSession.pid,
+                DialysisSession.procedure_time,
+                DialysisSession.qhd20,
+            )
+            .where(
+                or_(
+                    *[
+                        and_(
+                            DialysisSession.pid == pid,
+                            DialysisSession.procedure_time < cutoff,
+                        )
+                        for pid, cutoff in chunk
+                    ]
+                )
+            )
+            .distinct(DialysisSession.pid)
+            .order_by(DialysisSession.pid, DialysisSession.procedure_time.desc())
+        )
+
+        chunk_data = session.execute(query).all()
+        if chunk_data:
+            results.extend(chunk_data)
+
+    if not results:
+        return pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+
+    return pd.DataFrame(results, columns=["pid", "procedure_time", "qhd20"])
 
 def query_paed_centres(session) -> list[str]:
     query = (
@@ -331,3 +363,23 @@ def query_demog(session: Session, pids: List[str]) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
 
     return pd.DataFrame(demog_data, columns=columns)
+
+
+def query_dialysis_sessions(session: Session, patient_list: pd.Series):
+    
+    query = (
+        select(
+            DialysisSession.pid, 
+            DialysisSession.id, 
+            DialysisSession.procedure_type_code, 
+            DialysisSession.procedure_time, 
+            DialysisSession.qhd20
+        ).where(DialysisSession.pid.in_(patient_list))
+        .order_by(DialysisSession.pid, DialysisSession.procedure_time)
+    )
+
+    dialysis_sessions = pd.DataFrame(session.execute(query))
+    if dialysis_sessions.empty:
+        dialysis_sessions = pd.DataFrame(columns=["pid", "procedure_time", "qhd20"])
+
+    return dialysis_sessions
