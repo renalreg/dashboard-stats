@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 def validate_centre(session: Session, centre: str) -> None:
     """
     As the data model for facilities spirals in complexity the ukrdc_stats will
-    only support cohort extraction for adult an paediatric renal centres. For 
+    only support cohort extraction for adult an paediatric renal centres. For
     now this will only be a lookup against the facilities table but in the
     future it should check things like the first data quarter.
     """
@@ -22,4 +22,6 @@ def validate_centre(session: Session, centre: str) -> None:
 
     centre_type = session.execute(query).first()
     if not centre_type:
-        raise InvalidCentreError(f"Centre {centre} is not an Adult or Paediatric Renal Centre")
+        raise InvalidCentreError(
+            f"Centre {centre} is not an Adult or Paediatric Renal Centre"
+        )

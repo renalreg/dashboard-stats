@@ -22,10 +22,11 @@ def _fetch_missing_demog(
         raise MissingColumnError(f"Patient cohort must contain '{column}' column")
 
     demog = query_demog(session, patient_cohort["pid"].unique().tolist())
-    missing = [c for c in demog.columns if c == "pid" or c not in patient_cohort.columns]
-    
-    return patient_cohort.merge(demog[missing], on="pid", how="left")
+    missing = [
+        c for c in demog.columns if c == "pid" or c not in patient_cohort.columns
+    ]
 
+    return patient_cohort.merge(demog[missing], on="pid", how="left")
 
 
 def age(
@@ -64,6 +65,7 @@ def age(
 
     return patient_cohort
 
+
 def sex(
     patient_cohort: pd.DataFrame,
     session: Optional[Session] = None,
@@ -80,7 +82,9 @@ def sex(
     if "gender" not in patient_cohort.columns:
         patient_cohort = _fetch_missing_demog(patient_cohort, "gender", session)
 
-    patient_cohort["sex"] = patient_cohort["gender"].map(GENDER_GROUP_MAP).fillna("Missing")
+    patient_cohort["sex"] = (
+        patient_cohort["gender"].map(GENDER_GROUP_MAP).fillna("Missing")
+    )
 
     return patient_cohort
 
@@ -100,11 +104,11 @@ def ethnicity(
         pd.DataFrame: DataFrame with 'ethnicity' column added.
     """
     if "ethnicgroupcode" not in patient_cohort.columns:
-        patient_cohort = _fetch_missing_demog(patient_cohort, "ethnicgroupcode", session)
+        patient_cohort = _fetch_missing_demog(
+            patient_cohort, "ethnicgroupcode", session
+        )
 
-    ethnic_group_map = map_codes(
-        "NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session
-    )
+    ethnic_group_map = map_codes("NHS_DATA_DICTIONARY", "URTS_ETHNIC_GROUPING", session)
     patient_cohort["ethnicity"] = (
         patient_cohort["ethnicgroupcode"].map(ethnic_group_map).fillna("Missing")
     )

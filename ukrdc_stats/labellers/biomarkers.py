@@ -39,11 +39,11 @@ def egfr(
     egfr_data = egfr_data.dropna(subset=["resultvalue"])
 
     # Isolate eGFR and rename the column
-    egfr_data.loc[egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "egfr"] = (
-        egfr_data.loc[
-            egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "resultvalue"
-        ]
-    )
+    egfr_data.loc[
+        egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "egfr"
+    ] = egfr_data.loc[
+        egfr_data["serviceidcode"].isin(["QBLAB", "QBLAL", "QBLAP"]), "resultvalue"
+    ]
 
     # We need birthtime and sex from the patient_cohort to calculate eGFR
     egfr_data = egfr_data.merge(
@@ -94,7 +94,9 @@ def egfr(
         )
 
     col_name = f"egfr_{mode}"
-    egfr_data = egfr_data.rename(columns={"egfr": col_name, "observationtime": "egfr_date"})
+    egfr_data = egfr_data.rename(
+        columns={"egfr": col_name, "observationtime": "egfr_date"}
+    )
 
     # Merge the final deduplicated eGFRs back onto the patient cohort
     patient_cohort = patient_cohort.merge(
@@ -103,8 +105,10 @@ def egfr(
 
     return patient_cohort
 
+
 def systolic():
     pass
+
 
 def diastolic():
     pass

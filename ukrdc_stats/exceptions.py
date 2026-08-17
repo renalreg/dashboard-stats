@@ -13,6 +13,7 @@ class NoCohortError(ValueError):
 
 class EmptyCohortError(ValueError):
     """Raised when a cohort query returns no data"""
+
     pass
 
 

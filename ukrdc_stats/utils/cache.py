@@ -45,7 +45,8 @@ config_from_env = dotenv_values(".env")
 CONFIG = {
     "expiration": int(config_from_env.get("CACHE_EXPIRATION", 3600)),
     "backend": config_from_env.get("CACHE_BACKEND", "file"),
-    "cache_dir": Path(config_from_env.get("CACHE_DIR", ".do_not_commit")) / "query_cache",
+    "cache_dir": Path(config_from_env.get("CACHE_DIR", ".do_not_commit"))
+    / "query_cache",
     "redis_host": config_from_env.get("REDIS_HOST", "localhost"),
     "redis_port": int(config_from_env.get("REDIS_PORT", 6379)),
 }
@@ -54,6 +55,7 @@ CONFIG = {
 # ---------------------------------------------------------------------------
 # File lock (unchanged - Windows-compatible dbm locking for dogpile)
 # ---------------------------------------------------------------------------
+
 
 class WindowsFileLock:
     """Cross-platform file lock using portalocker (Windows-compatible)."""
@@ -64,6 +66,7 @@ class WindowsFileLock:
 
     def _open_lockfile(self) -> int:
         import os
+
         return os.open(self.filename, os.O_CREAT | os.O_RDWR)
 
     def acquire_read_lock(self, wait: bool) -> bool:
@@ -108,6 +111,7 @@ class WindowsFileLock:
                 yield self
             finally:
                 self.release_read_lock()
+
         return _read_ctx()
 
     def write(self):
@@ -118,6 +122,7 @@ class WindowsFileLock:
                 yield self
             finally:
                 self.release_write_lock()
+
         return _write_ctx()
 
 
@@ -169,6 +174,7 @@ def _get_cache_region(config: dict) -> Any:
 # Cache key
 # ---------------------------------------------------------------------------
 
+
 def _generate_cache_key(url: URL, statement: Any, params: dict | None) -> str:
     """Unique key per (database, compiled SQL incl. literal values, params).
 
@@ -198,6 +204,7 @@ def _generate_cache_key(url: URL, statement: Any, params: dict | None) -> str:
 # ---------------------------------------------------------------------------
 # Minimal result wrapper
 # ---------------------------------------------------------------------------
+
 
 class _ListResult:
     """A tiny stand-in for SQLAlchemy's Result, backed by a plain list.
@@ -244,6 +251,7 @@ class _ListResult:
 # Caching session
 # ---------------------------------------------------------------------------
 
+
 class CacheSession:
     """Wraps a SQLAlchemy Session; execute() checks the cache before
     hitting the database. Everything else passes through untouched.
@@ -256,7 +264,9 @@ class CacheSession:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._session, name)
 
-    def execute(self, statement: Any, params: dict | None = None, **kwargs: Any) -> _ListResult:
+    def execute(
+        self, statement: Any, params: dict | None = None, **kwargs: Any
+    ) -> _ListResult:
         key = _generate_cache_key(self._url, statement, params)
         region = _get_cache_region(CONFIG)
 

@@ -4,9 +4,8 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from ukrdc_stats.cohorts.base import krt_incident, krt_prevalent
-from ukrdc_stats.labellers.demographics import age
+from ukrdc_stats.labellers.demographics import age, sex, ethnicity
 from ukrdc_stats.labellers.geography import imd, adult_paed
-from ukrdc_stats.labellers.clinical import vascular_access
 from ukrdc_stats.utils.database import get_sessionmaker
 from ukrdc_stats.utils.data import aggregate_data
 
@@ -53,33 +52,31 @@ def main():
                 # Extract incident and label
                 krt_incident_report = krt_incident(session, centre, quarter_end, quarter_start)
                 
-                
-                krt_incident_report = age(krt_incident_report, quarter_end)
-                krt_incident_report = adult_paed(session, krt_incident_report)
+        
                 #krt_incident_report = vascular_access(krt_incident_report, session, quarter_end)
-                krt_incident_report = imd(session, krt_incident_report)
                 krt_incident_report["incidprev"] = "incident"
                 krt_incident_reports.append(krt_incident_report)
 
                 # Extract prevalent and label   
                 krt_prevalent_report = krt_prevalent(session, centre, quarter_end)
-                krt_prevalent_report = age(krt_prevalent_report, quarter_end)
-                krt_prevalent_report = adult_paed(session, krt_prevalent_report)
                 #krt_prevalent_report = vascular_access(krt_prevalent_report, session, quarter_end)
-                krt_prevalent_report = imd(session, krt_prevalent_report)
+
                 krt_prevalent_report["incidprev"] = "prevalent"
                 krt_prevalent_reports.append(krt_prevalent_report)
                 
             krt_incident_combined = pd.concat(krt_incident_reports, ignore_index=True) if krt_incident_reports else pd.DataFrame()
             krt_prevalent_combined = pd.concat(krt_prevalent_reports, ignore_index=True) if krt_prevalent_reports else pd.DataFrame()
                 
-            # add year and quarter
-            krt_prevalent_combined["year"] = current_year
-            krt_prevalent_combined["quarter"] = current_quarter
-            krt_incident_combined["year"] = current_year
-            krt_incident_combined["quarter"] = current_quarter
-    
-            quarterly_reports.append(pd.concat([krt_prevalent_combined, krt_incident_combined]))
+            # add some labels 
+            combined = age(pd.concat([krt_prevalent_combined, krt_incident_combined]), quarter_end)
+            combined = ethnicity(combined, session)
+            combined = sex(combined)
+            combined = adult_paed(session, combined)
+            combined = imd(session, combined)
+            combined["year"] = current_year
+            combined["quarter"] = current_quarter
+
+            quarterly_reports.append(combined)
 
     combined = pd.concat(quarterly_reports)
 
@@ -98,7 +95,9 @@ def main():
         row_attributes = [
             "age",
             "imddecile",
-            "dialtplt"
+            "dialtplt",
+            "ethnicity",
+            "sex"
         ]     
     )
     output.rename(columns = {"dialtplt_dup": "dialtplt"}, inplace=True)

@@ -49,9 +49,9 @@ def egfr(
         if scr_unit.lower() in ("μmol/l", "umol/l"):
             scr = scr / 88.4
         elif scr_unit.lower() == "mmol/l":
-            scr = 1000.* scr / 88.4
+            scr = 1000.0 * scr / 88.4
         elif scr_unit.lower() == "g/l":
-            scr = 1000. * scr
+            scr = 1000.0 * scr
         else:
             # assume umol/L if unknown unit
             scr = scr / 88.4
@@ -67,7 +67,6 @@ def egfr(
         kappa = 0.9
         alpha = -0.411
         multiplier = 1.0
-
 
     scr_frac = scr / kappa
     if scr_frac > 1:
@@ -236,12 +235,18 @@ def aggregate_data(
 
     # catch issues early
     if row_attributes is None:
-        row_attributes = [col for col in cohort_wide.columns if col not in column_attributes and col != "ukrdcid"]
+        row_attributes = [
+            col
+            for col in cohort_wide.columns
+            if col not in column_attributes and col != "ukrdcid"
+        ]
 
     if "ukrdcid" not in cohort_wide.columns:
         raise MissingColumnError("ukrdcid not found in cohort_wide")
 
-    missing_columns = [col for col in column_attributes if col not in cohort_wide.columns]
+    missing_columns = [
+        col for col in column_attributes if col not in cohort_wide.columns
+    ]
     if missing_columns:
         raise MissingColumnError(
             f"cohort_wide is missing column attributes: {missing_columns}"
@@ -253,7 +258,7 @@ def aggregate_data(
             f"cohort_wide is missing row attributes: {missing_rows}"
         )
 
-    # drop unneeded columns 
+    # drop unneeded columns
     cohort_wide = cohort_wide[column_attributes + row_attributes + ["ukrdcid"]]
 
     # transform dataframe into long form and count heads

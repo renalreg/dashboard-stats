@@ -11,7 +11,8 @@ from ukrdc_stats.labellers.geography import imd
 from ukrdc_stats.exceptions import EmptyCohortError
 from ukrdc_stats.utils.database import get_sessionmaker
 from ukrdc_stats.utils.data import aggregate_data
-
+from ukrdc_stats.labellers.demographics import age, sex, ethnicity
+from ukrdc_stats.labellers.geography import imd, adult_paed
 
 config = dotenv_values(".env")
 KEYPATH = config.get("UKRDC_STATS_KEYPATH")
@@ -55,16 +56,20 @@ def main():
                     print(f"No patients found for centre {centre} in quarter {current_quarter} {current_year}")
                     continue
 
-                ckd_prevalent_report = imd(session, ckd_prevalent_report)
                 ckd_prevalent_reports.append(ckd_prevalent_report)
 
             ckd_prevalent_combined = pd.concat(ckd_prevalent_reports, ignore_index=True) if ckd_prevalent_reports else pd.DataFrame()
 
             # add year and quarter
-            ckd_prevalent_combined["year"] = current_year
-            ckd_prevalent_combined["quarter"] = current_quarter
-
-            quarterly_reports.append(ckd_prevalent_combined)
+            if not ckd_prevalent_combined.empty:
+                combined = ethnicity(ckd_prevalent_combined, session)
+                combined = adult_paed(session, ckd_prevalent_combined)
+                combined = imd(session, ckd_prevalent_combined)
+                combined["year"] = current_year
+                combined["quarter"] = current_quarter
+            else:
+                combined = pd.DataFrame()
+            quarterly_reports.append(combined)
 
     combined = pd.concat(quarterly_reports)
 
@@ -81,8 +86,8 @@ def main():
         row_attributes = [
             "age",
             "imddecile",
-            "sex",
-            "ukkaethnicity"
+            "ethnicity",
+            "sex"
         ]
     )
 

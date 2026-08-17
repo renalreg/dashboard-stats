@@ -24,7 +24,7 @@ from ukrdc_sqla.ukrdc import (
     PatientRecord,
     ModalityCodes,
     CodeMap,
-    FacilityRelationship
+    FacilityRelationship,
 )
 from ukrdc_sqla.utils.constants import RelationshipType
 from ukrdc_sqla.xmlarchive import (
@@ -50,16 +50,16 @@ def query_krt_prevalent(
 ) -> krt_query_prevalent_schema:
     """Core query containing all of the data from the ukrdc database
     necessary to generate a prevalent krt cohort.
-    
+
     Returns:
         krt_query_prevalent_schema: Patient cohort dataframe
     """
 
     query = (
         select(
-            PatientRecord.pid, 
-            PatientRecord.ukrdcid, 
-            PatientRecord.sendingfacility, 
+            PatientRecord.pid,
+            PatientRecord.ukrdcid,
+            PatientRecord.sendingfacility,
             Treatment.healthcarefacilitycode,
             Treatment.admitreasoncode,
             Treatment.admitreasoncodestd,
@@ -71,25 +71,22 @@ def query_krt_prevalent(
             Patient.birthtime,
             Patient.deathtime,
             Treatment.fromtime,
-            Treatment.totime
-        ).select_from(
-            PatientRecord
-        ).join(
-            Treatment, 
-            PatientRecord.pid == Treatment.pid
-        ).join(
-            Patient,
-            PatientRecord.pid == Patient.id
-        ).join(
-            ModalityCodes,
-            ModalityCodes.registry_code == Treatment.admitreasoncode
-        ).outerjoin(
+            Treatment.totime,
+        )
+        .select_from(PatientRecord)
+        .join(Treatment, PatientRecord.pid == Treatment.pid)
+        .join(Patient, PatientRecord.pid == Patient.id)
+        .join(ModalityCodes, ModalityCodes.registry_code == Treatment.admitreasoncode)
+        .outerjoin(
             FacilityRelationship,
             and_(
-                Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
-                FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
-            )
-        ).where(
+                Treatment.healthcarefacilitycode
+                == FacilityRelationship.childfacilitycode,
+                FacilityRelationship.relationshiptype
+                == RelationshipType.main_satellite,
+            ),
+        )
+        .where(
             or_(
                 Treatment.healthcarefacilitycode == facility,
                 FacilityRelationship.parentfacilitycode == facility,
@@ -97,8 +94,9 @@ def query_krt_prevalent(
             PatientRecord.sendingextract == sending_extract,
             (Patient.deathtime >= prevalence_point) | Patient.deathtime.is_(None),
             Treatment.fromtime <= prevalence_point + recovery_window,
-            Treatment.totime.is_(None) | (Treatment.totime >= prevalence_point - recovery_window),
-            ModalityCodes.registry_code_type.in_(["HD", "PD", "TX"])
+            Treatment.totime.is_(None)
+            | (Treatment.totime >= prevalence_point - recovery_window),
+            ModalityCodes.registry_code_type.in_(["HD", "PD", "TX"]),
         )
     )
 
@@ -136,27 +134,30 @@ def query_krt_incident(
     SubPatientRecord = aliased(PatientRecord)
 
     # Select ukrdcids of patients treated at centre or it's satellites
-    ukrdc_sub = select(PatientRecord.ukrdcid).select_from(
-        PatientRecord
-    ).join(
-        Treatment,
-        PatientRecord.pid == Treatment.pid
-    ).outerjoin(
-        FacilityRelationship,
-        and_(
-            Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
-            FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
+    ukrdc_sub = (
+        select(PatientRecord.ukrdcid)
+        .select_from(PatientRecord)
+        .join(Treatment, PatientRecord.pid == Treatment.pid)
+        .outerjoin(
+            FacilityRelationship,
+            and_(
+                Treatment.healthcarefacilitycode
+                == FacilityRelationship.childfacilitycode,
+                FacilityRelationship.relationshiptype
+                == RelationshipType.main_satellite,
+            ),
         )
-    ).where(
-        or_(
-            Treatment.healthcarefacilitycode == centre_code,
-            FacilityRelationship.parentfacilitycode == centre_code,
-        ),
-        PatientRecord.sendingextract == sending_extract,
+        .where(
+            or_(
+                Treatment.healthcarefacilitycode == centre_code,
+                FacilityRelationship.parentfacilitycode == centre_code,
+            ),
+            PatientRecord.sendingextract == sending_extract,
+        )
     )
 
-    #debug_ukrdc_sub = session.execute(ukrdc_sub).all()
-    
+    # debug_ukrdc_sub = session.execute(ukrdc_sub).all()
+
     # select most recent record of CKD clinic
     ckd_ranked = (
         select(
@@ -184,7 +185,7 @@ def query_krt_incident(
         select(ckd_ranked.c.pid, ckd_ranked.c.ckd_centre).where(ckd_ranked.c.rn == 1)
     ).subquery("ckd_latest")
 
-    # check if there is any record of transplant 
+    # check if there is any record of transplant
     # NOTE: this should probably include nhsbt feeds
     tx_check = exists().where(
         HistoricTransplantTreatment.pid == SubPatientRecord.pid,
@@ -344,9 +345,11 @@ def query_ckd_ukrdc(
         .outerjoin(
             FacilityRelationship,
             and_(
-                Treatment.healthcarefacilitycode == FacilityRelationship.childfacilitycode,
-                FacilityRelationship.relationshiptype == RelationshipType.main_satellite,
-            )
+                Treatment.healthcarefacilitycode
+                == FacilityRelationship.childfacilitycode,
+                FacilityRelationship.relationshiptype
+                == RelationshipType.main_satellite,
+            ),
         )
         .where(
             ModalityCodes.registry_code_type.in_(["CK", "CN"]),

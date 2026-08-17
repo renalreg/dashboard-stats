@@ -46,7 +46,9 @@ def load_ukrdc_url_from_config(server_name: str, keypath: str) -> URL:
     )
 
 
-def get_sessionmaker(server_name: str, keypath: str, caching: bool = False) -> sessionmaker:
+def get_sessionmaker(
+    server_name: str, keypath: str, caching: bool = False
+) -> sessionmaker:
     """Create a SQL session for the specified server using the UKRDC configuration.
 
     Args:
