@@ -8,14 +8,8 @@ import datetime as dt
 from pathlib import Path
 from dotenv import dotenv_values
 
-from ukrdc_stats.cohorts.base import (
-    _chain_treatments,
-    _clean_totime,
-    _label_timeline,
-)
 from ukrdc_stats.cohorts.base import krt_prevalent
-from ukrdc_stats.labellers.demographics import age
-from ukrdc_stats.labellers.geography import imd, adult_paed
+from ukrdc_stats.labellers.geography import adult_paed
 from ukrdc_stats.labellers.clinical import vascular_access, hd_dialysis_frequency
 from ukrdc_stats.utils.database import get_sessionmaker
 from ukrdc_stats.utils.data import aggregate_data
@@ -46,26 +40,24 @@ def hd_one_year(
     time_on_dialysis: dt.timedelta = dt.timedelta(days=365),
 ) -> pd.DataFrame:
     """
-    Cohort of prevalent dialysis patients who have been on thier current
+    Cohort of prevalent incident HD patients who have been on thier current
     dialysis modality for at least a year. In it's current iteration it might
-    be relatively sensitive to how treatments are coded. 
+    be relatively sensitive to how treatments are coded. This is also an 
+    example of how the base cohort generating functions might be extended to 
+    produce custom cohorts. 
     """
 
-    # widen the query window so treatments covering the full lookback period
-    # are returned rather than just those adjacent to the prevalence point
+
     base_cohort = krt_prevalent(
         session,
         centre,
         prevalence_point
     )
-    #base_cohort["dialtplt"] = base_cohort["registry_code_type"]
-    base_cohort["time_since_start"] = prevalence_point - base_cohort["fromtime"]
 
-    # restrict to dialysis so a functioning transplant breaks the timeline
-    # and discard anything starting after the prevalence point
+    # generate a slice of the cohort which focuses on a subset if the ichd patients
+    base_cohort["time_since_start"] = prevalence_point - base_cohort["fromtime"]
     base_cohort = base_cohort[
         base_cohort.registry_code_type.isin(["HD"])
-        & (base_cohort.fromtime <= prevalence_point)
         & (base_cohort["time_since_start"] >= time_on_dialysis)
     ].copy()
 

@@ -444,6 +444,12 @@ def krt_incident(
     # extract, clean and label the patient records used to calculate incidence
     base_cohort = query_krt_incident(session, centre, end_date, start_date, recovery_window)
     base_cohort["dialtplt"] = base_cohort["registry_code_type"].copy() 
+    base_cohort.loc[
+        (base_cohort["dialtplt"] == "HD") 
+        & (base_cohort["qbl05"] == "HOME"), 
+        "dialtplt"
+    ] = "HHD"
+    
     base_cohort = _clean_totime(base_cohort)    
     base_cohort = _chain_treatments(base_cohort, recovery_window)
     base_cohort = _label_timeline(base_cohort)
@@ -483,6 +489,13 @@ def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime
 
     base_cohort = query_krt_prevalent(session, facility, prevalence_point)
     base_cohort["dialtplt"] = base_cohort["registry_code_type"]
+    base_cohort.loc[
+        (base_cohort["dialtplt"] == "HD") 
+        & (base_cohort["qbl05"] == "HOME"), 
+        "dialtplt"
+    ] = "HHD"
+
+
 
     # TODO: more logic around recovey window and treatment relationship to prevalence point
     singular_cohort = (

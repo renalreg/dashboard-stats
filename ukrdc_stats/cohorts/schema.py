@@ -51,7 +51,7 @@ class krt_query_incident_schema(krt_base_schema):
 class krt_incident_schema(krt_query_incident_schema):
     centre_code: Series[str]
     satellite_code: Series[str]
-    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD","HHD", "PD", "TX"])
     timeline_start: Series[pa.DateTime]
     incident: Series[bool]
     class Config:
@@ -59,7 +59,7 @@ class krt_incident_schema(krt_query_incident_schema):
         unique = ["ukrdcid", "pid"]
 
 class krt_prevalent_schema(krt_base_schema):
-    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "PD", "TX"])
+    dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD","HHD", "PD", "TX"])
 
 class demog_base_schema(pa.DataFrameModel):
     pid: Series[str]
