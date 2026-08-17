@@ -419,7 +419,8 @@ def krt_incident(
     centre:str, 
     end_date:dt.datetime, 
     start_date:Optional[dt.datetime] = None,
-    recovery_window:dt.timedelta = dt.timedelta(days=90)
+    recovery_window:dt.timedelta = dt.timedelta(days=90),
+    sending_extract:str = "UKRDC"
     ) -> krt_incident_schema:
     """
     Get the incident KRT cohort for a given renal centre, it's satellites and date range.
@@ -430,6 +431,7 @@ def krt_incident(
         end_date (dt.datetime): End date
         start_date (Optional[dt.datetime], optional): Start date. If not set it will default to a year prior to the end date.
         recovery_window (dt.timedelta, optional): Time window for recovery used to determine chronic status. Defaults to 90 days.
+        sending_extract (str, optional): Sending extract to filter patient records by, e.g. "UKRR". Defaults to "UKRDC".
 
     """
 
@@ -442,7 +444,9 @@ def krt_incident(
         raise ValueError("Start date must be before end date")
    
     # extract, clean and label the patient records used to calculate incidence
-    base_cohort = query_krt_incident(session, centre, end_date, start_date, recovery_window)
+    base_cohort = query_krt_incident(
+        session, centre, end_date, start_date, recovery_window, sending_extract
+    )
     base_cohort["dialtplt"] = base_cohort["registry_code_type"].copy() 
     base_cohort.loc[
         (base_cohort["dialtplt"] == "HD") 
@@ -479,15 +483,28 @@ def krt_incident(
     return singular_cohort[singular_cohort.incident & (singular_cohort.centre_code == centre)]
 
 @pa.check_output(krt_prevalent_schema)
-def krt_prevalent(session: Session, facility: str, prevalence_point: dt.datetime) -> krt_prevalent_schema:
+def krt_prevalent(
+    session: Session,
+    facility: str,
+    prevalence_point: dt.datetime,
+    sending_extract: str = "UKRDC",
+) -> krt_prevalent_schema:
     """
     Get the prevalent KRT cohort for a given facility and prevalence point.
-    
+
+    Args:
+        session (Session): UKRDC session
+        facility (str): Facility code
+        prevalence_point (dt.datetime): Prevalence point
+        sending_extract (str, optional): Sending extract to filter patient records by, e.g. "UKRR". Defaults to "UKRDC".
+
     Returns:
         krt_prevalent_schema: Prevalent KRT cohort
     """
 
-    base_cohort = query_krt_prevalent(session, facility, prevalence_point)
+    base_cohort = query_krt_prevalent(
+        session, facility, prevalence_point, sending_extract=sending_extract
+    )
     base_cohort["dialtplt"] = base_cohort["registry_code_type"]
     base_cohort.loc[
         (base_cohort["dialtplt"] == "HD") 

@@ -46,6 +46,7 @@ def query_krt_prevalent(
     facility: str,
     prevalence_point: dt.datetime,
     recovery_window: dt.timedelta = dt.timedelta(days=90),
+    sending_extract: str = "UKRDC",
 ) -> krt_query_prevalent_schema:
     """Core query containing all of the data from the ukrdc database
     necessary to generate a prevalent krt cohort.
@@ -93,7 +94,7 @@ def query_krt_prevalent(
                 Treatment.healthcarefacilitycode == facility,
                 FacilityRelationship.parentfacilitycode == facility,
             ),
-            PatientRecord.sendingextract == "UKRDC",
+            PatientRecord.sendingextract == sending_extract,
             (Patient.deathtime >= prevalence_point) | Patient.deathtime.is_(None),
             Treatment.fromtime <= prevalence_point + recovery_window,
             Treatment.totime.is_(None) | (Treatment.totime >= prevalence_point - recovery_window),
@@ -116,6 +117,7 @@ def query_krt_incident(
     end: dt.datetime,
     start: dt.datetime,
     recovery_window: dt.timedelta = dt.timedelta(days=90),
+    sending_extract: str = "UKRDC",
 ) -> krt_base_schema:
     """Core query containing all of the data from the ukrdc database
     necessary to generate an incident krt cohort.
@@ -150,7 +152,7 @@ def query_krt_incident(
             Treatment.healthcarefacilitycode == centre_code,
             FacilityRelationship.parentfacilitycode == centre_code,
         ),
-        PatientRecord.sendingextract == "UKRDC",
+        PatientRecord.sendingextract == sending_extract,
     )
 
     #debug_ukrdc_sub = session.execute(ukrdc_sub).all()
@@ -192,7 +194,7 @@ def query_krt_incident(
         > dt.timedelta(days=minimum_transplant_length),  # Successful transplant
         HistoricTransplantTreatment.admitreasoncode == TransplantModality.registry_code,
         TransplantModality.registry_code_type == "TX",
-        SubPatientRecord.sendingextract == "UKRDC",
+        SubPatientRecord.sendingextract == sending_extract,
     )
 
     query = (
@@ -243,7 +245,7 @@ def query_krt_incident(
             ),
             or_(Patient.deathtime > start, Patient.deathtime.is_(None)),
             PatientRecord.ukrdcid.in_(ukrdc_sub),
-            PatientRecord.sendingextract == "UKRDC",
+            PatientRecord.sendingextract == sending_extract,
         )
     )
 

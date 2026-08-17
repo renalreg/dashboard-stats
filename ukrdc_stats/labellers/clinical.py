@@ -8,6 +8,25 @@ from ukrdc_stats.labellers.query import query_careplanning, query_vascular_acces
 from ukrdc_stats.exceptions import MissingColumnError
 
 
+def _check_ukrdc_extract(cohort: pd.DataFrame) -> None:
+    """
+    Careplanning labelling relies on the archive database which only holds
+    UKRDC extract data, so cohorts built from any other sendingextract
+    cannot be labelled.
+    """
+
+    if "sendingextract" not in cohort.columns:
+        raise MissingColumnError("cohort must contain 'sendingextract' column")
+
+    other_extracts = set(cohort["sendingextract"].unique()) - {"UKRDC"}
+    if other_extracts:
+        raise NotImplementedError(
+            f"sendingextract values {sorted(other_extracts)} are not supported: "
+            "careplanning labelling relies on the archive database which only "
+            "holds UKRDC data"
+        )
+
+
 def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "TPLTassess")->pd.DataFrame:
     """
     Function labels a cohort of patients with the care planning assessment data
@@ -28,6 +47,8 @@ def prevalent_careplanning(session, cohort, prevalence_date, assessment_type = "
         _type_: _description_
     """
     
+    _check_ukrdc_extract(cohort)
+
     if assessment_type not in ["TPLTassess", "KRTassess"]:
         raise ValueError("assessment_type must be either 'TPLTassess' or 'KRTassess'")
 
@@ -88,6 +109,8 @@ def pre_start_careplanning(session, cohort, assessment_type = "TPLTassess")->pd.
     Returns:
         _type_: _description_
     """
+
+    _check_ukrdc_extract(cohort)
 
     if assessment_type not in ["TPLTassess", "KRTassess"]:
         raise ValueError("assessment_type must be either 'TPLTassess' or 'KRTassess'")

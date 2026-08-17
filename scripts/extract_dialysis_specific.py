@@ -54,7 +54,7 @@ def hd_one_year(
         prevalence_point
     )
 
-    # generate a slice of the cohort which focuses on a subset if the ichd patients
+    # generate a slice of the cohort which focuses on a subset of the ichd patients
     base_cohort["time_since_start"] = prevalence_point - base_cohort["fromtime"]
     base_cohort = base_cohort[
         base_cohort.registry_code_type.isin(["HD"])

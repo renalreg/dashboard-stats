@@ -1,7 +1,7 @@
 from ukrdc_sqla.ukrdc import Facility
 from ukrdc_sqla.utils.constants import FacilityType
 from ukrdc_stats.exceptions import InvalidCentreError
-from sqlalchemy import select, String, cast
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
