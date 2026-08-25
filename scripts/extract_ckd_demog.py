@@ -11,7 +11,7 @@ from ukrdc_stats.labellers.geography import imd
 from ukrdc_stats.exceptions import EmptyCohortError
 from ukrdc_stats.utils.database import get_sessionmaker
 from ukrdc_stats.utils.data import aggregate_data
-from ukrdc_stats.labellers.demographics import age, sex, ethnicity
+from ukrdc_stats.labellers.demographics import ethnicity
 from ukrdc_stats.labellers.geography import imd, adult_paed
 
 config = dotenv_values(".env")
@@ -21,11 +21,24 @@ YEAR_START: int = 2024
 QUARTER_START: int = 1
 NO_OF_QUARTERS: int = 1
 OUTPUT_DIR: Path = Path(".do_not_commit")
-SERVER: str = "ukrdc_staging"
+SERVER: str = "ukrdc_live"
 OUTPUT_FILE: Path = Path(f"ckd_demog_{SERVER}_{YEAR_START}.csv")
 
+
 CENTRES = [
-    "RJZ",
+    # live
+    "RAJ",   # MSE
+    "RAQ01", # Lister
+    "RCSLB", # Nottingham
+    "RH8",   # RD&E
+    "RHW01", # Reading
+    "RK7CC", # Sheffield
+    "RL403", # Wolverhampton
+    "RNJ00", # Barts
+    "RFPFG", # Derby
+    "RBD01", # Dorset
+    "RLZ01", # Shrewsbury
+    "RP5",   # Doncaster
     "99RQR13",
     "RAE05",
     "RCB55",

@@ -248,11 +248,16 @@ def hd_dialysis_frequency(session, patient_cohort, start, stop, mode="median"):
     for i in range(0, len(hd_patients), 100):
         chunk = hd_patients[i : i + 100]
         chunk_data = query_dialysis_sessions(session, chunk)
-        all_dialysis_data.append(chunk_data)
+        # skip empty chunks so pd.concat infers dtypes from real data only
+        if not chunk_data.empty:
+            all_dialysis_data.append(chunk_data)
 
-    dialysis_data = pd.concat(all_dialysis_data).drop_duplicates(
-        subset=["pid", "procedure_time"]
-    )
+    if all_dialysis_data:
+        dialysis_data = pd.concat(all_dialysis_data).drop_duplicates(
+            subset=["pid", "procedure_time"]
+        )
+    else:
+        dialysis_data = pd.DataFrame()
 
     if (
         not dialysis_data.empty

@@ -14,20 +14,34 @@ config = dotenv_values(".env")
 KEYPATH = config.get("UKRDC_STATS_KEYPATH")
 
 YEAR_START: int = 2024
-QUARTER_START: int = 3
-NO_OF_QUARTERS: int = 1
+QUARTER_START: int = 1
+NO_OF_QUARTERS: int = 10
 OUTPUT_DIR: Path = Path(".do_not_commit") 
 SERVER: str = "ukrdc_live"
 OUTPUT_FILE: Path = Path(f"krt_demog_{SERVER}_{YEAR_START}.csv")
 #OUTPUT_FILE: Path = Path(f"krt_debug.csv")
 
 CENTRES = [
+    # live
+    "RAJ",   # MSE
+    "RAQ01", # Lister
+    "RCSLB", # Nottingham
+    "RH8",   # RD&E
+    "RHW01", # Reading
+    "RK7CC", # Sheffield
+    "RL403", # Wolverhampton
+    "RNJ00", # Barts
+    "RFPFG", # Derby
+    "RBD01", # Dorset
+    "RLZ01", # Shrewsbury
+    "RP5",   # Doncaster
     "99RQR13",
     "RAE05",
     "RCB55",
     "RF201",
     "RQR13",
 ]
+
 
 def main():
     with get_sessionmaker(SERVER, keypath=KEYPATH)() as session:
