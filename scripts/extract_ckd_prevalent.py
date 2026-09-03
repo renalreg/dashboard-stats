@@ -7,7 +7,7 @@ import datetime as dt
 from dotenv import dotenv_values
 from pathlib import Path
 
-SERVER = "ukrdc_staging"
+SERVER = "ukrdc_live"
 CENTRE = "RP5"
 OUTFILE = Path(".do_not_commit") / "ckd_prevalent.csv"
 

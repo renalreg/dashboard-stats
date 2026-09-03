@@ -144,3 +144,6 @@ cache/
 
 # Some stuff here not appropriate for public repo
 demo/exploratory
+
+
+__marimo__/

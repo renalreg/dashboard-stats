@@ -18,6 +18,7 @@ class krt_base_schema(pa.DataFrameModel):
     pid: Series[str]
     ukrdcid: Series[str]
     sendingfacility: Series[str]
+    sendingextract: Series[str]
     healthcarefacilitycode: Series[str] = pa.Field(nullable=True)
     admitreasoncode: Series[str]
     admitreasoncodestd: Series[str]
@@ -63,6 +64,11 @@ class krt_incident_schema(krt_query_incident_schema):
 
 
 class krt_prevalent_schema(krt_base_schema):
+    # centre_code stays nullable: unmapped units are otherised to satellite
+    # code 995 but keep a null centre code as krt_prevalent does not filter
+    # down to a single centre before returning
+    centre_code: Series[str] = pa.Field(nullable=True)
+    satellite_code: Series[str]
     dialtplt: Series[str] = pa.Field(nullable=True, isin=["HD", "HHD", "PD", "TX"])
 
 
@@ -83,6 +89,7 @@ class ckd_ukrdc_base_schema(pa.DataFrameModel):
     pid: Series[str]
     ukrdcid: Series[str]
     sendingfacility: Series[str]
+    sendingextract: Series[str]
     birthtime: Series[pa.DateTime]
     deathtime: Series[pa.DateTime] = pa.Field(nullable=True)
     healthcarefacilitycode: Series[str]
