@@ -10,7 +10,7 @@ from ukrdc_stats.calculators.krt import KRTStatsCalculator
 conn = PostgresConnection(app = "ukrdc_live", tunnel = True, via_app = True)
 sessionmaker = conn.session_maker()
 
-facility = "RAJ"
+facility = "RFBAK"
 end = dt.datetime(2023,12,31)
 start = end - dt.timedelta(days=365)
 
