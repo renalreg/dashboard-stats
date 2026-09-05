@@ -481,6 +481,13 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
             _type_: _description_
         """
 
+        # clean open records by replace na with infinities
+        deathtime_default = self.time_window[1] + dt.timedelta(days=5000)
+        totime_default = self.time_window[1] + dt.timedelta(days=5000)
+
+        base_cohort["deathtime"] = base_cohort["deathtime"].fillna(deathtime_default)
+        base_cohort["totime"] = base_cohort["totime"].fillna(totime_default)
+
         # run function to link each treatment to the one that follows
         base_cohort = self._chain_treatments(base_cohort)
 
@@ -528,9 +535,13 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
         # TODO: this needs revisiting maybe a safer way of doing it is to
         # select whichever is larger now() - timeline_start or 91 days
         # this would be non deterministic
+        #base_cohort["timeline_length"] = (
+        #    base_cohort["timeline_stop"] - base_cohort["timeline_start"]
+        #).fillna(dt.timedelta(days=91))
+        
         base_cohort["timeline_length"] = (
             base_cohort["timeline_stop"] - base_cohort["timeline_start"]
-        ).fillna(dt.timedelta(days=91))
+        )
 
         # Ensure deathtime exists for mocked/test data that may omit the column
         if "deathtime" not in base_cohort.columns:
@@ -538,7 +549,11 @@ class KRTStatsCalculator(AbstractFacilityStatsCalculator):
 
         base_cohort["life_length"] = (
             base_cohort["deathtime"] - base_cohort["timeline_start"]
-        ).fillna(dt.timedelta(days=91))
+        )
+
+        #base_cohort["life_length"] = (
+        #    base_cohort["deathtime"] - base_cohort["timeline_start"]
+        #).fillna(dt.timedelta(days=91))
 
         return base_cohort
 
